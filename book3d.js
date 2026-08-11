@@ -1091,24 +1091,75 @@ bookRoot.add(backGrp);
   backGrp.add(sm);
 }
 
+/* ---------------------------------------------------------------------------
+   The gutter — where the two halves become one text block.
+
+   A sewn book has no wall at the fold. Every leaf of both halves runs into the
+   spine, so the head/tail cross-section of an open tome is one continuous V:
+   each half thins to nothing and their leaves meet on a single line above the
+   spine. Everything that lies on a stack folds along the same two curves, so a
+   leaf can never disagree with the stack under it:
+
+   * gutterProfile(x) — how much of the fold is felt, 1 at the gutter and 0 (and
+     tangential, so there is no crease) by GUTTER_X. It dies out well before the
+     writing area, which is why the ink overlay and picking never feel it.
+   * gutterWarp(x) — that span is a ninth of the page but takes nearly all of
+     the bending, so the columns of every page-ish mesh are bunched into it and
+     the fold curves instead of faceting. uv is bunched with the vertices, so
+     not one painted pixel moves and no texture stretches.
+--------------------------------------------------------------------------- */
+const GUTTER_X    = 0.40;      // how far the fold reaches out from the gutter
+const GUTTER_DIP  = 0.28;      // how much of a stack's thickness its top loses
+const GUT_WARP    = 1.7;       // column bunching towards the gutter
+const GUT_Z       = -0.288;    // the fold line both halves converge on (bookRoot z)
+const GUT_RESID   = 0.013;     // a couple of leaves are left there, so the end
+                               //   face never degenerates — 1 px on screen
+const GUT_OVER    = 0.010;     // ...and each half reaches this far past centre,
+                               //   so the two interlock instead of leaving a notch
+const GUT_K0      = 0.34;      // the taper holds off until the boards are this open
+const GUT_CLEAR   = 0.005;     // a resting leaf clears the fold line by this
+const GUT_SQUEEZE = 0.18;      // ...and keeps this much of its spacing at the fold
+function gutterProfile(x){
+  const q = clamp(1 - x/GUTTER_X, 0, 1);
+  return q*q*(3-2*q);
+}
+function gutterWarp(x){ return PW*Math.pow(clamp(x/PW, 0, 1), GUT_WARP); }
+/* The wedge is a lie until the boards are nearly flat: a half-open tome is
+   still a slab hinged at the spine, and that is the shape the reader likes. */
+function gutterK(k){ return smooth(clamp((k-GUT_K0)/(1-GUT_K0), 0, 1)); }
+/* uv.u of a box face either runs with x, against it, or along z (0 = leave it) */
+const UV_X_DIR = [0, 0, 1, 1, 1, -1];
+function warpColumns(g){
+  const p = g.attributes.position, uv = g.attributes.uv, idx = g.index;
+  const dir = new Int8Array(p.count);
+  if(g.groups.length > 1){
+    g.groups.forEach((grp, gi)=>{
+      const s = UV_X_DIR[gi] || 0;
+      if(!s) return;
+      for(let i=grp.start;i<grp.start+grp.count;i++) dir[idx.getX(i)] = s;
+    });
+  }else dir.fill(1);                       /* a single-face plane: u runs with x */
+  for(let i=0;i<p.count;i++){
+    const x = gutterWarp(p.getX(i));
+    p.setX(i, x);
+    if(dir[i]) uv.setX(i, dir[i]>0 ? x/PW : 1 - x/PW);
+  }
+  p.needsUpdate = true; uv.needsUpdate = true;
+}
+
 /* page block builder: a bowed, edge-striped slab */
 function pageBlock(topSign, topMat){
   const g = new THREE.BoxGeometry(PW, PH, BLK, 26, 26, 2);
   g.translate(PW/2, 0, 0);
-  /* Organic block: a gentle bow on the outer face, plus lateral waviness on
-     the three outer edges. The bow has to stay small — the sheet stack sits
-     only millimetres above it — so most of the "no two leaves align" character
-     comes from the sideways wander, which costs no vertical clearance. */
+  warpColumns(g);
+  /* Lateral waviness is baked in once: it is what stops the stack reading as a
+     machined slab, and unlike a vertical bow it costs no clearance under the
+     leaves that rest on top. Thickness and the gutter fold are applied later,
+     per frame, by shapeBlock(). */
   const p = g.attributes.position;
-  const zTop = BLK/2 * topSign;
   for(let i=0;i<p.count;i++){
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const u = x/PW, v = (y+PH/2)/PH, w = (z+BLK/2)/BLK;
-    if(Math.abs(z - zTop) < 1e-4){
-      const bow = Math.sin(u*Math.PI)*0.0085 + Math.sin(v*Math.PI)*0.0040;
-      const wob = Math.sin(u*9.1+v*3.3)*0.0020 + Math.sin(v*13.0-u*2.0)*0.0016;
-      p.setZ(i, z + topSign*(bow+wob));
-    }
     if(x > PW-1e-4){                        /* fore edge wanders in and out */
       p.setX(i, x + Math.sin(v*11.0+w*7.0)*0.010 + Math.sin(w*23.0)*0.006 - 0.004);
     }
@@ -1117,18 +1168,84 @@ function pageBlock(topSign, topMat){
       p.setY(i, y + s*(Math.sin(u*8.0+w*9.0)*0.007 + Math.sin(w*19.0)*0.004 - 0.003));
     }
   }
-  g.computeVertexNormals();
   /* ~26 leaves across the visible thickness: any finer and the relief aliases */
   const mFore = edgeMat(true, 0.29, 7);      // +x fore edge
   const mSpine= edgeMat(true, 0.29, 7);      // -x (gutter side)
   const mHead = edgeMat(false, 5, 0.29);     // +y
   const mTail = edgeMat(false, 5, 0.29);     // -y
+  [mFore, mSpine].forEach(m=>m.userData.thickAxis = 'x');
+  [mHead, mTail].forEach(m=>m.userData.thickAxis = 'y');
   const mats = [mFore, mSpine, mHead, mTail,
                 topSign>0 ? topMat : matPlainParch,
                 topSign>0 ? matPlainParch : topMat];
   const m = new THREE.Mesh(g, mats);
   m.castShadow = true; m.receiveShadow = true;
-  return m;
+  return { mesh:m, geo:g, base: Float32Array.from(p.array), topSign,
+           edges:[mFore, mSpine, mHead, mTail], T:-1, k:-1 };
+}
+
+/* ---------------------------------------------------------------------------
+   The two half-blocks are not fixed slabs. Three things drive their shape:
+
+   * thickness — a book opened at its first leaf has almost nothing on the left
+     and the whole text block on the right. Thickness migrates from one half to
+     the other as leaves turn, and the two always sum to the closed total, so
+     the sealed tome's silhouette never changes.
+   * the gutter fold — the innermost leaves roll down towards the spine instead
+     of ending in a machined wall, feathering out to nothing well before the
+     writing area so page picking and the ink overlay are untouched.
+   * the fold line — once the boards are flat, the fold no longer just dips the
+     top face: the whole inner end collapses onto GUT_Z, the line above the
+     spine where both halves' leaves are sewn. The striped end wall goes with
+     it, and since both halves aim at the same line (and overshoot it a hair)
+     the two stacks read as one V however the thickness is shared out.
+--------------------------------------------------------------------------- */
+const BLOCK_MIN    = 0.012;                  // a leaf or two: never quite nothing
+const BLOCK_TOTAL  = BLK * 2;                // conserved across the two halves
+const RIGHT_BOTTOM = -HALF + CVR + 0.006;    // right stack rests on the back endpaper
+const LEFT_TOP     = COVER_Z0 - 0.006;       // left stack tucks under the front one
+const BLOCK_BOW    = 0.0097;                 // peak of the crown applied in shapeBlock
+/* zc: where the block's centre sits in bookRoot z once the tome is open. It is
+   a function of T, so the (T,k) cache below still covers it. */
+function shapeBlock(b, T, k, zc){
+  if(Math.abs(T-b.T) < 0.0004 && Math.abs(k-b.k) < 0.002) return;
+  b.T = T; b.k = k;
+  const p = b.geo.attributes.position, base = b.base;
+  const s = T/BLK, sign = b.topSign;
+  const dip = GUTTER_DIP * T * clamp(k,0,1);
+  const kk  = gutterK(k);
+  /* Heights are done in the block's own "up" measure, u = sign*z above the
+     centre: +T/2 is the face on show and -T/2 the one against the board for
+     either half, so the left block's flip costs nothing but a sign. */
+  const uApex = GUT_Z - zc;
+  for(let i=0;i<p.count;i++){
+    const x = base[i*3], y = base[i*3+1], z0 = base[i*3+2];
+    const layer = z0*sign/BLK + 0.5;         // 0 against the board .. 1 on show
+    let u = z0*sign*s;                       // thickness, about the block's centre
+    if(layer > 1-1e-4){                      /* crown only on the face on show */
+      const uu = x/PW, v = (y+PH/2)/PH;
+      u += Math.sin(uu*Math.PI)*0.005 + Math.sin(v*Math.PI)*0.0025
+         + Math.sin(uu*9.1+v*3.3)*0.0012 + Math.sin(v*13.0-uu*2.0)*0.0010;
+    }
+    const gp = gutterProfile(x);
+    /* the fold pivots about the board, so the inner leaves dive and the stack
+       tapers into the gutter rather than the whole slab sinking */
+    u -= dip*gp*layer;
+    /* and, once open, every leaf of the end converges on the fold line */
+    const w = gp*kk;
+    p.setX(i, x - GUT_OVER*w);
+    p.setZ(i, sign*lerp(u, uApex + (layer-0.5)*GUT_RESID, w));
+  }
+  p.needsUpdate = true;
+  b.geo.computeVertexNormals();
+  b.geo.computeBoundingSphere();
+  /* the UVs still span 0..1 however thick the block is, so the stripe repeat
+     has to track it — stretched leaves are the giveaway */
+  b.edges.forEach(m=>{
+    const r = 0.29*s;
+    if(m.userData.thickAxis === 'x'){ m.map.repeat.x = r; m.normalMap.repeat.x = r; }
+    else                            { m.map.repeat.y = r; m.normalMap.repeat.y = r; }
+  });
 }
 /* the bare leaf that shows when nothing is turned wears the same ink border */
 function borderedPageMat(side){
@@ -1139,9 +1256,9 @@ function borderedPageMat(side){
     roughness: 0.92, metalness: 0, envMapIntensity: 0.85
   });
 }
-const rightBlock = pageBlock(+1, borderedPageMat('front'));
-rightBlock.position.set(0, 0, -BLK/2);
-backGrp.add(rightBlock);
+const rightBlk = pageBlock(+1, borderedPageMat('front'));
+backGrp.add(rightBlk.mesh);
+let leftBlk = null;                 /* built with the front assembly, below */
 
 /* --- spine (curved shell with four raised bands) --------------------------*/
 const spineGrp = new THREE.Group();
@@ -1199,12 +1316,24 @@ const SPINE_U = 40, SPINE_V = 90;
     sctx.beginPath(); sctx.moveTo(13,0); sctx.bezierCurveTo(9,-2,9,2,5,0); sctx.stroke();
     sctx.restore();
   }
+  /* The wrap's two edges lap onto the boards, where the cover leather has
+     darkened with handling (see the corner falloff in makeLeatherCover). Match
+     it, or the lap reads as the bright seam it is meant to hide. */
+  const vig = sctx.createLinearGradient(0,0,SW,0);
+  vig.addColorStop(0.00,'rgba(3,5,10,.55)');
+  vig.addColorStop(0.07,'rgba(3,5,10,0)');
+  vig.addColorStop(0.93,'rgba(3,5,10,0)');
+  vig.addColorStop(1.00,'rgba(3,5,10,.55)');
+  sctx.fillStyle = vig; sctx.fillRect(0,0,SW,SH);
+  /* ...and the same goes for the light: the boards are matte navy leather with a
+     faint clearcoat, so the wrap cannot be a shinier, more reflective hide or
+     the join shows up as a change of material halfway across a single sheet */
   const mat = new THREE.MeshPhysicalMaterial({
     map: tex(sc, {srgb:true, wrap:false}),
     normalMap: tex(spineLeather.normalMap, {rx:1.6, ry:3.2}),
-    normalScale: new THREE.Vector2(1.0,1.0),
-    roughness: 0.58, metalness: 0.10, side: THREE.DoubleSide,
-    clearcoat: 0.24, envMapIntensity: 1.7
+    normalScale: new THREE.Vector2(1.15,1.15),
+    roughness: 0.70, metalness: 0.0, side: THREE.DoubleSide,
+    clearcoat: 0.18, clearcoatRoughness: 0.42, envMapIntensity: 1.05
   });
   spineMesh = new THREE.Mesh(spineGeo, mat);
   spineMesh.castShadow = true; spineMesh.receiveShadow = true;
@@ -1219,42 +1348,97 @@ function bandBump(v){
   });
   return b;
 }
-/* Where the flattened spine has to land when the tome lies open: the two boards
-   present their outer faces at slightly different depths (the front one has
-   swung over the page block), so each end of the strip is aimed at its own
-   board and tucked a hair beneath it to avoid coplanar z-fighting. */
-const SP_Z_BACK  = -HALF;        // back board's outer face          (-0.430)
-const SP_Z_FRONT = -COVER_Z1;    // front board's, once flipped over (-0.450)
-const SP_HALFW   = HALF;         // half-width of the strip across the gutter
-const SP_SAG     = HALF * 0.14;  // residual bow, bulging away from the boards
-const SP_TUCK    = 0.0025;       // slip under the boards rather than into them
+/* ---------------------------------------------------------------------------
+   The wrap: one sheet of leather over back board, spine and front board.
+
+   A bound book has no separate spine part — the same hide is glued onto the
+   outside of the back board, carried round the back, and glued onto the outside
+   of the front board. So the shell is built as three zones in u:
+
+     u < G          glued to the BACK board's outer face   (a static frame)
+     G .. 1-G       the FREE SPAN, which rolls and arches
+     u > 1-G        glued to the FRONT board's outer face — in the frame that
+                    board is in RIGHT NOW, i.e. carried round by the same
+                    -PI*k that frontAsm turns through (see applyTransforms)
+
+   The old build lerped every vertex between its closed and its open position.
+   That is only right at the two extremes: mid-swing the front end wandered off
+   the board it is supposed to be glued to, and the daylight between them read
+   as a hard seam. Anchoring each end to its board's live frame means the join
+   cannot open, at any k, and the free span in between takes up the slack.
+
+   Both ends also LAP onto their board's outer face (SP_LAP), covering its edge
+   bevel, so there is no butt joint to catch the light either.
+--------------------------------------------------------------------------- */
+const SP_TUCK   = 0.0025;        // the wrap rides this far outside a board's face
+const SP_LAP    = 0.030;         // closed: how far it laps onto each board
+const SP_LAP_O  = HALF;          // open: ...the leather has rolled right out
+const SP_GLUE   = 0.035;         // closed: u spent on each glue zone
+const SP_GLUE_O = 0.200;         // open: ...
+const SP_BULGE  = HALF;          // closed: how far the free span bows out
+const SP_SAG    = HALF * 0.14;   // open: the slack that arches over the joint
+const SP_BAND   = 0.030;         // how proud a raised band stands
 
 let lastSpineK = -1;
-/* The spine is not a rigid part: a bound back rolls open. At k=0 it is the
-   half-cylinder of the closed tome; at k=1 it has flattened into a barely
-   bowed strip bridging the gutter and hugging the underside of both boards.
-   Anything in between is a vertex-wise blend, which is what stops the old
-   rigid quarter-turn from hanging under the open book as a cracked bowl. */
+/* At k=0 this is the half-oval of the closed tome, its ends turned onto both
+   boards; at k=1 a barely bowed strip lying on both boards with a low ridge
+   over the joint; in between the free span rolls between two glued ends. */
 function updateSpine(k){
   const pos = spineGeo.attributes.position;
-  const R = HALF;
   const t = smooth(clamp(k, 0, 1));
+  /* the two glue frames, in bookRoot's xz. Each is an origin on the board's
+     outer face at its spine edge plus "d", the way onto that board; the
+     outward normal falls out of the tangent below, so it is never named twice */
+  const th = -Math.PI*clamp(k,0,1);            // == frontAsm.rotation.y
+  const cth = Math.cos(th), sth = Math.sin(th);
+  const fx = COVER_Z1*sth, fz = COVER_Z1*cth;  // front board's spine edge
+  const dfx = cth, dfz = -sth;                 // ...and onto its outer face
+  const lapFar  = lerp(SP_LAP, SP_LAP_O, t);           // the wrap's own edge
+  const lapNear = lerp(0, SP_LAP_O*(1-2*SP_GLUE_O), t);// where the free span lifts off
+  const G = lerp(SP_GLUE, SP_GLUE_O, t);
+  /* the free span is laid out in the frame of the chord between the two lift-off
+     points, so its bow swings from "out past the spine" to "sagging under the
+     gutter" as the boards flatten, without ever leaving the leather behind */
+  const ax = lapNear, az = -HALF;
+  const bx = fx + dfx*lapNear, bz = fz + dfz*lapNear;
+  const L  = Math.hypot(bx-ax, bz-az) || 1;
+  const e1x = (bx-ax)/L, e1z = (bz-az)/L;
+  const nx = -e1z, nz = e1x;                   // chord normal, pointing outward
+  const PI = Math.PI;
   for(let j=0;j<=SPINE_V;j++){
-    const v = j/SPINE_V, y = (v-0.5)*CH*1.0;
-    const bump = bandBump(v)*0.030;
+    const v = j/SPINE_V, y = (v-0.5)*CH;
     const taper = 1 - Math.pow(Math.abs(v-0.5)*2, 6)*0.05;
-    const rr = (R + bump) * taper;
+    const bump  = bandBump(v)*SP_BAND;
+    const amp   = lerp(SP_BULGE, SP_SAG, t) * taper;
     for(let i=0;i<=SPINE_U;i++){
       const u = i/SPINE_U;
-      /* closed: half-cylinder, u=0 at the back joint, u=1 at the front joint */
-      const a = -Math.PI/2 + u*Math.PI;        // -90deg (-z) .. +90deg (+z)
-      const xC = -Math.cos(a)*rr, zC = Math.sin(a)*rr;
-      /* open: flat strip, same chord width, ends flush with the boards */
-      const xO = lerp(SP_HALFW, -SP_HALFW, u);
-      const zO = lerp(SP_Z_BACK, SP_Z_FRONT, u) - SP_TUCK
-               - (SP_SAG*Math.sin(u*Math.PI) + bump) * taper;
-      const o = j*(SPINE_U+1)+i;
-      pos.setXYZ(o, lerp(xC,xO,t), y, lerp(zC,zO,t));
+      let px, pz, tx, tz;
+      if(u < G){                               /* glued to the back board */
+        px = lerp(lapFar, lapNear, u/G); pz = -HALF;
+        tx = -1; tz = 0;
+      }else if(u > 1-G){                       /* glued to the front board */
+        const d = lerp(lapFar, lapNear, (1-u)/G);
+        px = fx + dfx*d; pz = fz + dfz*d;
+        tx = dfx; tz = dfz;
+      }else{                                   /* the free span */
+        const s = (u-G)/(1-2*G);
+        const sp = Math.sin(PI*s), cp = Math.cos(PI*s);
+        /* closed, the span is an oval: it creeps along the chord as a cosine and
+           bows out as a sine, which lands on the boards tangentially. Open, it
+           runs straight along the chord with a cos^2 ridge over the joint. Both
+           end flat on the leather, so the blend between them does too. */
+        const q  = lerp((1-cp)*0.5, s, t),  dq = lerp(PI*0.5*sp, 1, t);
+        const b  = lerp(sp, sp*sp, t),      db = lerp(PI*cp, PI*Math.sin(2*PI*s), t);
+        px = ax + e1x*L*q + nx*amp*b;  pz = az + e1z*L*q + nz*amp*b;
+        tx = e1x*L*dq + nx*amp*db;     tz = e1z*L*dq + nz*amp*db;
+      }
+      /* Outward normal = the tangent turned a quarter. Inside a glue zone that
+         is exactly the board's own normal, so the offsets on either side of a
+         zone boundary cannot disagree and no crease can form. The bands fade
+         out across the glue zones rather than lifting the wrap's edge off. */
+      const tl = Math.hypot(tx, tz) || 1;
+      const off = SP_TUCK + bump*smooth(clamp(Math.min(u, 1-u)/G, 0, 1));
+      pos.setXYZ(j*(SPINE_U+1)+i, px - tz/tl*off, y, pz + tx/tl*off);
     }
   }
   pos.needsUpdate = true;
@@ -1269,9 +1453,8 @@ const frontAsm = new THREE.Group();
 bookRoot.add(frontAsm);
 let frontCoverBoard, frontGem, clasp;
 {
-  const leftBlock = pageBlock(-1, borderedPageMat('back'));
-  leftBlock.position.set(0, 0, 0.04 + BLK/2);
-  frontAsm.add(leftBlock);
+  leftBlk = pageBlock(-1, borderedPageMat('back'));
+  frontAsm.add(leftBlk.mesh);
 
   const coverZ0 = COVER_Z0;
   frontCoverBoard = coverBoard(matCoverFront);
@@ -1322,6 +1505,7 @@ function bendFor(t){
 function makeSheet(i){
   const g = new THREE.PlaneGeometry(PW, PH, 52, 8);
   g.translate(PW/2, 0, 0);
+  warpColumns(g);
   const base = g.attributes.position.array.slice();
   const grp = new THREE.Group();
 
@@ -1349,7 +1533,7 @@ function makeSheet(i){
 }
 for(let i=0;i<SHEETS;i++) sheets.push(makeSheet(i));
 
-function deformSheet(s, cs){
+function deformSheet(s, cs, dip){
   const p = s.geo.attributes.position, base = s.base;
   const eps = 1e-4;
   for(let i=0;i<p.count;i++){
@@ -1363,6 +1547,8 @@ function deformSheet(s, cs){
     }
     /* a touch of organic ripple so paper never reads as a flat quad */
     z += 0.0035*Math.sin(u*6.4 + y0*1.15)*u + 0.0020*Math.sin(y0*2.2)*u*u;
+    /* and the gutter fold, which dies out long before the writing area */
+    if(dip) z -= dip*gutterProfile(x0);
     p.setX(i, x); p.setZ(i, z);
   }
   p.needsUpdate = true;
@@ -1399,17 +1585,42 @@ function stepTweens(dt){
   }
 }
 
-/* Stack heights are chosen so that no leaf ever intersects the page block it
-   rests on: the right block crowns at +0.013, the left (flipped) one at -0.027. */
+/* Live surface heights of the two stacks, refreshed by layoutBlocks each frame:
+   the leaves have to follow the block they rest on, which now changes thickness. */
+let RIGHT_TOP = 0.022, LEFT_FACE = -0.012, T_RIGHT = BLK, T_LEFT = BLK;
+function layoutBlocks(f, k){
+  const span = BLOCK_TOTAL - 2*BLOCK_MIN;
+  T_LEFT  = BLOCK_MIN + span*f;
+  T_RIGHT = BLOCK_MIN + span*(1-f);
+  const zcR = RIGHT_BOTTOM + T_RIGHT/2;
+  shapeBlock(rightBlk, T_RIGHT, k, zcR);
+  rightBlk.mesh.position.z = zcR;
+  /* the left half rides inside frontAsm, which has flipped by the time the tome
+     is open, so its local z counts the other way and its centre lands mirrored */
+  shapeBlock(leftBlk, T_LEFT, k, T_LEFT/2 - LEFT_TOP);
+  leftBlk.mesh.position.z = LEFT_TOP - T_LEFT/2;
+  /* clear the crown, which scales with thickness, and leave a hair besides */
+  const crown = T => BLOCK_BOW*(T/BLK) + 0.006;
+  RIGHT_TOP = RIGHT_BOTTOM + T_RIGHT + crown(T_RIGHT);
+  LEFT_FACE = (T_LEFT - LEFT_TOP) + crown(T_LEFT);
+}
+/* aggregate turn progress — counting the leaf in flight, so the stacks trade
+   thickness continuously during an interactive drag instead of snapping */
+function turnProgress(){
+  let p = 0;
+  for(const s of sheets) p += s.t;
+  return p/SHEETS;
+}
 function sheetRest(i, t){
-  const uz = 0.022 + (SHEETS-i)*0.005,  ua = -(SHEETS-i)*0.0045;
-  const tz = -0.012 + i*0.005,          ta = -Math.PI + i*0.0044;
+  const uz = RIGHT_TOP + (SHEETS-i)*0.005,  ua = -(SHEETS-i)*0.0045;
+  const tz = LEFT_FACE + i*0.005,           ta = -Math.PI + i*0.0044;
   return { z: lerp(uz,tz,t), a: lerp(ua,ta,t) };
 }
 function applyTransforms(){
   const k = st.open01;
   bookRoot.position.x = -PW*0.5*(1-k);
   frontAsm.rotation.y = -Math.PI*k;
+  layoutBlocks(turnProgress(), k);
   /* The spine morphs in place — no rigid swing — and the rebuild only runs when
      the open progress has actually moved, so idle frames touch no buffers. */
   if(Math.abs(k - lastSpineK) > 0.0015) updateSpine(k);
@@ -1423,8 +1634,18 @@ function applyTransforms(){
     s.grp.position.z = r.z + lift;
     s.grp.rotation.y = r.a;
     const want = s.flat ? 0 : bendFor(s.t);
-    if(Math.abs(want - (s.lastBend===undefined?999:s.lastBend)) > 0.0015){
-      deformSheet(s, want); s.lastBend = want;
+    /* Follow the stack's fold, or the leaf bridges the valley the stack just
+       dug. Half-open, it is the stack's own dip; open, the leaf runs all the way
+       down to the fold line, keeping a fraction of its clearance above the stack
+       so the innermost leaves crowd rather than collapse onto one surface. The
+       cosine flips the sign as the leaf passes vertical onto the other stack. */
+    const clear = r.z - lerp(RIGHT_TOP, LEFT_FACE, s.t);
+    const dipOpen = r.z - (GUT_Z + GUT_RESID/2 + GUT_CLEAR + clear*GUT_SQUEEZE);
+    const dip = lerp(GUTTER_DIP * lerp(T_RIGHT, T_LEFT, s.t) * k, dipOpen, gutterK(k))
+              * Math.cos(Math.PI*s.t);
+    if(Math.abs(want - (s.lastBend===undefined?999:s.lastBend)) > 0.0015 ||
+       Math.abs(dip  - (s.lastDip ===undefined?999:s.lastDip )) > 0.0015){
+      deformSheet(s, want, dip); s.lastBend = want; s.lastDip = dip;
     }
     /* only the visible spread is clickable */
     s.front.userData.pick = (i===turned || (i===turned-1 && s.t<0.5));
