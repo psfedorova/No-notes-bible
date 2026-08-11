@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liber Arcanum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&family=La+Belle+Aurore&display=swap" rel="stylesheet">
+<style>
+:root{
+  --pw: 340px;   /* page width  */
+  --ph: 470px;   /* page height */
+  --ink: #43301a;
+  --gold-1:#f7e2a4; --gold-2:#d9ac54; --gold-3:#7a5518;
+  --parch-1:#ecd7a2; --parch-2:#d9bc82; --parch-3:#b9945c;
+  --blue-1:#263551; --blue-2:#16203a; --blue-3:#0a0f1e;
+}
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ height:100%; overflow:hidden; }
+body{
+  background:
+    radial-gradient(620px 380px at 62% 2%, rgba(255,226,158,.3), transparent 70%),
+    radial-gradient(1000px 700px at 48% 14%, rgba(255,206,120,.2), transparent 64%),
+    radial-gradient(1200px 820px at 50% 44%, #47502b 0%, #313620 38%, #1e1c12 70%, #0c0b07 100%);
+  font-family:'IM Fell English', serif;
+  user-select:none;
+  -webkit-user-select:none;
+  touch-action:none;
+}
+body.grabbing{ cursor:grabbing; }
+body.grabbing .script{ user-select:none; -webkit-user-select:none; cursor:grabbing; }
+
+/* ---------- ambience ---------- */
+.vignette{
+  position:fixed; inset:0; pointer-events:none; z-index:50;
+  background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(12,9,4,.6) 100%);
+  animation: candle 6s ease-in-out infinite;
+}
+@keyframes candle{
+  0%,100%{ opacity:1 } 23%{ opacity:.88 } 41%{ opacity:.97 } 67%{ opacity:.85 } 82%{ opacity:.95 }
+}
+.fog{
+  position:fixed; width:70vmax; height:70vmax; border-radius:50%;
+  filter:blur(90px); pointer-events:none; opacity:.4; z-index:0;
+}
+.fog.a{ background:radial-gradient(circle, rgba(214,178,92,.30), transparent 65%); top:-22vmax; left:-15vmax; animation: drift1 26s ease-in-out infinite alternate; }
+.fog.b{ background:radial-gradient(circle, rgba(86,120,58,.30), transparent 65%); bottom:-25vmax; right:-18vmax; animation: drift2 31s ease-in-out infinite alternate; }
+@keyframes drift1{ from{ transform:translate(0,0) } to{ transform:translate(9vmax,6vmax) } }
+@keyframes drift2{ from{ transform:translate(0,0) } to{ transform:translate(-8vmax,-5vmax) } }
+
+/* golden hour sun rays */
+.rays{ position:fixed; inset:-25% -20%; pointer-events:none; z-index:1; overflow:hidden; }
+.ray{
+  position:absolute; top:-20%; height:150%;
+  left:var(--l); width:var(--w);
+  background:linear-gradient(180deg, rgba(255,232,168,.32), rgba(255,206,120,.11) 46%, transparent 86%);
+  transform-origin: 50% 0;
+  transform: rotate(var(--r));
+  filter: blur(16px);
+  opacity:var(--o);
+  animation: rayShift var(--d) ease-in-out infinite alternate;
+}
+@keyframes rayShift{
+  from{ opacity:calc(var(--o) * .5); transform: rotate(var(--r)) translateX(-1.6vw) }
+  to  { opacity:var(--o);            transform: rotate(calc(var(--r) + 2.2deg)) translateX(1.6vw) }
+}
+
+.dust{ position:fixed; inset:0; pointer-events:none; z-index:2; overflow:hidden; }
+.dust span{
+  position:absolute; left:var(--x); bottom:-3vh;
+  width:var(--s); height:var(--s); border-radius:50%;
+  background:radial-gradient(circle, rgba(255,236,176,.95), rgba(255,198,84,0) 70%);
+  animation: rise var(--d) linear infinite;
+  animation-delay: var(--dl);
+  opacity:0;
+}
+@keyframes rise{
+  0%{ transform:translate3d(0,0,0); opacity:0 }
+  8%{ opacity:var(--o) }
+  60%{ opacity:var(--o) }
+  100%{ transform:translate3d(var(--wx), -108vh, 0); opacity:0 }
+}
+
+/* ---------- 3D scene ---------- */
+.stage{
+  position:fixed; inset:0; z-index:5;
+  display:flex; align-items:center; justify-content:center;
+  perspective:1700px;
+  cursor:grab;
+}
+.stage.dragging{ cursor:grabbing; }
+.scaler{ transform: scale(var(--scale,1)); }
+.floaty{ animation: bob 8s ease-in-out infinite; }
+@keyframes bob{
+  0%,100%{ transform:translateY(0) rotate(.0deg) }
+  50%{ transform:translateY(-13px) rotate(.35deg) }
+}
+.pivot{
+  width:0; height:0;
+  transform-style:preserve-3d;
+}
+.book{
+  position:absolute; left:0; top:0; width:0; height:0;
+  transform-style:preserve-3d;
+  transform: translateX(calc(var(--pw) * -0.5));
+  transition: transform 1.5s cubic-bezier(.66,.02,.3,1);
+}
+.book.open{ transform: translateX(0); }
+.book *, .book{ backface-visibility: visible; }
+
+.grp{ position:absolute; left:0; top:0; width:0; height:0; transform-style:preserve-3d; }
+
+.face{
+  position:absolute; left:0; top:0;
+  transform-origin: 0 0;
+}
+
+/* ---------- materials ---------- */
+.m-leather{
+  background:
+    radial-gradient(130% 110% at 28% 16%, rgba(168,204,255,.11), transparent 55%),
+    radial-gradient(120% 130% at 84% 92%, rgba(0,0,0,.55), transparent 62%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.03 0.85' numOctaves='3' seed='23'/><feColorMatrix type='saturate' values='0'/></filter><rect width='300' height='300' filter='url(%23n)' opacity='0.45'/></svg>"),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85 0.03' numOctaves='3' seed='7'/><feColorMatrix type='saturate' values='0'/></filter><rect width='300' height='300' filter='url(%23n)' opacity='0.40'/></svg>"),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.18' numOctaves='4' seed='11'/><feColorMatrix type='saturate' values='0'/></filter><rect width='240' height='240' filter='url(%23n)' opacity='0.5'/></svg>"),
+    linear-gradient(135deg, #2a3a58 0%, #1d2846 30%, #141c33 62%, #0a0f1e 100%);
+  background-blend-mode: normal, normal, soft-light, soft-light, overlay, normal;
+  box-shadow: inset 0 0 70px rgba(0,0,0,.62);
+}
+.m-leather-edge{
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.3' numOctaves='3' seed='4'/><feColorMatrix type='saturate' values='0'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.45'/></svg>"),
+    linear-gradient(180deg, #1d2643, #0a0f1e);
+  background-blend-mode: overlay, normal;
+}
+.m-pages-edge{
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='3'/><feColorMatrix type='saturate' values='0'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='0.30'/></svg>"),
+    repeating-linear-gradient(180deg, #eadaa8 0px, #d9bc82 1px, #c9a468 2px, #e4cf98 3px),
+    linear-gradient(180deg,#ddc188,#c19c62);
+  background-blend-mode: multiply, normal, normal;
+  box-shadow: inset 0 0 14px rgba(90,60,20,.5);
+}
+.m-pages-edge.h{
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='3'/><feColorMatrix type='saturate' values='0'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='0.30'/></svg>"),
+    repeating-linear-gradient(90deg, #eadaa8 0px, #d9bc82 1px, #c9a468 2px, #e4cf98 3px),
+    linear-gradient(90deg,#ddc188,#c19c62);
+  background-blend-mode: multiply, normal, normal;
+  box-shadow: inset 0 0 14px rgba(90,60,20,.5);
+}
+.m-parchment{
+  background:
+    radial-gradient(90% 70% at 22% 18%, rgba(255,241,199,.5), transparent 60%),
+    radial-gradient(130% 120% at 85% 92%, rgba(104,62,16,.32), transparent 55%),
+    radial-gradient(40% 30% at 74% 30%, rgba(126,80,26,.15), transparent 70%),
+    radial-gradient(26% 20% at 30% 78%, rgba(116,70,22,.18), transparent 70%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' seed='7'/><feColorMatrix type='saturate' values='0'/></filter><rect width='300' height='300' filter='url(%23n)' opacity='0.30'/></svg>"),
+    linear-gradient(160deg, var(--parch-1), var(--parch-2) 52%, var(--parch-3));
+  background-blend-mode: normal, normal, normal, normal, multiply, normal;
+  box-shadow:
+    inset 0 0 34px rgba(92,56,14,.38),
+    inset 0 0 6px rgba(76,44,8,.28);
+}
+.m-endpaper{
+  background:
+    radial-gradient(120% 110% at 50% 50%, rgba(0,0,0,.0), rgba(44,22,4,.42) 100%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3' seed='19'/><feColorMatrix type='saturate' values='0'/></filter><rect width='300' height='300' filter='url(%23n)' opacity='0.3'/></svg>"),
+    linear-gradient(150deg, #c7a06a, #ac8551 60%, #916d3e);
+  background-blend-mode: normal, multiply, normal;
+  box-shadow: inset 0 0 40px rgba(60,35,10,.45);
+}
+
+/* ---------- covers ---------- */
+.cover-art{
+  display:flex; align-items:center; justify-content:center;
+  border-radius: 4px 10px 10px 4px;
+  overflow:hidden;
+}
+.cover-art .frame{
+  position:absolute; inset:11px;
+  border:3px solid rgba(206,158,72,.72);
+  border-radius: 3px 9px 9px 3px;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.55),
+    inset 0 0 0 1px rgba(255,228,164,.22),
+    inset 0 0 26px rgba(0,0,0,.42),
+    0 0 12px rgba(255,200,110,.10);
+  pointer-events:none;
+}
+.cover-art .frame::before{
+  content:""; position:absolute; inset:8px;
+  border:1px solid rgba(206,158,72,.5);
+  border-radius:2px 6px 6px 2px;
+}
+.cover-art .frame::after{
+  content:""; position:absolute; inset:13px;
+  border:1px dotted rgba(206,158,72,.22);
+  border-radius:2px 5px 5px 2px;
+}
+.corner-orn{ position:absolute; width:72px; height:72px; opacity:.92; pointer-events:none;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.75)); }
+.corner-orn.tl{ top:14px; left:14px; }
+.corner-orn.tr{ top:14px; right:14px; transform:scaleX(-1); }
+.corner-orn.bl{ bottom:14px; left:14px; transform:scaleY(-1); }
+.corner-orn.br{ bottom:14px; right:14px; transform:scale(-1,-1); }
+.edge-orn{ position:absolute; left:50%; width:96px; height:26px; pointer-events:none;
+  opacity:.85; filter: drop-shadow(0 1px 1px rgba(0,0,0,.7)); }
+.edge-orn.t{ top:26px; transform:translateX(-50%); }
+.edge-orn.b{ bottom:26px; transform:translateX(-50%) scaleY(-1); }
+
+/* central filigree star + sapphire */
+.orn{ position:relative; width:230px; height:230px; pointer-events:none; }
+.orn.small{ width:130px; height:130px; opacity:.85; }
+.orn svg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.75)); }
+.orn .glow{ animation: sigilpulse 6s ease-in-out infinite; transform-origin:center; }
+@keyframes sigilpulse{
+  0%,100%{ filter: drop-shadow(0 0 2px rgba(255,206,110,.45)); }
+  50%{ filter: drop-shadow(0 0 10px rgba(255,214,126,.85)); }
+}
+.gem{
+  position:absolute; left:50%; top:50%;
+  width:46px; height:64px; transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:
+    radial-gradient(38% 30% at 32% 22%, rgba(255,255,255,.95), rgba(196,228,255,.35) 48%, transparent 72%),
+    radial-gradient(120% 95% at 50% 82%, rgba(6,22,62,.92), transparent 62%),
+    linear-gradient(158deg, #57a0ea 0%, #2568c4 36%, #14428d 66%, #0a2154 100%);
+  box-shadow:
+    0 0 0 3px rgba(201,151,60,.95),
+    0 0 0 5px rgba(74,50,16,.85),
+    0 0 16px rgba(96,176,255,.4),
+    inset 0 -7px 13px rgba(4,14,40,.72),
+    inset 0 5px 11px rgba(206,238,255,.34);
+  animation: gemGlow 4.6s ease-in-out infinite;
+}
+.gem.small{ width:26px; height:36px;
+  box-shadow: 0 0 0 2px rgba(201,151,60,.9), 0 0 10px rgba(96,176,255,.32),
+    inset 0 -4px 7px rgba(4,14,40,.7), inset 0 3px 6px rgba(206,238,255,.32);
+  animation:none; }
+@keyframes gemGlow{
+  0%,100%{ box-shadow:
+    0 0 0 3px rgba(201,151,60,.95), 0 0 0 5px rgba(74,50,16,.85),
+    0 0 12px rgba(96,176,255,.28),
+    inset 0 -7px 13px rgba(4,14,40,.72), inset 0 5px 11px rgba(206,238,255,.3); }
+  50%{ box-shadow:
+    0 0 0 3px rgba(224,178,88,1), 0 0 0 5px rgba(74,50,16,.85),
+    0 0 26px rgba(120,192,255,.6),
+    inset 0 -7px 13px rgba(4,14,40,.72), inset 0 5px 11px rgba(226,246,255,.45); }
+}
+
+.clasp{
+  position:absolute; right:-7px; top:50%;
+  width:26px; height:84px; transform:translateY(-50%);
+  border-radius:6px;
+  background:linear-gradient(90deg,#6b4a1c,#d9b25e 35%,#8a5f24 70%,#503410);
+  box-shadow: 0 2px 6px rgba(0,0,0,.6), inset 0 0 4px rgba(255,230,160,.5);
+  cursor:pointer;
+}
+.clasp::after{
+  content:""; position:absolute; left:50%; top:50%;
+  width:12px; height:12px; border-radius:50%; transform:translate(-50%,-50%);
+  background:radial-gradient(circle at 35% 30%, #e2f2ff, #2b6fd0 52%, #0a2154);
+  box-shadow:0 0 8px rgba(96,176,255,.8);
+  animation: gempulse 3.4s ease-in-out infinite;
+}
+@keyframes gempulse{ 0%,100%{ box-shadow:0 0 5px rgba(96,176,255,.45) } 50%{ box-shadow:0 0 13px rgba(140,200,255,1) } }
+
+/* ---------- spine: raised bands ---------- */
+.spine-decor{
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:space-between; padding:30px 0;
+  pointer-events:none;
+}
+.spine-decor .band{
+  position:relative; width:100%; height:13px;
+  background:linear-gradient(180deg, rgba(255,232,180,.16), rgba(46,64,98,.9) 22%, rgba(20,28,50,.95) 74%, rgba(0,0,0,.55));
+  box-shadow: 0 3px 6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,226,164,.22);
+}
+.spine-decor .band::before,
+.spine-decor .band::after{
+  content:""; position:absolute; left:0; right:0; height:2px;
+  background:linear-gradient(90deg, rgba(122,85,24,.5), rgba(232,196,112,.95) 18%, rgba(249,232,176,1) 50%, rgba(232,196,112,.95) 82%, rgba(122,85,24,.5));
+  box-shadow:0 0 4px rgba(255,206,110,.35);
+}
+.spine-decor .band::before{ top:-2px; }
+.spine-decor .band::after{ bottom:-2px; }
+.spine-decor .sorn{
+  width:30px; height:30px; opacity:.9;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.75));
+}
+.spine-decor .sorn svg{ width:100%; height:100%; }
+
+/* ---------- sheets & pages ---------- */
+.sheet{
+  position:absolute; left:0; top: calc(var(--ph) / -2);
+  width:var(--pw); height:var(--ph);
+  transform-origin: 0 50%;
+  transform-style:preserve-3d;
+  transition: transform 1.15s cubic-bezier(.62,.04,.34,1);
+}
+.page{
+  position:absolute; inset:0;
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+  border-radius: 0 6px 6px 0;
+  overflow:hidden;
+}
+.page.back{ transform: rotateY(180deg); }
+.page .gutter{
+  position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(90deg, rgba(78,46,12,.4), rgba(78,46,12,.13) 7%, transparent 16%, transparent 88%, rgba(78,46,12,.10) 97%, rgba(66,38,10,.22));
+}
+.page.back .gutter{
+  background:linear-gradient(270deg, rgba(78,46,12,.4), rgba(78,46,12,.13) 7%, transparent 16%, transparent 88%, rgba(78,46,12,.10) 97%, rgba(66,38,10,.22));
+}
+.page .burn{
+  position:absolute; inset:0; pointer-events:none;
+  box-shadow: inset 0 0 26px 6px rgba(80,44,8,.3);
+  border-radius:inherit;
+}
+.page-orn{
+  position:absolute; inset:0; width:100%; height:100%;
+  pointer-events:none; opacity:.9;
+}
+.script{
+  position:absolute; inset:40px 38px 56px 44px;
+  font-family:'La Belle Aurore', 'IM Fell English', cursive;
+  font-size:23px; line-height:1.6; color:var(--ink);
+  caret-color:#8a5b1d;
+  outline:none; overflow-y:auto; overflow-x:hidden;
+  user-select:text; -webkit-user-select:text;
+  cursor:text;
+  text-shadow: 0 0 .6px rgba(67,48,26,.6);
+  scrollbar-width:none;
+  word-break:break-word;
+}
+.script::-webkit-scrollbar{ display:none; }
+.script:empty::before{
+  content: attr(data-ph);
+  color:rgba(98,68,30,.42);
+  font-style:italic;
+  pointer-events:none;
+}
+.script:focus{ text-shadow: 0 0 1px rgba(120,70,10,.35), 0 0 8px rgba(255,190,90,.12); }
+.page.back .script{ inset:40px 44px 56px 38px; }
+.pageno{
+  position:absolute; bottom:18px; width:100%; text-align:center;
+  font-family:'IM Fell English SC', serif; font-size:14px;
+  color:rgba(104,72,30,.75); pointer-events:none; letter-spacing:2px;
+}
+
+/* folded corner page-turn controls */
+.turn{
+  position:absolute; bottom:0; width:56px; height:56px; cursor:pointer; z-index:3;
+}
+.turn.next{ right:0; }
+.turn.prev{ left:0; }
+.turn::before{
+  content:""; position:absolute; inset:0;
+  transition: .25s ease;
+  opacity:.0;
+}
+.turn.next::before{
+  background:linear-gradient(315deg, rgba(126,86,32,.55) 0 28%, rgba(255,242,206,.9) 29% 38%, transparent 40%);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.turn.prev::before{
+  background:linear-gradient(45deg, rgba(126,86,32,.55) 0 28%, rgba(255,242,206,.9) 29% 38%, transparent 40%);
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+.turn:hover::before{ opacity:1; }
+.sheet.flipping .page::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(90deg, rgba(44,24,4,.24), transparent 30%, transparent 70%, rgba(44,24,4,.24));
+  animation: flipshade 1.15s ease both;
+}
+@keyframes flipshade{ 0%{opacity:0} 45%{opacity:1} 100%{opacity:0} }
+/* held under the reader's thumb */
+.sheet.grabbed .page::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(90deg, rgba(44,24,4,.22), transparent 32%, transparent 68%, rgba(44,24,4,.22));
+}
+
+/* ---------- UI ---------- */
+.ui{ position:fixed; z-index:60; }
+.hint{
+  bottom:22px; left:50%; transform:translateX(-50%);
+  font-family:'IM Fell English', serif; font-style:italic;
+  color:rgba(238,214,152,.62); font-size:15px; letter-spacing:1px;
+  text-align:center; pointer-events:none;
+  transition: opacity .8s;
+  text-shadow:0 1px 3px #000;
+}
+.runes{
+  top:20px; right:22px; display:flex; gap:12px;
+}
+.rune-btn{
+  width:46px; height:46px; border-radius:50%;
+  border:1px solid rgba(214,164,74,.45);
+  background:radial-gradient(circle at 35% 30%, rgba(96,102,52,.6), rgba(20,20,12,.88));
+  color:#f0d493; font-size:21px; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; font-family:'IM Fell English SC',serif;
+  box-shadow: 0 2px 10px rgba(0,0,0,.6), inset 0 0 12px rgba(255,206,110,.14);
+  transition:.25s;
+}
+.rune-btn:hover{
+  box-shadow: 0 2px 14px rgba(0,0,0,.7), inset 0 0 16px rgba(255,206,110,.32), 0 0 16px rgba(236,192,102,.4);
+  transform:translateY(-2px);
+}
+.saved-note{
+  bottom:60px; left:50%; transform:translateX(-50%);
+  font-family:'IM Fell English SC',serif; color:rgba(242,214,146,.85);
+  font-size:13px; letter-spacing:3px; opacity:0; pointer-events:none;
+  transition: opacity .5s; text-shadow:0 0 8px rgba(255,200,90,.4);
+}
+.saved-note.show{ opacity:1; }
+
+.book-shadow{
+  position:fixed; z-index:1; left:50%; top:50%;
+  width:560px; height:110px; transform:translate(-50%, 300px) scale(var(--scale,1));
+  background:radial-gradient(50% 50% at 50% 50%, rgba(14,12,5,.55), transparent 70%);
+  filter:blur(6px);
+  animation: shbob 8s ease-in-out infinite;
+  pointer-events:none;
+}
+@keyframes shbob{ 0%,100%{ opacity:.8; transform:translate(-50%,300px) scale(var(--scale,1)) } 50%{ opacity:.55; transform:translate(-50%,300px) scale(calc(var(--scale,1) * .94)) } }
+</style>
+</head>
+<body>
+<div class="fog a"></div>
+<div class="fog b"></div>
+<div class="rays">
+  <div class="ray" style="--l:14%; --w:16vw; --r:13deg;  --o:.55; --d:17s"></div>
+  <div class="ray" style="--l:44%; --w:9vw;  --r:-6deg;  --o:.42; --d:23s"></div>
+  <div class="ray" style="--l:70%; --w:13vw; --r:-16deg; --o:.5;  --d:19s"></div>
+</div>
+<div class="dust" id="dust"></div>
+<div class="book-shadow"></div>
+
+<div class="stage" id="stage">
+  <div class="scaler">
+    <div class="floaty">
+      <div class="pivot" id="pivot">
+        <div class="book" id="book"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="vignette"></div>
+
+<div class="ui hint" id="hint">Drag the void to turn the tome &nbsp;·&nbsp; Drag the cover open &nbsp;·&nbsp; Click a page to inscribe</div>
+<div class="ui saved-note" id="savedNote">✒&nbsp; INSCRIBED</div>
+<div class="ui runes">
+  <button class="rune-btn" id="btnOpen" title="Open / Seal the tome">✦</button>
+  <button class="rune-btn" id="btnReset" title="Recenter the tome">⟲</button>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ================= geometry ================= */
+const PW = 340, PH = 470;          // page size
+const OV = 9;                      // cover overhang
+const CW = PW + OV, CH = PH + OV*2;
+const BLK = 26;                    // page-block thickness
+const CVR = 13;                    // cover board thickness
+const HALF = BLK + CVR + 4;        // 43 — half of total closed thickness
+const SHEETS = 7;                  // turnable sheets => 14 writable pages
+
+const book = document.getElementById('book');
+
+/* ================= tiny 3D face builder ================= */
+function el(cls, parent, tag='div'){
+  const d = document.createElement(tag);
+  d.className = cls; (parent||book).appendChild(d); return d;
+}
+function face(parent, cls, w, h, transform){
+  const d = el('face ' + cls, parent);
+  d.style.width = w+'px'; d.style.height = h+'px';
+  d.style.transform = transform;
+  return d;
+}
+/* slab spanning x:[0,W], y:[-H/2,H/2], z:[z0,z1] */
+function slab(parent, W, H, z0, z1, skins){
+  const d = z1 - z0, hy = H/2;
+  const out = {};
+  if(skins.top)    out.top    = face(parent, skins.top,    W, H, `translate3d(0px, ${-hy}px, ${z1}px)`);
+  if(skins.bottom) out.bottom = face(parent, skins.bottom, W, H, `translate3d(0px, ${-hy}px, ${z0}px)`);
+  if(skins.fore)   out.fore   = face(parent, skins.fore,   d, H, `translate3d(${W}px, ${-hy}px, ${z0}px) rotateY(-90deg)`);
+  if(skins.spineS) out.spineS = face(parent, skins.spineS, d, H, `translate3d(0px, ${-hy}px, ${z0}px) rotateY(-90deg)`);
+  if(skins.head)   out.head   = face(parent, skins.head,   W, d, `translate3d(0px, ${-hy}px, ${z0}px) rotateX(90deg)`);
+  if(skins.tail)   out.tail   = face(parent, skins.tail,   W, d, `translate3d(0px, ${hy}px, ${z0}px) rotateX(90deg)`);
+  return out;
+}
+
+/* ================= gilt ornaments (SVG) ================= */
+const CORNER_SVG = `
+<svg viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <path d="M3 68 C3 26 26 3 68 3" stroke="#d9ac54" stroke-width="2.4"/>
+  <path d="M3 50 C3 22 22 3 50 3" stroke="#b98c3e" stroke-width="1.3"/>
+  <path d="M9 9 l13 13" stroke="#e8c069" stroke-width="1.8"/>
+  <path d="M3 34 C14 32 22 24 25 12" stroke="#a8792f" stroke-width="1.1"/>
+  <path d="M25 12 c6 -2 9 -6 9 -9" stroke="#c99b45" stroke-width="1.1"/>
+  <path d="M12 30 c8 0 14 -6 15 -14" stroke="#c99b45" stroke-width=".9" opacity=".8"/>
+  <circle cx="7.5" cy="7.5" r="3.2" fill="#f4d98c"/>
+  <circle cx="26" cy="26" r="2" fill="#c99b45"/>
+  <circle cx="34" cy="3.5" r="1.7" fill="#d9ac54"/>
+  <circle cx="3.5" cy="34" r="1.7" fill="#d9ac54"/>
+</svg>`;
+
+const EDGE_SVG = `
+<svg viewBox="0 0 96 26" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <path d="M4 13 C16 4 30 4 44 13 C30 22 16 22 4 13Z" stroke="#c99b45" stroke-width="1.1" fill="#d9ac54" fill-opacity=".18"/>
+  <path d="M92 13 C80 4 66 4 52 13 C66 22 80 22 92 13Z" stroke="#c99b45" stroke-width="1.1" fill="#d9ac54" fill-opacity=".18"/>
+  <path d="M48 5 L54 13 L48 21 L42 13Z" fill="#e8c069"/>
+  <path d="M48 21 C50 25 53 25 56 26 M48 21 C46 25 43 25 40 26" stroke="#c99b45" stroke-width="1"/>
+</svg>`;
+
+const SPINE_ORN_SVG = `
+<svg viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <path d="M15 3 L20 15 L15 27 L10 15Z" stroke="#e8c069" stroke-width="1.2" fill="#d9ac54" fill-opacity=".3"/>
+  <circle cx="15" cy="15" r="2.4" fill="#f4d98c"/>
+  <path d="M4 15 C8 13 8 17 12 15 M26 15 C22 13 22 17 18 15" stroke="#c99b45" stroke-width="1"/>
+</svg>`;
+
+/* central filigree star: leaf/feather rays around an oval sapphire */
+let ornSeq = 0;
+function starOrnSVG(){
+  const id = 'gg' + (++ornSeq);
+  const C = 120;
+  let rays = '', beads = '';
+  for(let i=0;i<8;i++){
+    const a = i*45, long = (i%2===0);
+    const L = long ? 58 : 36, W = long ? 17 : 11, gap = long ? 50 : 48;
+    const tip = C - gap - L;
+    rays += `<g transform="rotate(${a} ${C} ${C})">
+      <path d="M${C} ${C-gap} C${C+W} ${(C-gap-L*0.34).toFixed(1)} ${(C+W*0.72).toFixed(1)} ${(C-gap-L*0.76).toFixed(1)} ${C} ${tip}
+               C${(C-W*0.72).toFixed(1)} ${(C-gap-L*0.76).toFixed(1)} ${C-W} ${(C-gap-L*0.34).toFixed(1)} ${C} ${C-gap}Z"
+            fill="url(#${id})" fill-opacity=".72" stroke="#f4d98c" stroke-width="1.1" stroke-opacity=".85"/>
+      <path d="M${C} ${C-gap-3} L${C} ${tip+6}" stroke="#7a5518" stroke-width=".8" stroke-opacity=".7"/>
+      <circle cx="${C}" cy="${tip-4}" r="${long?3.2:2.2}" fill="#f4d98c"/>
+      ${ long ? `<path d="M${C-2} ${C-gap+2} C${C-18} ${C-gap-4} ${C-24} ${C-gap-16} ${C-20} ${C-gap-24}
+                          M${C+2} ${C-gap+2} C${C+18} ${C-gap-4} ${C+24} ${C-gap-16} ${C+20} ${C-gap-24}"
+                    stroke="#d9ac54" stroke-width="1.3" stroke-opacity=".85"/>` : '' }
+    </g>`;
+  }
+  for(let i=0;i<8;i++){
+    beads += `<circle cx="${C}" cy="${C-56}" r="1.7" fill="#d9ac54" fill-opacity=".8"
+       transform="rotate(${22.5 + i*45} ${C} ${C})"/>`;
+  }
+  return `
+  <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" fill="none">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7e2a4"/><stop offset=".55" stop-color="#c9973c"/>
+      <stop offset="1" stop-color="#7a5518"/></linearGradient></defs>
+    <g class="glow">
+      ${rays}
+      ${beads}
+      <circle cx="${C}" cy="${C}" r="49" stroke="#a8792f" stroke-width="1"/>
+      <circle cx="${C}" cy="${C}" r="42" stroke="#e8c069" stroke-width="1.5"/>
+      <circle cx="${C}" cy="${C}" r="38" stroke="#c9973c" stroke-width=".8" stroke-opacity=".8"/>
+    </g>
+  </svg>`;
+}
+function centrepiece(small){
+  return `<div class="orn${small?' small':''}">${starOrnSVG()}<div class="gem${small?' small':''}"></div></div>`;
+}
+
+/* thin ornate ink border, drawn once per writable page */
+const PB_INK = '#6f4f1e';
+function pageBorderSVG(){
+  const x0 = 14, y0 = 14, x1 = PW - 14, y1 = 432;
+  const cx = (x0 + x1)/2, cy = (y0 + y1)/2;
+  const mid = (x,y,r)=>`<g transform="translate(${x} ${y}) rotate(${r})">
+      <path d="M-20 0 C-14 -5.5 -6.5 -5 0 0 C-6.5 5 -14 5.5 -20 0Z" fill="${PB_INK}" fill-opacity=".14" stroke="${PB_INK}" stroke-opacity=".5" stroke-width=".9"/>
+      <path d="M20 0 C14 -5.5 6.5 -5 0 0 C6.5 5 14 5.5 20 0Z" fill="${PB_INK}" fill-opacity=".14" stroke="${PB_INK}" stroke-opacity=".5" stroke-width=".9"/>
+      <path d="M0 -4.6 L4.4 0 L0 4.6 L-4.4 0Z" fill="${PB_INK}" fill-opacity=".55"/>
+      <path d="M0 3.4 C2.6 7 5.6 8.4 7 12.4 M0 3.4 C-2.6 7 -5.6 8.4 -7 12.4" stroke="${PB_INK}" stroke-opacity=".42" stroke-width=".9"/>
+    </g>`;
+  const corner = (x,y,sx,sy)=>`<g transform="translate(${x} ${y}) scale(${sx} ${sy})">
+      <path d="M0 38 C0 17 17 0 38 0" stroke="${PB_INK}" stroke-opacity=".38" stroke-width=".9"/>
+      <path d="M0 13 C7 13 13 7 13 0" stroke="${PB_INK}" stroke-opacity=".26" stroke-width=".8"/>
+      <path d="M7 7 l10 10" stroke="${PB_INK}" stroke-opacity=".38" stroke-width="1"/>
+      <circle cx="0" cy="0" r="2.6" fill="${PB_INK}" fill-opacity=".5"/>
+    </g>`;
+  return `<svg class="page-orn" viewBox="0 0 ${PW} ${PH}" xmlns="http://www.w3.org/2000/svg" fill="none">
+    <rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" stroke="${PB_INK}" stroke-opacity=".48" stroke-width="1.4"/>
+    <rect x="${x0+5}" y="${y0+5}" width="${x1-x0-10}" height="${y1-y0-10}" stroke="${PB_INK}" stroke-opacity=".32" stroke-width=".7"/>
+    ${corner(x0,y0,1,1)}${corner(x1,y0,-1,1)}${corner(x0,y1,1,-1)}${corner(x1,y1,-1,-1)}
+    ${mid(cx,y0,0)}${mid(cx,y1,180)}${mid(x0,cy,-90)}${mid(x1,cy,90)}
+  </svg>`;
+}
+
+/* ================= build the book ================= */
+
+/* --- back cover (static) --- */
+const backGrp = el('grp', book);
+slab(backGrp, CW, CH, -HALF, -HALF + CVR, {
+  bottom:null, top:'m-endpaper', fore:'m-leather-edge', head:'m-leather-edge', tail:'m-leather-edge', spineS:null
+});
+/* back outer face — rotated so its art reads correctly from behind */
+const backOuter = face(backGrp, 'm-leather cover-art', CW, CH,
+  `translate3d(${CW}px, ${-CH/2}px, ${-HALF}px) rotateY(180deg)`);
+backOuter.innerHTML = `
+  <div class="frame"></div>
+  <div class="corner-orn tl">${CORNER_SVG}</div>
+  <div class="corner-orn tr">${CORNER_SVG}</div>
+  <div class="corner-orn bl">${CORNER_SVG}</div>
+  <div class="corner-orn br">${CORNER_SVG}</div>
+  ${centrepiece(true)}`;
+
+/* --- right page block (static) --- */
+const rightGrp = el('grp', book);
+slab(rightGrp, PW, PH, -BLK, 0, {
+  top:'m-parchment', bottom:null, fore:'m-pages-edge', head:'m-pages-edge h', tail:'m-pages-edge h', spineS:'m-pages-edge'
+});
+/* thin edge filler that hides the sheet gap when the book is closed */
+slab(rightGrp, PW, PH, 0, 4, {
+  top:null, bottom:null, fore:'m-pages-edge', head:'m-pages-edge h', tail:'m-pages-edge h', spineS:'m-pages-edge'
+});
+
+/* --- spine (animates between standing / lying) --- */
+const spine = face(book, 'm-leather', HALF*2, CH,
+  `translate3d(0px, ${-CH/2}px, ${-HALF}px) rotateY(-90deg)`);
+spine.style.borderRadius = '10px';
+spine.innerHTML = `<div class="spine-decor">
+   <div class="band"></div>
+   <div class="sorn">${SPINE_ORN_SVG}</div>
+   <div class="band"></div>
+   <div class="sorn">${SPINE_ORN_SVG}</div>
+   <div class="band"></div>
+   <div class="sorn">${SPINE_ORN_SVG}</div>
+   <div class="band"></div></div>`;
+
+/* --- front assembly: hinges at spine; carries left block + front cover --- */
+const ASM_TRANSITION = 'transform 1.5s cubic-bezier(.66,.02,.3,1)';
+const SPINE_TRANSITION = 'transform 1.5s cubic-bezier(.66,.02,.3,1), opacity 1.2s';
+spine.style.transition = SPINE_TRANSITION;
+const frontAsm = el('grp', book);
+frontAsm.id = 'frontAsm';
+frontAsm.style.transformOrigin = '0 0';
+frontAsm.style.transition = ASM_TRANSITION;
+
+const leftBlock = slab(frontAsm, PW, PH, 4, 4 + BLK, {   /* left page block (inside when closed) */
+  bottom:'m-parchment', top:null, fore:'m-pages-edge', head:'m-pages-edge h', tail:'m-pages-edge h', spineS:'m-pages-edge'
+});
+/* the bare left leaf wears the same ink border as the writable pages */
+leftBlock.bottom.innerHTML = `<div class="burn"></div>` + pageBorderSVG();
+const coverZ0 = 4 + BLK, coverZ1 = coverZ0 + CVR;
+slab(frontAsm, CW, CH, coverZ0, coverZ1, {
+  bottom:'m-endpaper', top:null, fore:'m-leather-edge', head:'m-leather-edge', tail:'m-leather-edge', spineS:'m-leather-edge'
+});
+const frontOuter = face(frontAsm, 'm-leather cover-art', CW, CH,
+  `translate3d(0px, ${-CH/2}px, ${coverZ1}px)`);
+frontOuter.id = 'frontCoverFace';
+frontOuter.innerHTML = `
+  <div class="frame"></div>
+  <div class="corner-orn tl">${CORNER_SVG}</div>
+  <div class="corner-orn tr">${CORNER_SVG}</div>
+  <div class="corner-orn bl">${CORNER_SVG}</div>
+  <div class="corner-orn br">${CORNER_SVG}</div>
+  <div class="edge-orn t">${EDGE_SVG}</div>
+  <div class="edge-orn b">${EDGE_SVG}</div>
+  ${centrepiece(false)}
+  <div class="clasp" id="clasp" title="Unseal the tome"></div>`;
+
+/* --- sheets --- */
+const ROMAN = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV'];
+const sheets = [];
+const FIRST_PAGE_HTML =
+  `<div style="text-align:center;font-family:'IM Fell English SC',serif;font-size:26px;line-height:1.3;">Booke of Shadowes</div>` +
+  `<div style="text-align:center;font-size:19px;opacity:.75;">~ herein are bound the words of power ~</div><br>` +
+  `Whosoever holds this tome,<br>let thy quill speak true…`;
+
+const PAGE_BORDER = pageBorderSVG();
+
+for(let i=0;i<SHEETS;i++){
+  const sh = el('sheet', book);
+  const front = el('page front m-parchment', sh);
+  const back  = el('page back m-parchment', sh);
+  [ [front, i*2, 'next'], [back, i*2+1, 'prev'] ].forEach(([pg, n, dir])=>{
+    pg.insertAdjacentHTML('beforeend',
+      `<div class="burn"></div><div class="gutter"></div>` + PAGE_BORDER);
+    const s = el('script', pg);
+    s.contentEditable = 'true';
+    s.spellcheck = false;
+    s.dataset.page = n;
+    s.dataset.ph = n===0 ? '' : 'inscribe thy spell here…';
+    el('pageno', pg).textContent = '✶ ' + ROMAN[n] + ' ✶';
+    const t = el('turn ' + dir, pg);
+    t.dataset.dir = dir;
+  });
+  sheets.push(sh);
+}
+
+/* ================= state ================= */
+let isOpen = false;
+let turned = 0;
+
+const hint = document.getElementById('hint');
+const HINT_CLOSED = 'Drag the void to turn the tome  ·  Drag the cover open  ·  ✦ unseals it';
+const HINT_OPEN   = 'Drag a page to turn it  ·  Drag the cover shut  ·  Click a page to inscribe';
+function updateHint(){ hint.textContent = isOpen ? HINT_OPEN : HINT_CLOSED; }
+
+function layoutSheets(){
+  sheets.forEach((sh, i)=>{
+    const isTurned = i < turned;
+    const tz = isTurned ? (-3.4 + i*0.45) : (0.5 + (SHEETS-i)*0.45);
+    const ang = isTurned ? (-180 + i*0.25) : (-(SHEETS-i)*0.25);
+    sh.style.transform = `translateZ(${tz}px) rotateY(${ang}deg)`;
+    /* only the visible spread may receive clicks: back of the last turned
+       sheet (left page) and front of the first unturned sheet (right page) */
+    const front = sh.children[0], back = sh.children[1];
+    front.style.pointerEvents = (!isTurned && i === turned) ? 'auto' : 'none';
+    back.style.pointerEvents  = ( isTurned && i === turned-1) ? 'auto' : 'none';
+  });
+}
+function applyOpenState(){
+  book.classList.toggle('open', isOpen);
+  frontAsm.style.transform = isOpen ? 'rotateY(-180deg)' : 'rotateY(0deg)';
+  if(isOpen){
+    spine.style.transform = `translate3d(${-HALF}px, ${-CH/2}px, ${-HALF-2}px) rotateY(0deg)`;
+    spine.style.opacity = '0.96';
+  }else{
+    spine.style.transform = `translate3d(0px, ${-CH/2}px, ${-HALF}px) rotateY(-90deg)`;
+    spine.style.opacity = '1';
+  }
+  layoutSheets();
+}
+
+function flip(dir){
+  if(!isOpen) return;
+  if(dir==='next' && turned < SHEETS){
+    const sh = sheets[turned]; turned++;
+    animateFlip(sh);
+  }else if(dir==='prev' && turned > 0){
+    turned--; animateFlip(sheets[turned]);
+  }
+  layoutSheets(); saveState();
+}
+function animateFlip(sh){
+  sh.classList.add('flipping');
+  setTimeout(()=>sh.classList.remove('flipping'), 1200);
+}
+
+function openBook(){
+  if(isOpen) return;
+  isOpen = true; applyOpenState(); saveState(); updateHint();
+}
+function closeBook(){
+  if(!isOpen) return;
+  /* flip turned sheets home with a small stagger, then shut the cover */
+  const t = turned; turned = 0;
+  layoutSheets();
+  setTimeout(()=>{ isOpen = false; applyOpenState(); saveState(); }, t>0 ? 450 : 0);
+  updateHint();
+}
+
+/* ================= persistence ================= */
+const LS = 'liber-arcanum';
+const savedNote = document.getElementById('savedNote');
+let saveTm, noteTm;
+function savePage(scriptEl){
+  try{ localStorage.setItem(`${LS}.page.${scriptEl.dataset.page}`, scriptEl.innerHTML); }catch(e){}
+  savedNote.classList.add('show');
+  clearTimeout(noteTm); noteTm = setTimeout(()=>savedNote.classList.remove('show'), 1200);
+}
+function saveState(){
+  try{ localStorage.setItem(`${LS}.state`, JSON.stringify({open:isOpen, turned})); }catch(e){}
+}
+function restore(){
+  document.querySelectorAll('.script').forEach(s=>{
+    let v = null;
+    try{ v = localStorage.getItem(`${LS}.page.${s.dataset.page}`); }catch(e){}
+    if(v !== null){ s.innerHTML = v; }
+    else if(s.dataset.page === '0'){ s.innerHTML = FIRST_PAGE_HTML; }
+  });
+  let st = null;
+  try{ st = JSON.parse(localStorage.getItem(`${LS}.state`)); }catch(e){}
+  if(st){
+    isOpen = !!st.open;
+    turned = Math.min(SHEETS, Math.max(0, st.turned|0));
+    /* restore without the opening animation */
+    frontAsm.style.transition = 'none'; book.style.transition = 'none'; spine.style.transition = 'none';
+    sheets.forEach(s=>s.style.transition='none');
+    applyOpenState();
+    let reenabled = false;
+    const reenable = ()=>{
+      if(reenabled) return; reenabled = true;
+      frontAsm.style.transition = ASM_TRANSITION; book.style.transition = '';
+      spine.style.transition = SPINE_TRANSITION;
+      sheets.forEach(s=>s.style.transition='');
+    };
+    requestAnimationFrame(()=>requestAnimationFrame(reenable));
+    setTimeout(reenable, 400); /* rAF is paused in hidden tabs */
+  }else{
+    layoutSheets();
+  }
+  updateHint();
+}
+
+document.addEventListener('input', e=>{
+  const s = e.target.closest('.script'); if(!s) return;
+  clearTimeout(saveTm); saveTm = setTimeout(()=>savePage(s), 350);
+});
+document.addEventListener('focusout', e=>{
+  const s = e.target.closest && e.target.closest('.script'); if(s) savePage(s);
+});
+
+/* ================= pointer gestures =================
+   one gesture pipeline, four outcomes:
+     rot    — tumble the whole tome (drag started on the void)
+     sheet  — interactive page turn (drag started on a visible page)
+     cover  — interactive open/shut (drag started on the front assembly)
+     text   — hands off, the quill is at work
+   `downTarget` is remembered because setPointerCapture retargets pointerup. */
+const stage = document.getElementById('stage');
+const pivot = document.getElementById('pivot');
+let rx = 10, ry = -26, vx = 0, vy = 0;
+
+const THRESH = 8;          // px before a press becomes a drag
+const SHEET_SPAN = 300;    // px of horizontal travel == 180deg of page
+const COVER_SPAN = 340;    // …and of cover
+const DRAG_TZ = 8;         // lift the held sheet above both stacks
+const FLICK = 0.6;         // px/ms of horizontal travel that counts as a flick
+const IDLE = 90;           // ms of stillness that cancels a flick
+
+let mode = 'idle', grab = null, downTarget = null, clickGuard = false;
+let moved = 0, sx = 0, sy = 0, px = 0, py = 0, vRate = 0, vTime = 0, inertiaRAF = 0;
+let dragSheet = null, dragSide = null, dragAng = 0, coverFrom = 0;
+
+function clamp(v,a,b){ return v<a ? a : (v>b ? b : v); }
+/* horizontal speed at the moment of release — a pause forgets the flick */
+function flickRate(){ return (performance.now() - vTime > IDLE) ? 0 : vRate; }
+function applyRot(){ pivot.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`; }
+applyRot();
+
+/* what did the reader just take hold of? */
+function grabInfo(t){
+  if(!t || !t.closest) return null;
+  if(t.closest('.turn') || t.closest('.clasp')) return null;
+  if(!isOpen){
+    /* sealed: only the front board can be prised open */
+    return t.closest('#frontAsm') ? {type:'cover'} : null;
+  }
+  const pg = t.closest('.page');
+  if(pg){
+    const idx = sheets.indexOf(pg.parentElement);
+    if(idx >= 0){
+      if(pg.classList.contains('front') && idx === turned && turned < SHEETS)
+        return {type:'sheet', idx, side:'right'};
+      if(pg.classList.contains('back') && idx === turned - 1)
+        return {type:'sheet', idx, side:'left'};
+    }
+    return null;
+  }
+  /* the bare left-hand surface (endpaper / left block) shuts the book */
+  if(t.closest('#frontAsm') && turned === 0) return {type:'cover'};
+  return null;
+}
+
+function takeOver(e){
+  document.body.classList.add('grabbing');
+  const a = document.activeElement;
+  if(a && a.classList && a.classList.contains('script')) a.blur();
+  const sel = window.getSelection && window.getSelection();
+  if(sel && sel.removeAllRanges) sel.removeAllRanges();
+  try{ stage.setPointerCapture(e.pointerId); }catch(_){}
+}
+function startRot(e){
+  mode = 'rot';
+  stage.classList.add('dragging');
+  try{ stage.setPointerCapture(e.pointerId); }catch(_){}
+}
+function beginSheetDrag(e){
+  mode = 'sheet';
+  dragSheet = sheets[grab.idx]; dragSide = grab.side;
+  dragSheet.style.transition = 'none';
+  dragSheet.classList.add('grabbed');
+  dragSheet.classList.remove('flipping');
+  takeOver(e);
+}
+function beginCoverDrag(e){
+  mode = 'cover';
+  coverFrom = isOpen ? -180 : 0;
+  frontAsm.style.transition = 'none';
+  spine.style.transition = 'none';
+  book.style.transition = 'none';
+  takeOver(e);
+}
+/* drive cover, book shift and spine together so nothing pops */
+function paintCover(a){
+  const k = clamp(-a/180, 0, 1);
+  frontAsm.style.transform = `rotateY(${a}deg)`;
+  book.style.transform = `translateX(${(-PW*0.5)*(1-k)}px)`;
+  spine.style.transform =
+    `translate3d(${-HALF*k}px, ${-CH/2}px, ${-HALF - 2*k}px) rotateY(${-90 + 90*k}deg)`;
+}
+function finishSheet(commit){
+  const sh = dragSheet; dragSheet = null;
+  if(!sh) return;
+  if(commit){
+    if(dragSide === 'right') turned++; else turned--;
+    saveState();
+  }
+  sh.classList.remove('grabbed');
+  sh.style.transition = '';
+  void sh.offsetWidth;          /* commit the held angle, then glide home */
+  if(commit) animateFlip(sh);
+  layoutSheets();
+}
+function settleCover(commit){
+  frontAsm.style.transition = ASM_TRANSITION;
+  spine.style.transition = SPINE_TRANSITION;
+  book.style.transition = '';
+  void book.offsetWidth;        /* commit the held angle first */
+  if(commit) isOpen = !isOpen;
+  book.style.transform = '';    /* hand the shift back to .book / .book.open */
+  applyOpenState(); saveState(); updateHint();
+}
+
+stage.addEventListener('pointerdown', e=>{
+  if(e.button > 0) return;
+  const t = e.target;
+  if(t.closest('.turn') || t.closest('.clasp')) return;   /* their clicks stand */
+  cancelAnimationFrame(inertiaRAF);
+  downTarget = t; clickGuard = false;
+  sx = px = e.clientX; sy = py = e.clientY;
+  moved = 0; vx = vy = 0; vRate = 0; vTime = performance.now();
+  grab = grabInfo(t);
+  if(grab){
+    mode = 'pending';        /* decided at the threshold — caret placement survives */
+  }else if(t.closest('.script')){
+    mode = 'text';
+  }else{
+    startRot(e);
+  }
+});
+
+stage.addEventListener('pointermove', e=>{
+  if(mode === 'idle' || mode === 'text') return;
+  const dx = e.clientX - px, dy = e.clientY - py;
+  px = e.clientX; py = e.clientY;
+  moved += Math.abs(dx) + Math.abs(dy);
+  const now = performance.now(), dt = Math.max(4, now - vTime);
+  vRate = vRate*0.4 + (dx/dt)*0.6; vTime = now;
+  const tx = e.clientX - sx, ty = e.clientY - sy;
+
+  if(mode === 'pending'){
+    if(moved < THRESH) return;
+    if(Math.abs(tx) <= Math.abs(ty)){
+      /* a vertical pull: tumble the tome by its board, leave pages to the quill */
+      if(grab.type === 'cover') startRot(e); else mode = 'text';
+      return;
+    }
+    if(grab.type === 'sheet'){
+      const wantLeft = (grab.side === 'right');
+      if((wantLeft && tx > 0) || (!wantLeft && tx < 0)){ mode = 'text'; return; }
+      beginSheetDrag(e);
+    }else{
+      const wantLeft = !isOpen;   /* sealed → pull left to open; open → pull right to shut */
+      if((wantLeft && tx > 0) || (!wantLeft && tx < 0)){ startRot(e); return; }
+      beginCoverDrag(e);
+    }
+    clickGuard = true;
+  }
+
+  if(mode === 'rot'){
+    ry += dx * 0.35; rx -= dy * 0.35;
+    vx = dx * 0.35; vy = -dy * 0.35;
+    if(moved >= THRESH) clickGuard = true;
+    applyRot();
+    return;
+  }
+  if(mode === 'sheet'){
+    dragAng = (dragSide === 'right')
+      ? clamp(tx/SHEET_SPAN*180, -180, 0)
+      : clamp(-180 + tx/SHEET_SPAN*180, -180, 0);
+    dragSheet.style.transform = `translateZ(${DRAG_TZ}px) rotateY(${dragAng}deg)`;
+    return;
+  }
+  if(mode === 'cover'){
+    dragAng = clamp(coverFrom + tx/COVER_SPAN*180, -180, 0);
+    paintCover(dragAng);
+  }
+});
+
+stage.addEventListener('pointerup', e=>{
+  const m = mode; mode = 'idle';
+  stage.classList.remove('dragging');
+  document.body.classList.remove('grabbing');
+  try{ stage.releasePointerCapture(e.pointerId); }catch(_){}
+
+  if(m === 'sheet'){
+    const right = (dragSide === 'right'), fr = flickRate();
+    const commit = right ? (dragAng <= -90 || fr < -FLICK)
+                         : (dragAng >= -90 || fr >  FLICK);
+    finishSheet(commit);
+    return;
+  }
+  if(m === 'cover'){
+    const opening = (coverFrom === 0), fr = flickRate();
+    const commit = opening ? (dragAng <= -60 || fr < -FLICK)
+                           : (dragAng >= -90 || fr >  FLICK);
+    settleCover(commit);
+    return;
+  }
+  if(m === 'pending'){
+    /* never crossed the threshold — a plain click */
+    if(moved < THRESH && !isOpen && downTarget && downTarget.closest('.book')) openBook();
+    return;
+  }
+  if(m === 'rot'){
+    if(moved < THRESH){
+      if(!isOpen && downTarget && downTarget.closest && downTarget.closest('.book')) openBook();
+    }else{
+      const decay = ()=>{
+        vx *= 0.93; vy *= 0.93;
+        ry += vx; rx += vy; applyRot();
+        if(Math.abs(vx)+Math.abs(vy) > 0.05) inertiaRAF = requestAnimationFrame(decay);
+      };
+      inertiaRAF = requestAnimationFrame(decay);
+    }
+  }
+});
+stage.addEventListener('pointercancel', ()=>{
+  const m = mode; mode = 'idle';
+  stage.classList.remove('dragging');
+  document.body.classList.remove('grabbing');
+  if(m === 'sheet') finishSheet(false);
+  else if(m === 'cover') settleCover(false);
+});
+/* no stray text selection once a gesture has been taken over */
+document.addEventListener('selectstart', e=>{
+  if(mode === 'sheet' || mode === 'cover' || mode === 'rot') e.preventDefault();
+});
+
+/* clicks: page corners, clasp */
+document.addEventListener('click', e=>{
+  if(clickGuard){ clickGuard = false; return; }   /* a drag just ended here */
+  const t = e.target.closest('.turn');
+  if(t){ flip(t.dataset.dir); return; }
+  if(e.target.closest('.clasp')){ isOpen ? closeBook() : openBook(); }
+});
+
+/* buttons */
+document.getElementById('btnOpen').addEventListener('click', ()=> isOpen ? closeBook() : openBook());
+document.getElementById('btnReset').addEventListener('click', ()=>{
+  cancelAnimationFrame(inertiaRAF);
+  const t0 = performance.now(), r0x = rx, r0y = ry;
+  const tx = 10, tyRaw = isOpen ? -8 : -26;
+  /* unwind whole extra turns so we don't spin wildly */
+  const ty = tyRaw + Math.round((r0y - tyRaw)/360)*360;
+  const txx = tx + Math.round((r0x - tx)/360)*360;
+  const anim = (now)=>{
+    const k = Math.min(1, (now-t0)/700), s = 1-Math.pow(1-k,3);
+    rx = r0x + (txx-r0x)*s; ry = r0y + (ty-r0y)*s; applyRot();
+    if(k<1) requestAnimationFrame(anim);
+  };
+  requestAnimationFrame(anim);
+});
+
+/* keyboard */
+document.addEventListener('keydown', e=>{
+  if(e.target.closest && e.target.closest('.script')) return;
+  if(e.key==='ArrowRight') flip('next');
+  if(e.key==='ArrowLeft') flip('prev');
+  if(e.key==='Escape') closeBook();
+  if(e.key==='Enter' && !isOpen) openBook();
+});
+
+/* ================= dust ================= */
+const dust = document.getElementById('dust');
+for(let i=0;i<26;i++){
+  const s = document.createElement('span');
+  s.style.setProperty('--x', (Math.random()*100)+'vw');
+  s.style.setProperty('--s', (2+Math.random()*4)+'px');
+  s.style.setProperty('--d', (9+Math.random()*14)+'s');
+  s.style.setProperty('--dl', (-Math.random()*20)+'s');
+  s.style.setProperty('--o', (0.25+Math.random()*0.5));
+  s.style.setProperty('--wx', ((Math.random()*16-8))+'vw');
+  dust.appendChild(s);
+}
+
+/* ================= responsive scale ================= */
+function rescale(){
+  const need = (PW*2 + 140), needH = PH + 220;
+  const k = Math.min(1, (innerWidth-30)/need, (innerHeight-30)/needH);
+  document.documentElement.style.setProperty('--scale', k.toFixed(3));
+}
+addEventListener('resize', rescale); rescale();
+
+restore();
+applyOpenState();
+})();
+</script>
+</body>
+</html>
