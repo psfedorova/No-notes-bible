@@ -133,7 +133,7 @@ export function createShelf(api){
     }
     /* signed out: the shared books leave this device with the account */
     if(was && !u) gone.forEach(forget);
-    if(u && joinWant) join();
+    if(u && joinWant && joinWant.vowed) join();
     if(was !== booksFor && !view.hidden) render();
     api.refresh();
   }
@@ -457,7 +457,8 @@ export function createShelf(api){
     const me = user.uid;
     try{
       const mine = await F.getDoc(ref('books', want.id, 'members', me)).catch(()=>null);
-      if(!(mine && mine.exists())) await F.setDoc(ref('books', want.id, 'members', me), { name: myName(), code: want.code, guest: user.isAnonymous, at: F.serverTimestamp() });
+      const back = !!(mine && mine.exists());
+      if(!back) await F.setDoc(ref('books', want.id, 'members', me), { name: myName(), code: want.code, guest: user.isAnonymous, at: F.serverTimestamp() });
       const b = await F.getDoc(ref('books', want.id));
       const name = b.exists() ? b.data().name : 'Our book';
       await F.setDoc(ref('users', me, 'books', want.id), { name, at: F.serverTimestamp() });
@@ -465,7 +466,7 @@ export function createShelf(api){
       openCached({ id: want.id, uid: me, name, owner: b.exists() ? b.data().owner : null });
       openLive();
       close();
-      api.toast(`YOU HAVE JOINED · ${name.toUpperCase()}`, 2600);
+      api.toast(back ? `BACK IN ${name.toUpperCase()}` : 'AMEN. NO NOTES', 2600);
     }catch(e){
       show('badInvite');
     }
@@ -478,8 +479,8 @@ export function createShelf(api){
   view.addEventListener('pointerdown', e=>{ if(e.target === view) close(); });
   view.querySelector('.close').addEventListener('click', ()=> close());
   view.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key === 'Escape'){ e.preventDefault(); close(); } });
-  function show(m){ mode = m; view.hidden = false; api.blurQuill(); render(); }
-  function close(){ view.hidden = true; mode = 'share'; api.focusQuill(); }
+  function show(m){ if(m !== 'vow') hush(); mode = m; view.hidden = false; api.blurQuill(); render(); }
+  function close(){ hush(); vow = freshVow(); view.hidden = true; mode = 'share'; api.focusQuill(); }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if(cls) e.className = cls; if(text !== undefined) e.textContent = text; return e; };
   function btn(text, cls, fn){
     const b = el('button', 'btn' + (cls ? ' ' + cls : ''), text);
@@ -491,12 +492,13 @@ export function createShelf(api){
     const n = [...names.entries()].filter(([u]) => u !== user.uid).map(([, v]) => v);
     return n.length ? `with ${n.join(', ')}` : 'waiting for a friend';
   }
-  const TITLES = { share: 'SHARE THE BOOK', join: 'AN INVITATION', badInvite: 'AN INVITATION' };
+  const TITLES = { share: 'SHARE THE BOOK', join: 'YOU’VE BEEN INVITED', vow: 'THE VOW', badInvite: 'AN INVITATION' };
   function render(){
     body.textContent = '';
+    body.dataset.mode = mode;
     body.appendChild(el('h2', null, TITLES[mode]));
-    if(!F && mode !== 'join'){ body.appendChild(el('p', 'sub', 'Loading…')); firebase().then(()=>{ if(!view.hidden) render(); }).catch(()=>{ body.lastChild.textContent = 'No connection. Try again later'; }); return; }
-    ({ share: renderShare, join: renderJoin, badInvite: renderBad })[mode]();
+    if(!F && mode !== 'join' && mode !== 'vow'){ body.appendChild(el('p', 'sub', 'Loading…')); firebase().then(()=>{ if(!view.hidden) render(); }).catch(()=>{ body.lastChild.textContent = 'No connection. Try again later'; }); return; }
+    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad })[mode]();
   }
   function bookRow(title, sub, on, fn){
     const b = el('button', 'book' + (on ? ' on' : ''));
@@ -510,7 +512,7 @@ export function createShelf(api){
   function renderShare(){
     const acts = el('div', 'acts');
     if(!user || (!cur && !real())){
-      body.appendChild(el('p', 'sub', 'Your friend gets a link, opens the book and writes in it with you. Each of you can erase only your own writing'));
+      body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. Each of you can erase only your own writing'));
       acts.appendChild(btn('Sign in with Google to share', 'main', signIn));
       body.appendChild(acts);
       if(!user) return;
@@ -519,7 +521,7 @@ export function createShelf(api){
     else if(made >= MAX_BOOKS){
       body.appendChild(el('p', 'sub', `You have made ${MAX_BOOKS} shared books, the most there can be. Open one of them below to share it`));
     }else{
-      body.appendChild(el('p', 'sub', 'Your friend gets a link, opens the book and writes in it with you. Each of you can erase only your own writing'));
+      body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. Each of you can erase only your own writing'));
       acts.appendChild(btn('Get a link', 'main', ()=> createBook(`${googleName(user)}’s book`, true)));
       body.appendChild(acts);
     }
@@ -544,7 +546,7 @@ export function createShelf(api){
     body.appendChild(who);
   }
   async function renderLink(acts){
-    body.appendChild(el('p', 'sub', 'Send this link to a friend. They open it, write their name and write with you'));
+    body.appendChild(el('p', 'sub', 'Send this link to a friend. They take the vow, sign it and write with you'));
     const box = el('div', 'link', 'Making a link…');
     body.appendChild(box);
     body.appendChild(acts);
@@ -552,7 +554,7 @@ export function createShelf(api){
     if(!cur || cur.id !== id) return;
     if(!url){ box.textContent = 'Only the book’s creator can make a link'; return; }
     box.textContent = url;
-    if(navigator.share) acts.appendChild(btn('Send', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'Write in our book with me', url: link.url }); }catch(e){} }));
+    if(navigator.share) acts.appendChild(btn('Send', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'You’ve been invited to become a keeper of our bible. No notes', url: link.url }); }catch(e){} }));
     acts.appendChild(btn('Copy link', navigator.share ? '' : 'main', async ()=>{
       try{ await navigator.clipboard.writeText(link.url); api.toast('LINK COPIED', 1600); }catch(e){ api.toast('SELECT THE LINK AND COPY IT', 2000); }
     }));
@@ -561,23 +563,152 @@ export function createShelf(api){
       if(l){ box.textContent = l; api.toast('NEW LINK MADE', 1600); }
     }));
   }
-  function renderJoin(){
-    const acts = el('div', 'acts');
-    if(user){
-      body.appendChild(el('p', 'sub', 'You are invited to write a book together'));
-      acts.appendChild(btn('Open the book', 'main', ()=> join()));
-    }else{
-      body.appendChild(el('p', 'sub', 'You are invited to write a book together. Write your name and open it'));
-      const name = el('input'); name.type = 'text'; name.maxLength = 24; name.value = guestName; name.placeholder = 'Your name'; name.setAttribute('aria-label', 'Your name');
-      body.appendChild(name);
-      const open = ()=>{ if(!name.value.trim()){ name.focus(); api.toast('WRITE YOUR NAME', 1600); return; } return joinAsGuest(name.value); };
-      name.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); open(); } });
-      acts.appendChild(btn('Open the book', 'main', open));
-      acts.appendChild(btn('Sign in with Google instead', '', signIn));
-      setTimeout(()=> name.focus(), 50);
+  /* ---------- the invitation: the rules, the vow read aloud, a signature ---------- */
+  const RULES = ['What is written here is gospel', 'It is not up for discussion', 'If a page bores you, turn it'];
+  const VOW = [
+    'I swear that what I write is true.',
+    'I swear: no notes, from me or you.',
+    'I swear, if any page should bore,',
+    'to turn it and to write some more.',
+    'I swear by cake, I swear by wine:',
+    'your word is law, and so is mine.',
+    'Amen.',
+  ];
+  const words = s => s.toLowerCase().replace(/[’']/g, '').split(/[^a-z]+/).filter(Boolean);
+  const VOW_WORDS = VOW.map(words);
+  /* a word counts when it is heard one letter off: speech engines mishear accents */
+  function near(a, b){
+    if(a === b) return true;
+    if(b.length < 4 || Math.abs(a.length - b.length) > 1) return false;
+    let i = 0, j = 0, e = 0;
+    while(i < a.length && j < b.length){
+      if(a[i] === b[j]){ i++; j++; continue; }
+      if(++e > 1) return false;
+      if(a.length >= b.length) i++;
+      if(a.length <= b.length) j++;
     }
-    acts.appendChild(btn('Not now', '', async ()=>{ wantJoin(null); close(); }));
+    return e + (a.length - i) + (b.length - j) <= 1;
+  }
+  /* how many lines of the vow have been said, in order: a line is said once
+     half of its words are heard, in order, after the line before it */
+  function linesSaid(heard){
+    let at = 0, n = 0;
+    for(const line of VOW_WORDS){
+      let pos = at, got = 0;
+      for(const w of line){
+        for(let k = pos; k < Math.min(heard.length, pos + 12); k++) if(near(heard[k], w)){ got++; pos = k + 1; break; }
+      }
+      if(got < Math.ceil(line.length / 2)) break;
+      n++; at = pos;
+    }
+    return n;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const freshVow = ()=> ({ said: 0, deaf: !SR, slow: false, heard: '', sign: '' });
+  let vow = freshVow(), rec = null, slowTm = 0, vowUI = null;
+  function hear(text){
+    const n = linesSaid(words(text));
+    if(n <= vow.said) return;
+    vow.said = n;
+    if(n >= VOW.length) hush();
+    paintVow();
+  }
+  function listen(quick = 0){
+    if(rec || vow.deaf || vow.said >= VOW.length) return;
+    let session = '', began = Date.now();
+    const r = new SR();
+    r.lang = 'en-US'; r.continuous = true; r.interimResults = true;
+    r.onresult = e => { session = Array.from(e.results, x => x[0].transcript).join(' '); hear(vow.heard + ' ' + session); };
+    r.onerror = e => { if(e.error !== 'no-speech' && e.error !== 'aborted') vow.deaf = true; };
+    /* the engine stops by itself after a pause, so it is started again until the vow is said */
+    r.onend = ()=>{
+      vow.heard += ' ' + session;
+      rec = null;
+      quick = Date.now() - began < 1000 ? quick + 1 : 0;
+      if(quick >= 3) vow.deaf = true;
+      if(mode === 'vow' && !view.hidden) listen(quick);
+      paintVow();
+    };
+    rec = r;
+    try{ r.start(); }catch(e){ rec = null; vow.deaf = true; }
+    if(!slowTm && !vow.deaf) slowTm = setTimeout(()=>{ vow.slow = true; paintVow(); }, 25000);
+    paintVow();
+  }
+  function hush(){
+    clearTimeout(slowTm); slowTm = 0;
+    if(!rec) return;
+    const r = rec; rec = null;
+    r.onend = r.onresult = r.onerror = null;
+    try{ r.abort(); }catch(e){}
+  }
+  function saidAll(){ hush(); vow.said = VOW.length; paintVow(); }
+  function paintVow(){
+    const u = vowUI;
+    if(!u || mode !== 'vow' || !u.sign.isConnected) return;
+    const done = vow.said >= VOW.length;
+    u.lines.forEach((p, i)=> p.classList.toggle('said', i < vow.said));
+    u.sub.textContent = done ? 'The book heard you. Now sign' : vow.deaf ? 'This book can’t hear you here. Say it aloud anyway' : 'Read it aloud. The book is listening';
+    u.mic.hidden = done;
+    u.mic.textContent = vow.deaf ? 'I said it aloud' : rec ? 'Listening…' : 'Read it aloud';
+    u.mic.classList.toggle('on', !!rec);
+    u.help.hidden = done || vow.deaf || !vow.slow;
+    if(done && u.sign.hidden){
+      u.sign.hidden = false;
+      const i = u.sign.querySelector('input');
+      if(i) setTimeout(()=> i.focus(), 50);
+    }
+  }
+  const decline = ()=> btn('Ask me after dessert', 'minor', async ()=>{ wantJoin(null); close(); });
+  function renderJoin(){
+    body.appendChild(el('p', 'sub', 'to become a keeper of this bible. Ours. No notes'));
+    const list = el('ol', 'rules');
+    RULES.forEach((r, i)=>{ const li = el('li'); li.appendChild(el('b', null, ['I.', 'II.', 'III.'][i])); li.appendChild(el('span', null, r)); list.appendChild(li); });
+    body.appendChild(list);
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Agreed. No notes', 'main', async ()=> show('vow')));
+    acts.appendChild(decline());
     body.appendChild(acts);
+  }
+  function renderVow(){
+    const sub = el('p', 'sub');
+    body.appendChild(sub);
+    const box = el('div', 'vow');
+    const lines = VOW.map(t => box.appendChild(el('p', null, t)));
+    body.appendChild(box);
+    const acts = el('div', 'acts');
+    const mic = el('button', 'btn main');
+    mic.addEventListener('click', ()=>{ if(vow.deaf) saidAll(); else listen(); });
+    const help = el('button', 'btn minor', 'The book is hard of hearing. I said it');
+    help.addEventListener('click', saidAll);
+    acts.appendChild(mic); acts.appendChild(help);
+    body.appendChild(acts);
+
+    const sign = el('div', 'sign');
+    sign.hidden = true;
+    sign.appendChild(el('p', 'by', 'Signed, sealed and slightly tipsy,'));
+    const sacts = el('div', 'acts');
+    const seal = async open => { wantJoin({ ...joinWant, vowed: true }); await open(); };
+    if(user){
+      sign.appendChild(el('p', 'name', myName()));
+      sacts.appendChild(btn('Amen, let’s go', 'main', ()=> seal(join)));
+    }else{
+      const name = el('input'); name.type = 'text'; name.maxLength = 24; name.value = vow.sign || guestName; name.placeholder = 'your name'; name.setAttribute('aria-label', 'Your name');
+      name.addEventListener('input', ()=>{ vow.sign = name.value; });
+      sign.appendChild(name);
+      const open = ()=>{ if(!name.value.trim()){ name.focus(); api.toast('SIGN YOUR NAME', 1600); return; } return seal(()=> joinAsGuest(name.value)); };
+      name.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); open(); } });
+      sacts.appendChild(btn('Amen, let’s go', 'main', open));
+      sacts.appendChild(btn('Sign with Google instead', 'minor', ()=> seal(signIn)));
+    }
+    sign.appendChild(el('p', 'ps', 'P.S. Typos are also gospel'));
+    sign.appendChild(sacts);
+    body.appendChild(sign);
+    const out = el('div', 'acts');
+    out.appendChild(decline());
+    body.appendChild(out);
+
+    vowUI = { sub, lines, mic, help, sign };
+    paintVow();
   }
   function renderBad(){
     body.appendChild(el('p', 'sub', 'This link no longer works. Ask for a new one'));
@@ -587,6 +718,20 @@ export function createShelf(api){
   }
 
   /* ---------- start ---------- */
+  /* the vow is said once: someone already in the book goes straight in */
+  async function invite(){
+    if(lsGet(SIGNED_KEY) && !joinWant.vowed){
+      try{
+        await firebase();
+        const mine = user && await F.getDoc(ref('books', joinWant.id, 'members', user.uid));
+        if(mine && mine.exists()){ wantJoin({ ...joinWant, vowed: true }); return join(); }
+      }catch(e){}
+    }
+    /* back from a Google sign-in that left the page: the vow is already said */
+    if(joinWant.vowed) vow.said = VOW.length;
+    show(joinWant.vowed ? 'vow' : 'join');
+    firebase().catch(()=>{});
+  }
   function start(){
     if(!sharingOn) return;
     /* the invitation is kept for this tab, so a sign-in that leaves the page
@@ -597,8 +742,7 @@ export function createShelf(api){
     if(m || (kept && typeof kept.id === 'string' && typeof kept.code === 'string')){
       wantJoin(m ? { id: m[1], code: m[2] } : kept);
       if(m) history.replaceState(null, '', location.pathname + location.search);
-      show('join');
-      firebase().catch(()=>{});
+      invite();
     }
     else if(lsGet(SIGNED_KEY)) firebase().catch(()=>{});
     const c = lsGet(CUR_KEY);

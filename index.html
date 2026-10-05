@@ -228,6 +228,11 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .who{ margin-top:16px; text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; }
 .shelf .who button{ border:0; background:none; padding:4px; color:var(--gold); font:inherit; text-decoration:underline; cursor:pointer; }
 /* the invitation: the rules, the vow read aloud, the signature */
+.shelf .body[data-mode=join] h2::after, .shelf .body[data-mode=vow] h2::after{
+  content:''; display:block; width:140px; height:10px; margin:8px auto 2px;
+  background:radial-gradient(circle, var(--gold) 0 2px, transparent 2.5px) center/10px 10px no-repeat,
+    linear-gradient(90deg, transparent, var(--gold-line) 30%, transparent 45%, transparent 55%, var(--gold-line) 70%, transparent) center/100% 1px no-repeat;
+}
 .shelf .rules{ list-style:none; margin:18px 0 8px; padding:0; display:flex; flex-direction:column; gap:10px; }
 .shelf .rules li{ display:flex; align-items:baseline; gap:14px; font-size:19px; }
 .shelf .rules b{ flex:0 0 30px; text-align:right; font:600 15px var(--ui-font); letter-spacing:1px; color:var(--gold); }
@@ -240,12 +245,13 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .sign{ margin-top:18px; animation:fadein .8s ease-out; }
 .shelf .sign .by{ text-align:center; font-style:italic; color:var(--gold-dim); font-size:16px; }
 .shelf .sign input[type=text], .shelf .sign .name{
-  margin-top:2px; height:auto; padding:2px 0 6px; border:0; border-bottom:1px solid var(--gold-line); border-radius:0;
+  display:block; width:72%; margin:2px auto 0; height:auto; padding:2px 0 6px; border:0; border-bottom:1px solid var(--gold-line); border-radius:0;
   background:transparent; text-align:center; font:italic 500 26px var(--text-font); color:#ffe6ae;
 }
 .shelf .sign input[type=text]:focus{ box-shadow:none; border-bottom-color:var(--gold); }
 .shelf .sign .ps{ margin-top:12px; text-align:right; font-style:italic; color:var(--gold-dim); font-size:15px; }
 @media (prefers-reduced-motion:reduce){ .shelf .btn.on, .shelf .sign{ animation:none; } }
+@media (max-width:420px){ .shelf h2{ padding:0 24px; letter-spacing:2px; font-size:16px; } .shelf .card{ padding:22px 20px 18px; } }
 @keyframes fadein{ from{ opacity:0; } to{ opacity:1; } }
 
 @media (max-width:640px){
@@ -308,6 +314,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=73"></script>
+<script type="module" src="./grimoire.js?v=74"></script>
 </body>
 </html>

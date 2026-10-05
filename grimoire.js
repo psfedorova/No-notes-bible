@@ -31,7 +31,7 @@ import {
   clamp, lerp, smooth, mulberry32, fbm, upsample, cv, normalFromHeight, tex,
   setMaxAniso, makeSpriteCanvas, makeRayAlpha, crackCanvas, fieldFromCanvas
 } from './textures.js?v=4';
-import { createShelf, sharingOn } from './shared.js?v=11';
+import { createShelf, sharingOn } from './shared.js?v=12';
 
 const T0 = performance.now();
 const easeIO = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
