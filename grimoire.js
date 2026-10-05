@@ -164,6 +164,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 /* the shadow maps are drawn again only when something casting one has moved: the book
    (bookRoot's place) or its leaves and boards (layout); the boulder never moves */
 renderer.shadowMap.autoUpdate = false;
+/* a phone keeps no copy of its pictures once they are on the GPU (shed), so a GPU that
+   comes back after iOS took it away has nothing to load them from: start the page again */
+canvasEl.addEventListener('webglcontextrestored', ()=>{ if(!HI_RES) location.reload(); });
 let shadowDirty = true;
 const shadowKey = new Float32Array(16);
 setMaxAniso(renderer.capabilities.getMaxAnisotropy());
@@ -499,7 +502,7 @@ function makeVellum(S){
     gr.addColorStop(0, `rgba(130,92,50,${0.06+rnd()*0.12})`); gr.addColorStop(1,'rgba(130,92,50,0)');
     ctx.fillStyle = gr; ctx.fillRect(x-r,y-r,r*2,r*2);
   }
-  return { base: c, normalTex: tex(normalFromHeight(hf,S,S,3.0), {rx:2.5, ry:2.5}) };
+  return { base: c, normalTex: shed(tex(normalFromHeight(hf,S,S,3.0), {rx:2.5, ry:2.5})) };
 }
 const parch = makeVellum(1024);
 /* the edges of an old leaf brown first, unevenly, worst at the corners */
@@ -1545,7 +1548,9 @@ const pageMaterial = canvas => new THREE.MeshStandardMaterial({
 const blankMat = [pageMaterial(pageBackground(-2)), pageMaterial(pageBackground(-1))];
 
 const pageCache = new Map();          // n -> { bg, canvas, glow, tex, glowTex, mat, used, lay }
-const CACHE_MAX = 12;
+/* a written page costs a phone ~20 MB (its canvas, background, glow and their GPU copies):
+   eight is the spread in view, the one either side and a leaf in the air */
+const CACHE_MAX = HI_RES ? 12 : 8;
 function pageEntry(n){
   let e = pageCache.get(n);
   if(!e){
@@ -1563,12 +1568,16 @@ function pageEntry(n){
   e.used = performance.now();
   return e;
 }
+/* a canvas let go of at once, not whenever the collector comes round: on a phone the
+   pixels of a dropped page would otherwise linger for seconds */
+function freeCanvas(c){ if(c) c.width = c.height = 0; }
 function trimCache(keep){
   if(pageCache.size <= CACHE_MAX) return;
   const list = [...pageCache.entries()].filter(([n])=>!keep.has(n)).sort((a,b)=>a[1].used-b[1].used);
   while(pageCache.size > CACHE_MAX && list.length){
     const [n, e] = list.shift();
     e.tex.dispose(); e.glowTex.dispose(); e.mat.dispose();
+    [e.canvas, e.glow, e.bg, e.inked].forEach(freeCanvas);
     pageCache.delete(n);
   }
 }
@@ -1583,6 +1592,8 @@ function paintPage(n, now){
   const e = pageCache.get(n);
   if(!e) return;
   now = now || performance.now();
+  if(!e.bg) e.bg = pageBackground(n);
+  if(!e.canvas.width){ e.canvas.width = PAGE_W; e.canvas.height = PAGE_H; e.glow.width = PAGE_W/2; e.glow.height = PAGE_H/2; }
   const ctx = e.canvas.getContext('2d');
   const editing = writing && writing.n === n;
   /* the soaked-in ink is composed once per text; the warm letters and the
@@ -1617,7 +1628,7 @@ function paintPage(n, now){
   }
   e.glowing = lit;
   /* only the page under the quill keeps its composed ink in memory */
-  if(!editing && !burning.has(n)){ e.inked = null; e.inkKey = null; }
+  if(!editing && !burning.has(n)){ freeCanvas(e.inked); e.inked = null; e.inkKey = null; }
 }
 
 /* ============================================================================
@@ -4766,6 +4777,23 @@ const loadImage = (src, tries = 3) => new Promise((res, rej)=>{
   };
   i.src = src;
 });
+/* a picture that never changes once it is on the GPU: a phone lets go of its own copy
+   (image, canvas or data) right after the upload. iOS counts every byte of a tab, and
+   the forest, the boards and the rock held twice took Safari past its limit */
+function shed(t){
+  if(HI_RES || !t || t.userData.shed) return t;
+  t.userData.shed = true;
+  const after = t.onUpdate;
+  t.onUpdate = ()=>{
+    t.onUpdate = after;
+    if(after) after(t);
+    const im = t.source.data;
+    if(im instanceof HTMLCanvasElement){ im.width = im.height = 0; }
+    else if(im && im.close) im.close();
+    t.source.data = null;
+  };
+  return t;
+}
 /* the same for any other load: run it again, a little later each time, before giving up */
 async function retry(load, tries = 3){
   for(let k = 1; ; k++){
@@ -4856,9 +4884,9 @@ function composeBoard(dyed, norImg, roughImg, mask, flipY){
   return { col, nor, rgh };
 }
 function setBoardMaps(mat, maps){
-  const map = tex(maps.col, {srgb:true, wrap:false});
-  const nrm = tex(maps.nor, {wrap:false});
-  const rgh = tex(maps.rgh, {wrap:false});
+  const map = shed(tex(maps.col, {srgb:true, wrap:false}));
+  const nrm = shed(tex(maps.nor, {wrap:false}));
+  const rgh = shed(tex(maps.rgh, {wrap:false}));
   [map, nrm, rgh].forEach(t=>{ t.repeat.set(1/CW, 1/CH); t.offset.set(0, 0.5); });
   mat.map = map; mat.normalMap = nrm; mat.roughnessMap = rgh;
   mat.color.set(0xffffff); mat.roughness = 1;
@@ -4980,9 +5008,9 @@ function buildDoublure(img){
   col.getContext('2d').putImageData(cd, 0, 0);
   nor.getContext('2d').putImageData(nd, 0, 0);
   pc.putImageData(pd, 0, 0);
-  const pbrTex = tex(pbr, { wrap:false });
-  matEndpaper.map = tex(col, { srgb:true, wrap:false });
-  matEndpaper.normalMap = tex(nor, { wrap:false });
+  const pbrTex = shed(tex(pbr, { wrap:false }));
+  matEndpaper.map = shed(tex(col, { srgb:true, wrap:false }));
+  matEndpaper.normalMap = shed(tex(nor, { wrap:false }));
   matEndpaper.normalScale.set(0.8, 0.8);
   matEndpaper.roughnessMap = pbrTex; matEndpaper.metalnessMap = pbrTex;
   matEndpaper.color.set(0xffffff); matEndpaper.roughness = 1; matEndpaper.metalness = 1;
@@ -4994,13 +5022,13 @@ function applyLeather(img){
   setBoardMaps(matCoverFront, composeBoard(dyed, img.leaNor, img.leaRough, img.maskFront, false));
   setBoardMaps(matCoverBack,  composeBoard(dyed, img.leaNor, img.leaRough, img.maskBack, true));
   const tileMap = t=>{ t.repeat.set(2.4, 2.4); return t; };
-  matLeatherEdge.map = tileMap(tex(dyed, {srgb:true}));
-  matLeatherEdge.normalMap = tileMap(tex(img.leaNor));
-  matLeatherEdge.roughnessMap = tileMap(tex(img.leaRough));
+  matLeatherEdge.map = tileMap(shed(tex(dyed, {srgb:true})));
+  matLeatherEdge.normalMap = tileMap(shed(tex(img.leaNor)));
+  matLeatherEdge.roughnessMap = tileMap(shed(tex(img.leaRough)));
   matLeatherEdge.color.set(0xffffff); matLeatherEdge.roughness = 1;
   matLeatherEdge.needsUpdate = true;
-  matSpine.normalMap = tex(img.leaNor, {rx:1.4, ry:4});
-  matSpine.roughnessMap = tex(img.leaRough, {rx:1.4, ry:4});
+  matSpine.normalMap = shed(tex(img.leaNor, {rx:1.4, ry:4}));
+  matSpine.roughnessMap = shed(tex(img.leaRough, {rx:1.4, ry:4}));
   matSpine.roughness = 1;
   paintSpine(dyed);
   buildDoublure(img);
@@ -5049,7 +5077,7 @@ function rockTex(im, srgb){
   x.wrapS = x.wrapT = THREE.RepeatWrapping;
   x.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   x.anisotropy = 8; x.needsUpdate = true;
-  return x;
+  return shed(x);
 }
 /* a tangent-space normal map from the painted stone's own light and shade */
 function heightNormal(im, strength){
@@ -5153,8 +5181,9 @@ async function decodeDepth(url, smooth){
   const blob = await res.blob();
   const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   const w = bmp.width, h = bmp.height, q = new Uint16Array(w*h);
-  /* read through a strip: iOS Safari refuses any canvas over 4096 x 4096 pixels */
-  const band = Math.max(1, Math.min(h, (4194304/w)|0));
+  /* read through a strip: iOS Safari refuses any canvas over 4096 x 4096 pixels, and a
+     phone reads a thin one, so the strip and its pixel copy stay small */
+  const band = Math.max(1, Math.min(h, ((HI_RES ? 4194304 : 1048576)/w)|0));
   const c = cv(w, band), x = c.getContext('2d', { willReadFrequently: true });
   for(let y0=0;y0<h;y0+=band){
     const rows = Math.min(band, h - y0);
@@ -5177,7 +5206,7 @@ async function decodeDepth(url, smooth){
      its own edges instead of breaking into blocks */
   t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter; t.needsUpdate = true;
   if(!smooth) t.userData.soft = softDepth(q, w, h, Math.max(1, Math.round(w/768)));
-  return t;
+  return shed(t);
 }
 /* the canopy overhead seen as one soft surface: thousands of leaves against the sky
    leap in distance from texel to texel, and stepping aside from the capture point would
@@ -5199,11 +5228,11 @@ function softDepth(q, w, h, k){
   for(let i=0;i<W*H;i++) out[i] = THREE.DataUtils.toHalfFloat(a[i]);
   const t = new THREE.DataTexture(out, W, H, THREE.RedFormat, THREE.HalfFloatType);
   t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
-  return t;
+  return shed(t);
 }
 function makeBackdrop(pano, depth, water, back, backDepth){
   const tex = (im, srgb)=>{ const t = new THREE.Texture(im); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true; return t; };
+    t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true; return shed(t); };
   const m = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, depthTest: false,
     uniforms: {
@@ -5394,6 +5423,7 @@ async function nearField(){
     items.forEach(it=>{ const m = find(it.v); if(!byVar.has(m)) byVar.set(m, []); byVar.get(m).push(it); });
     byVar.forEach((its, src)=>{
       const mat = src.material.clone();
+      ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'alphaMap'].forEach(k=>shed(mat[k]));
       const plant = SWAY[a] !== undefined;
       if(plant){ mat.side = THREE.DoubleSide; mat.alphaTest = 0.5; mat.transparent = false; mat.envMapIntensity = 1.6; }
       if(plant){
@@ -5443,7 +5473,9 @@ async function loadAssets(){
     .map(k=>loadImage(ASSETS[k]).then(i=>{ imgs[k] = i; }));
   const model = url => retry(()=>gltfLoader.loadAsync(url));
   const models = Promise.all([model(ASSETS.goldFront), model(ASSETS.goldBack), model(ASSETS.rock)]);
-  const depth = retry(()=>decodeDepth(ASSETS.forestDepth)), backDepth = retry(()=>decodeDepth(ASSETS.forestBackDepth, true));
+  /* a phone decodes the two depth maps one after the other: each needs ~100 MB on the way */
+  const depth = retry(()=>decodeDepth(ASSETS.forestDepth));
+  const backDepth = HI_RES ? retry(()=>decodeDepth(ASSETS.forestBackDepth, true)) : depth.then(()=>retry(()=>decodeDepth(ASSETS.forestBackDepth, true)));
   const light = retry(()=>new RGBELoader().loadAsync(ASSETS.forestLight));
   await Promise.all(imgJobs);
   const [gf, gb, rk] = await models;
@@ -5713,7 +5745,8 @@ let warmAt = 0;
 function prewarmPages(now){
   if(!booted || now - warmAt < 120 || st.flight || st.riffle || coverAnim || g || pinch) return;
   const c = st.open ? st.k : homeSpread();
-  for(const i of [c - 1, c, c - 2, c + 1, c - 3, c + 2]){
+  if(!HI_RES) restPages(now);
+  for(const i of (HI_RES ? [c - 1, c, c - 2, c + 1, c - 3, c + 2] : [c - 1, c, c + 1])){
     if(i < 0 || i >= N) continue;
     for(const n of [2*i, 2*i + 1]){
       if(pageCache.has(n)) continue;
@@ -5723,6 +5756,16 @@ function prewarmPages(now){
       return;
     }
   }
+}
+/* a page left alone for a while keeps only its copy on the GPU: the background is
+   painted again from its seed, and the page canvas sized again, the next time it changes */
+function restPages(now){
+  pageCache.forEach((e, n)=>{
+    if(!e.canvas.width || e.glowing || burning.has(n) || (writing && writing.n === n) || now - e.used < 4000) return;
+    renderer.initTexture(e.tex); renderer.initTexture(e.glowTex);
+    [e.bg, e.inked, e.canvas, e.glow].forEach(freeCanvas);
+    e.bg = null; e.inked = null; e.inkKey = null;
+  });
 }
 /* left alone, a phone draws every other frame: the water and the fireflies still move,
    and a GPU kept cool has its full speed when a finger comes down. A touch, a key or
@@ -5745,7 +5788,7 @@ setInterval(()=>{ if(document.hidden) frame(); }, 250);
    too. Left to the first opening, they froze it for a second on a phone */
 async function warmUp(){
   const c = st.open ? st.k : homeSpread();
-  for(let i=Math.max(0, c - 2);i<=Math.min(N - 1, c + 1);i++) for(const n of [2*i, 2*i + 1]){
+  for(let i=Math.max(0, c - (HI_RES ? 2 : 1));i<=Math.min(N - 1, c + 1);i++) for(const n of [2*i, 2*i + 1]){
     const e = pageEntry(n);
     renderer.initTexture(e.tex); renderer.initTexture(e.glowTex);
   }
