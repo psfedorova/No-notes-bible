@@ -156,11 +156,10 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .menu button[disabled]{ opacity:.35; pointer-events:none; }
 .menu hr{ margin:4px 10px; border:0; border-top:1px solid var(--gold-line); opacity:.6; }
 .menu .books{ display:flex; flex-direction:column; justify-content:center; gap:1px; height:56px; }
-.menu .books span{ font-style:italic; font-size:14px; color:var(--gold-dim); }
+.menu .books span{ max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-style:italic; font-size:14px; color:var(--gold-dim); }
 .menu .books[hidden]{ display:none; }
 .menu-note{ margin:4px 16px 6px; color:rgba(240,226,192,.5); font:italic 500 14px var(--text-font); }
 @media (pointer:coarse){ .menu .fine{ display:none; } }
-#btnMore{ font-size:22px; letter-spacing:1px; padding-bottom:6px; }
 
 @keyframes rise{ from{ opacity:0; transform:translate(-50%, 6px); } to{ opacity:1; transform:translate(-50%, 0); } }
 
@@ -195,6 +194,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .spells .close:hover{ box-shadow:0 0 12px rgba(236,192,102,.4); }
 /* the shelf of books: one's own and the shared ones */
 .shelf .card{ width:min(440px, 100%); }
+.shelf h2{ padding:0 34px; }
 .shelf .list{ display:flex; flex-direction:column; gap:6px; margin:16px 0 12px; }
 .shelf .book{
   display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:56px;
@@ -213,13 +213,8 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .btn.main{ background:rgba(214,164,74,.22); }
 .shelf .btn:hover, .shelf .btn:focus-visible{ box-shadow:0 0 12px rgba(236,192,102,.35); outline:none; }
 .shelf .btn[disabled]{ opacity:.5; pointer-events:none; }
-.shelf input[type=text]{
-  width:100%; height:48px; margin-top:14px; padding:0 14px; border-radius:12px; border:1px solid var(--gold-line);
-  background:rgba(0,0,0,.25); color:#ffe6ae; font:500 18px var(--text-font); outline:none;
-}
-.shelf input[type=text]:focus{ box-shadow:0 0 12px rgba(236,192,102,.3); }
-.shelf .check{ display:flex; gap:10px; align-items:center; margin:14px 2px 4px; font-size:16px; cursor:pointer; }
-.shelf .check input{ width:18px; height:18px; accent-color:#d6a44a; }
+.shelf .btn.minor{ min-height:36px; border:0; color:var(--gold-dim); font:italic 500 15px var(--text-font); text-decoration:underline; }
+.shelf .btn.minor:hover, .shelf .btn.minor:focus-visible{ box-shadow:none; color:var(--gold); }
 .shelf .link{
   margin:14px 0 4px; padding:10px 12px; border-radius:10px; border:1px dashed var(--gold-line);
   font-size:13px; color:var(--gold-dim); word-break:break-all; user-select:all; -webkit-user-select:all;
@@ -251,20 +246,19 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   <button class="rune muted" id="btnSound" title="Sound off (M)" aria-label="Forest sound" aria-pressed="false"><svg class="ico-on" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.2 9.2a4 4 0 0 1 0 5.6M17.8 6.6a7.6 7.6 0 0 1 0 10.8" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg><svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></button>
   <button class="rune" id="btnBook" title="Open the book (O)" aria-label="Open the book"><svg class="ico-open" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 6.6C9.8 5 6.9 4.5 3.2 5v13.2c3.7-.5 6.6 0 8.8 1.6 2.2-1.6 5.1-2.1 8.8-1.6V5c-3.7-.5-6.6 0-8.8 1.6z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M12 6.6v13.2" stroke="currentColor" stroke-width="1.2"/><path d="M5.6 8.6c1.8-.2 3.4.1 4.6.8M5.6 11.4c1.8-.2 3.4.1 4.6.8M18.4 8.6c-1.8-.2-3.4.1-4.6.8M18.4 11.4c-1.8-.2-3.4.1-4.6.8" stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round" opacity=".75"/></svg><svg class="ico-close" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="5.5" y="3.2" width="13.5" height="17.6" rx="1.6" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M8.3 3.2v17.6" stroke="currentColor" stroke-width="1.2"/><circle cx="13.6" cy="10.4" r="1.7" fill="currentColor"/><path d="M13.6 6.6v1.6M13.6 12.6v1.6M10.6 10.4h1.4M15.6 10.4h1.4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg></button>
   <button class="rune" id="btnWrite" title="Lay the book open and write" aria-label="Lay the book open and write"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M20.5 2.5c-6 1-11 5.5-13.2 12.3l-1.6 4.9 1.4.5 1.2-3.3c3.6-.4 6.6-2.3 8.4-5.3-1.4.3-2.7.2-3.9-.2 2.6-.6 4.6-2.1 5.9-4.3-1 .1-1.9 0-2.8-.3 2-.9 3.6-2.4 4.6-4.3z" fill="currentColor"/><path d="M4.2 21.5c1.8-.4 3.5-.2 5 .4" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg></button>
-  <button class="rune" id="btnMore" title="More" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
+  <button class="rune" id="btnMore" title="More" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="18.5" cy="12" r="1.7" fill="currentColor"/></svg></button>
 </div>
 
 <div class="ui menu" id="menu" role="menu" hidden>
-  <button role="menuitem" data-act="books" class="books" hidden>Books<span>My own book</span></button>
+  <button role="menuitem" data-act="share" class="books" hidden>Share<span>Send the book to a friend</span></button>
   <button role="menuitem" data-act="erase">Erase this page</button>
   <button role="menuitem" data-act="erase2" hidden>Erase this page</button>
-  <button role="menuitem" data-act="restore">Bring the erased ink back</button>
+  <button role="menuitem" data-act="restore">Undo erase</button>
   <hr>
-  <button role="menuitem" data-act="export">Download the book</button>
-  <button role="menuitem" data-act="exportText">Download as text</button>
+  <button role="menuitem" data-act="exportText">Download</button>
   <hr class="fine">
-  <button role="menuitem" data-act="spells" class="fine">Keyboard shortcuts</button>
-  <p class="menu-note">Everything you write is kept on its own</p>
+  <button role="menuitem" data-act="spells" class="fine">Shortcuts</button>
+  <p class="menu-note">Saves automatically</p>
 </div>
 
 <nav class="ui pager" id="pager" aria-label="Pages" hidden>
@@ -289,6 +283,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=63"></script>
+<script type="module" src="./grimoire.js?v=69"></script>
 </body>
 </html>

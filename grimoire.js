@@ -31,7 +31,7 @@ import {
   clamp, lerp, smooth, mulberry32, fbm, upsample, cv, normalFromHeight, tex,
   setMaxAniso, makeSpriteCanvas, makeRayAlpha, crackCanvas, fieldFromCanvas
 } from './textures.js?v=4';
-import { createShelf, sharingOn } from './shared.js?v=1';
+import { createShelf, sharingOn } from './shared.js?v=8';
 
 const T0 = performance.now();
 const easeIO = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
@@ -2699,7 +2699,7 @@ function exportText(){
   });
   if(!parts.length){ toast('THE BOOK IS STILL EMPTY', 1600); return; }
   download(`liber-arcanum-${fileDate()}.txt`, `Liber Arcanum\n\n\n${parts.join('\n\n\n')}\n`, 'text/plain;charset=utf-8');
-  toast('BOOK SAVED AS TEXT', 1800);
+  toast('DOWNLOADED', 1800);
 }
 /* the pages of another book are taken up in place of these */
 function useBook(key, hand, booting){
@@ -2752,7 +2752,7 @@ function exportFile(){
   saveNow(true);
   const data = { format:'liber-arcanum', version:2, savedAt:new Date().toISOString(), ...serialise() };
   download(`liber-arcanum-${fileDate()}.json`, JSON.stringify(data, null, 2), 'application/json');
-  toast('BOOK SAVED TO FILE', 1800);
+  toast('BACKUP DOWNLOADED', 1800);
 }
 /* ============================================================================
    10. writing
@@ -4476,7 +4476,7 @@ const SPELLS = [
     ['Shift ← →', 'Riffle five leaves'],
     ['Home  End', 'First or last page'],
     ['G  0–9', 'Turn to a page'],
-    ['E', 'Erase your ink on the open page'],
+    ['E', 'Erase your writing on the open page'],
   ]],
   ['By hand', [
     ['Swipe', 'Sweep a page sideways to turn it'],
@@ -4485,8 +4485,8 @@ const SPELLS = [
     ['Drag', 'Off the pages: look round the glade'],
   ]],
   ['With the quill', [
-    [`${MOD}E`, 'Erase your ink on this page'],
-    [`${MOD}Z`, 'Bring the erased ink back'],
+    [`${MOD}E`, 'Erase your writing on this page'],
+    [`${MOD}Z`, 'Undo erase'],
     [`${MOD}G`, 'Turn to a page'],
     [`${MOD}Enter`, 'Carry on at the next page'],
     ['PgUp  PgDn', 'Quill to the page before or after'],
@@ -4496,7 +4496,7 @@ const SPELLS = [
   ['Always', [
     ['M', 'Sound on or off'],
     [`${MOD}S`, 'Save now (it saves itself anyway)'],
-    [`${MOD}Shift S`, 'Download the book'],
+    [`${MOD}Shift S`, 'Back up the book to a file'],
     ['?', 'This list'],
   ]],
 ];
@@ -4546,12 +4546,12 @@ const btnMore = document.getElementById('btnMore');
 const menuEl = document.getElementById('menu');
 const menuBtn = act => menuEl.querySelector(`[data-act="${act}"]`);
 /* one erase line per page of the open spread that has writing on it */
-const eraseLabel = n => `${!pages[n].t || !hasOthers(n) ? 'Erase' : hasMine(n) ? 'Erase my ink on' : 'Only another hand on'} page ${n + 1}`;
+const eraseLabel = n => !pages[n].t || !hasOthers(n) ? `Erase page ${n + 1}` : hasMine(n) ? `Erase my part of page ${n + 1}` : `Page ${n + 1}: not your writing`;
 function openMenu(){
   closeSpells();
-  const books = menuBtn('books');
-  books.hidden = !sharingOn;
-  books.querySelector('span').textContent = shelf ? shelf.label() : 'My own book';
+  const share = menuBtn('share');
+  share.hidden = !sharingOn;
+  share.querySelector('span').textContent = shelf ? shelf.note() : 'Send the book to a friend';
   const list = eraseTargets(), one = menuBtn('erase'), two = menuBtn('erase2');
   [one, two].forEach((b, i)=>{
     const n = list[i];
@@ -4575,7 +4575,7 @@ menuEl.addEventListener('click', e=>{
   if(!b || b.disabled) return;
   closeMenu();
   const page = ()=> erasePages([+b.dataset.page]);
-  ({ erase: page, erase2: page, restore: restoreErased, export: exportFile, exportText, spells: openSpells, books: ()=> shelf && shelf.open() })[b.dataset.act]();
+  ({ erase: page, erase2: page, restore: restoreErased, exportText, spells: openSpells, share: ()=> shelf && shelf.open() })[b.dataset.act]();
 });
 addEventListener('pointerdown', e=>{
   if(!menuEl.hidden && !menuEl.contains(e.target) && !btnMore.contains(e.target)) closeMenu();

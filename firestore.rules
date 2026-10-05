@@ -2,6 +2,7 @@ rules_version = '2';
 // Liber Arcanum shared books. Paste into Firebase console > Firestore Database > Rules > Publish.
 // A book is read and written only by its members. One joins with the invite code the owner made.
 // Each member writes only the ink docs named after their own uid, so nobody can erase another's ink.
+// Each person can make at most three books.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -11,6 +12,18 @@ service cloud.firestore {
     }
     function isOwner(book) { return signedIn() && get(bookDoc(book)).data.owner == request.auth.uid; }
     function goodName(d, max) { return d.name is string && d.name.size() >= 1 && d.name.size() <= max; }
+    // how many books a person has made; it only ever counts up, to three
+    function userDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function madeBefore() { return exists(userDoc()) ? get(userDoc()).data.made : 0; }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['made'])
+        && request.resource.data.made is int
+        && request.resource.data.made == (resource == null ? 0 : resource.data.made) + 1
+        && request.resource.data.made <= 3;
+    }
 
     // each person's own list of the books they belong to
     match /users/{uid}/books/{book} {
@@ -22,7 +35,9 @@ service cloud.firestore {
 
     match /books/{book} {
       allow read: if isMember(book);
+      // a book is made in one batch with the count going up by one, so nobody makes more than three
       allow create: if signedIn()
+        && getAfter(userDoc()).data.made == madeBefore() + 1
         && request.resource.data.keys().hasOnly(['name', 'owner', 'at'])
         && request.resource.data.owner == request.auth.uid
         && goodName(request.resource.data, 60);

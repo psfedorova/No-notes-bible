@@ -16,6 +16,7 @@ const DEV_KEY = 'liber-arcanum.device';
 const bookKey = id => `liber-arcanum.book.${id}`;
 const inkKey = id => `liber-arcanum.ink.${id}`;
 const WRITE_MS = 1500;
+const MAX_BOOKS = 3;            // firestore.rules holds each person to the same number
 
 export const sharingOn = !!FIREBASE || EMU;
 
@@ -64,7 +65,7 @@ export function keysBetween(lo, hi, count){
 export function createShelf(api){
   let F = null, loading = null;
   let user = null, cur = null;          // cur: { id, name, owner }
-  let books = [], offBooks = null;
+  let books = [], offBooks = null, made = 0, offMade = null;
   let offInk = null, offMembers = null, offBook = null, firstSnap = true;
   let names = new Map();
   let ink = new Map(), pending = new Set(), merged = new Map(), deferred = new Set();
@@ -103,10 +104,14 @@ export function createShelf(api){
     const was = booksFor;
     user = u;
     booksFor = u ? u.uid : null;
-    if(offBooks && was !== booksFor){ offBooks(); offBooks = null; books = []; }
+    if(offBooks && was !== booksFor){ offBooks(); offMade(); offBooks = offMade = null; books = []; made = 0; }
     if(u && !offBooks){
+      offMade = F.onSnapshot(ref('users', u.uid), s=>{
+        made = s.exists() ? s.data().made|0 : 0;
+        if(!view.hidden) render();
+      }, ()=>{});
       offBooks = F.onSnapshot(F.collection(F.db, 'users', u.uid, 'books'), s=>{
-        books = s.docs.map(d => ({ id: d.id, name: d.data().name || 'Shared book', at: d.data().at }));
+        books = s.docs.map(d => ({ id: d.id, name: d.data().name || 'Our book', at: d.data().at }));
         books.sort((x, y)=> x.name.localeCompare(y.name));
         if(!view.hidden) render();
       }, ()=>{});
@@ -114,7 +119,7 @@ export function createShelf(api){
     if(cur && (!u || u.uid !== cur.uid)){
       leaveBook();
       api.usePersonal();
-      api.toast(u ? 'YOUR OWN BOOK' : 'SIGNED OUT · YOUR OWN BOOK', 2200);
+      api.toast(u ? 'YOUR PRIVATE BOOK' : 'SIGNED OUT · YOUR PRIVATE BOOK', 2200);
     }
     if(u && joinWant) join();
     if(was !== booksFor && !view.hidden) render();
@@ -143,7 +148,7 @@ export function createShelf(api){
   /* the cached copy shows at once; the live one comes in after it */
   function openCached(c){
     api.useBook(bookKey(c.id), c.uid);
-    cur = { id: c.id, name: c.name || 'Shared book', owner: c.owner || null, uid: c.uid };
+    cur = { id: c.id, name: c.name || 'Our book', owner: c.owner || null, uid: c.uid };
     const ic = lsGet(inkKey(c.id));
     ink = new Map(); pending = new Set(ic && Array.isArray(ic.pending) ? ic.pending : []);
     if(ic && ic.pages) Object.entries(ic.pages).forEach(([n, hands])=>{
@@ -191,7 +196,7 @@ export function createShelf(api){
     if(cur && cur.id === id) return;
     if(cur) leaveBook();
     const b = books.find(x => x.id === id);
-    openCached({ id, uid: user.uid, name: b ? b.name : 'Shared book' });
+    openCached({ id, uid: user.uid, name: b ? b.name : 'Our book' });
     openLive();
   }
   function goPersonal(){
@@ -331,7 +336,13 @@ export function createShelf(api){
     const me = user.uid, id = F.doc(F.collection(F.db, 'books')).id, code = randomId(32);
     const carry = bring ? api.personalPages() : [];
     try{
-      await F.setDoc(ref('books', id), { name, owner: me, at: F.serverTimestamp() });
+      const count = await F.getDoc(ref('users', me));
+      const n = count.exists() ? count.data().made|0 : 0;
+      if(n >= MAX_BOOKS){ made = n; render(); return; }
+      const batch = F.writeBatch(F.db);
+      batch.set(ref('books', id), { name, owner: me, at: F.serverTimestamp() });
+      batch.set(ref('users', me), { made: n + 1 });
+      await batch.commit();
       await F.setDoc(ref('books', id, 'members', me), { name: firstName(user), code: '', at: F.serverTimestamp() });
       await F.setDoc(ref('books', id, 'invite', 'code'), { code });
       await F.setDoc(ref('users', me, 'books', id), { name, at: F.serverTimestamp() });
@@ -351,7 +362,7 @@ export function createShelf(api){
     saveInk();
     openLive();
     upload();
-    show('invite', { code });
+    show('share');
   }
   async function inviteLink(rotate){
     await firebase();
@@ -372,7 +383,7 @@ export function createShelf(api){
       const mine = await F.getDoc(ref('books', want.id, 'members', me)).catch(()=>null);
       if(!(mine && mine.exists())) await F.setDoc(ref('books', want.id, 'members', me), { name: firstName(user), code: want.code, at: F.serverTimestamp() });
       const b = await F.getDoc(ref('books', want.id));
-      const name = b.exists() ? b.data().name : 'Shared book';
+      const name = b.exists() ? b.data().name : 'Our book';
       await F.setDoc(ref('users', me, 'books', want.id), { name, at: F.serverTimestamp() });
       if(cur) leaveBook();
       openCached({ id: want.id, uid: me, name, owner: b.exists() ? b.data().owner : null });
@@ -384,15 +395,15 @@ export function createShelf(api){
     }
   }
 
-  /* ---------- the Books card ---------- */
+  /* ---------- the Share card: share the open book, switch between books ---------- */
   const view = document.getElementById('shelf');
   const body = view.querySelector('.body');
-  let mode = 'list', modeData = null;
+  let mode = 'share';
   view.addEventListener('pointerdown', e=>{ if(e.target === view) close(); });
   view.querySelector('.close').addEventListener('click', ()=> close());
   view.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key === 'Escape'){ e.preventDefault(); close(); } });
-  function show(m, data){ mode = m; modeData = data || null; view.hidden = false; api.blurQuill(); render(); }
-  function close(){ view.hidden = true; mode = 'list'; api.focusQuill(); }
+  function show(m){ mode = m; view.hidden = false; api.blurQuill(); render(); }
+  function close(){ view.hidden = true; mode = 'share'; api.focusQuill(); }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if(cls) e.className = cls; if(text !== undefined) e.textContent = text; return e; };
   function btn(text, cls, fn){
     const b = el('button', 'btn' + (cls ? ' ' + cls : ''), text);
@@ -402,14 +413,14 @@ export function createShelf(api){
   function others(){
     if(!cur || !user) return '';
     const n = [...names.entries()].filter(([u]) => u !== user.uid).map(([, v]) => v);
-    return n.length ? `with ${n.join(', ')}` : 'nobody has joined yet';
+    return n.length ? `with ${n.join(', ')}` : 'waiting for a friend';
   }
+  const TITLES = { share: 'SHARE THE BOOK', join: 'AN INVITATION', badInvite: 'AN INVITATION' };
   function render(){
     body.textContent = '';
-    const h = el('h2', null, mode === 'join' || mode === 'badInvite' ? 'AN INVITATION' : mode === 'invite' ? 'INVITE' : mode === 'new' ? 'A NEW SHARED BOOK' : 'BOOKS');
-    body.appendChild(h);
-    if(!F && mode !== 'join'){ body.appendChild(el('p', 'sub', 'Opening the shelf…')); firebase().then(()=>{ if(!view.hidden) render(); }).catch(()=>{ body.lastChild.textContent = 'The shelf could not be reached. Check the connection'; }); return; }
-    ({ list: renderList, new: renderNew, invite: renderInvite, join: renderJoin, badInvite: renderBad })[mode]();
+    body.appendChild(el('h2', null, TITLES[mode]));
+    if(!F && mode !== 'join'){ body.appendChild(el('p', 'sub', 'Loading…')); firebase().then(()=>{ if(!view.hidden) render(); }).catch(()=>{ body.lastChild.textContent = 'No connection. Try again later'; }); return; }
+    ({ share: renderShare, join: renderJoin, badInvite: renderBad })[mode]();
   }
   function bookRow(title, sub, on, fn){
     const b = el('button', 'book' + (on ? ' on' : ''));
@@ -419,75 +430,63 @@ export function createShelf(api){
     b.addEventListener('click', async ()=>{ await fn(); render(); });
     return b;
   }
-  function renderList(){
-    const list = el('div', 'list');
-    list.appendChild(bookRow('My own book', 'kept in this browser only', !cur, async ()=> goPersonal()));
-    books.forEach(b => list.appendChild(bookRow(b.name, cur && cur.id === b.id ? others() : 'shared book', cur && cur.id === b.id, ()=> openBook(b.id))));
-    body.appendChild(list);
+  /* the private book is shared by making a shared copy of it, which opens */
+  function renderShare(){
     const acts = el('div', 'acts');
-    if(user){
-      if(cur) acts.appendChild(btn('Invite someone to this book', 'main', async ()=> show('invite')));
-      acts.appendChild(btn('New shared book', cur ? '' : 'main', async ()=> show('new')));
+    if(!user){
+      body.appendChild(el('p', 'sub', 'Your friend gets a link, opens the book and writes in it with you. Each of you can erase only your own writing'));
+      acts.appendChild(btn('Sign in with Google to share', 'main', signIn));
+      body.appendChild(acts);
+      return;
+    }
+    if(cur) renderLink(acts);
+    else if(made >= MAX_BOOKS){
+      body.appendChild(el('p', 'sub', `You have made ${MAX_BOOKS} shared books, the most there can be. Open one of them below to share it`));
     }else{
-      body.appendChild(el('p', 'sub', 'Sign in with Google to write one book together with someone you invite'));
-      acts.appendChild(btn('Sign in with Google', 'main', signIn));
+      body.appendChild(el('p', 'sub', 'Your friend gets a link, opens the book and writes in it with you. Each of you can erase only your own writing'));
+      acts.appendChild(btn('Get a link', 'main', ()=> createBook(`${firstName(user)}’s book`, true)));
+      body.appendChild(acts);
     }
-    body.appendChild(acts);
-    if(user){
-      const who = el('p', 'who', `Signed in as ${firstName(user)} · `);
-      const out = el('button', null, 'Sign out');
-      out.addEventListener('click', async ()=>{ flush(); await F.signOut(F.au); render(); });
-      who.appendChild(out);
-      body.appendChild(who);
+    if(books.length){
+      body.appendChild(el('h3', null, 'Your books'));
+      const list = el('div', 'list');
+      list.appendChild(bookRow('Private book', 'only you', !cur, async ()=> goPersonal()));
+      books.forEach(b => list.appendChild(bookRow(b.name, cur && cur.id === b.id ? others() : 'shared', cur && cur.id === b.id, ()=> openBook(b.id))));
+      body.appendChild(list);
     }
+    const who = el('p', 'who', `${firstName(user)} · `);
+    const out = el('button', null, 'Sign out');
+    out.addEventListener('click', async ()=>{ flush(); await F.signOut(F.au); render(); });
+    who.appendChild(out);
+    body.appendChild(who);
   }
-  function renderNew(){
-    body.appendChild(el('p', 'sub', 'Only the people you invite can open it, and each of you can erase only your own ink'));
-    const name = el('input'); name.type = 'text'; name.maxLength = 60; name.value = 'Our book'; name.setAttribute('aria-label', 'Name of the book');
-    body.appendChild(name);
-    const mine = api.personalPages().filter(p => p.a.includes(api.personalHand));
-    let bring = null;
-    if(mine.length){
-      const lab = el('label', 'check');
-      bring = el('input'); bring.type = 'checkbox'; bring.checked = true;
-      lab.appendChild(bring);
-      lab.appendChild(el('span', null, `Bring the ${mine.length === 1 ? 'page' : mine.length + ' pages'} I wrote in my own book`));
-      body.appendChild(lab);
-    }
-    const acts = el('div', 'acts');
-    acts.appendChild(btn('Make the book', 'main', ()=> createBook(name.value.trim().slice(0, 60) || 'Our book', !!(bring && bring.checked))));
-    acts.appendChild(btn('Back', '', async ()=> show('list')));
-    body.appendChild(acts);
-    setTimeout(()=> name.select(), 50);
-  }
-  async function renderInvite(){
-    body.appendChild(el('p', 'sub', 'Send this link to the person you will write with. They open it and sign in with Google'));
-    const box = el('div', 'link', 'Making the link…');
+  async function renderLink(acts){
+    body.appendChild(el('p', 'sub', 'Send this link to a friend. They open it, sign in with Google and write with you'));
+    const box = el('div', 'link', 'Making a link…');
     body.appendChild(box);
-    const acts = el('div', 'acts');
     body.appendChild(acts);
-    const link = await inviteLink(false);
-    if(!link){ box.textContent = 'Only the one who made the book can make its link'; acts.appendChild(btn('Back', '', async ()=> show('list'))); return; }
+    const id = cur.id, link = await inviteLink(false);
+    if(!cur || cur.id !== id) return;
+    if(!link){ box.textContent = 'Only the book’s creator can make a link'; return; }
     box.textContent = link;
-    if(navigator.share) acts.appendChild(btn('Send the link', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'Write in our book with me', url: link }); }catch(e){} }));
-    acts.appendChild(btn('Copy the link', navigator.share ? '' : 'main', async ()=>{
+    if(navigator.share) acts.appendChild(btn('Send', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'Write in our book with me', url: link }); }catch(e){} }));
+    acts.appendChild(btn('Copy link', navigator.share ? '' : 'main', async ()=>{
       try{ await navigator.clipboard.writeText(link); api.toast('LINK COPIED', 1600); }catch(e){ api.toast('SELECT THE LINK AND COPY IT', 2000); }
     }));
-    if(cur && user && cur.owner === user.uid) acts.appendChild(btn('Make a new link (the old one stops working)', '', async ()=>{
+    if(user && cur.owner === user.uid) acts.appendChild(btn('Make a new link (the old one stops working)', 'minor', async ()=>{
       const l = await inviteLink(true);
       if(l){ box.textContent = l; api.toast('NEW LINK MADE', 1600); }
     }));
-    acts.appendChild(btn('Done', '', async ()=> show('list')));
   }
   function renderJoin(){
-    body.appendChild(el('p', 'sub', 'Someone has invited you to write a book together. Sign in with Google to open it'));
+    body.appendChild(el('p', 'sub', 'You are invited to write a book together'));
     const acts = el('div', 'acts');
-    acts.appendChild(btn('Sign in with Google and join', 'main', async ()=>{ await firebase(); if(user) await join(); else await signIn(); }));
+    acts.appendChild(btn('Sign in with Google', 'main', async ()=>{ await firebase(); if(user) await join(); else await signIn(); }));
     acts.appendChild(btn('Not now', '', async ()=>{ joinWant = null; close(); }));
     body.appendChild(acts);
   }
   function renderBad(){
-    body.appendChild(el('p', 'sub', 'This invitation no longer works. Ask for a new link'));
+    body.appendChild(el('p', 'sub', 'This link no longer works. Ask for a new one'));
     const acts = el('div', 'acts');
     acts.appendChild(btn('Close', 'main', async ()=> close()));
     body.appendChild(acts);
@@ -514,10 +513,10 @@ export function createShelf(api){
 
   return {
     start, sync, flush,
-    open: ()=> show('list'),
+    open: ()=> show('share'),
     isOpen: ()=> !view.hidden,
     close,
-    label: ()=> cur ? cur.name : 'My own book',
+    note: ()=> cur ? [cur.name, others()].filter(Boolean).join(', ') : 'Send the book to a friend',
     name: h => names.get(h) || null,
     shared: ()=> !!cur,
     ...(EMU ? { test: {
