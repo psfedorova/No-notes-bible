@@ -116,14 +116,19 @@ const fontById = id => FONTS.find(f=>f.id===id) || FONTS[0];
 const capFont = (f, size) => `${f.capWeight || 400} ${Math.round(size)}px ${f.capCss || f.css}, ${f.css}, serif`;
 const fontCss = (f, size, weight) => `${f.style==='italic'?'italic ':''}${weight||f.weight} ${Math.round(size)}px ${f.css}, "Cormorant Garamond", serif`;
 
+/* a phone gets the 4k forest with its depth at the same size (6144 is past the texture
+   limit of many phones), the light and the leather at 1k: the leather is dyed down to
+   1024 anyway, and the light only feeds the blurred reflections */
+const LEA = HI_RES ? '2k' : '1k';
 const ASSETS = {
   forest: HI_RES ? 'assets/forest/forest.jpg' : 'assets/forest/forest_4k.jpg',
-  forestDepth: 'assets/forest/depth.png', forestWater: 'assets/forest/water.png', forestLight: 'assets/forest/light.hdr',
+  forestDepth: HI_RES ? 'assets/forest/depth.png' : 'assets/forest/depth_4k.png', forestWater: 'assets/forest/water.png',
+  forestLight: HI_RES ? 'assets/forest/light.hdr' : 'assets/forest/light_1k.hdr',
   forestBack: 'assets/forest/back.jpg', forestBackDepth: 'assets/forest/back_depth.png', forestNear: 'assets/forest/near.json',
   brook: 'assets/audio/forest_brook.wav', magicBed: 'assets/audio/magic_forest.wav',
   twinkles: ['assets/audio/twinkle_a.mp3', 'assets/audio/twinkle_b.mp3', 'assets/audio/twinkle_c.mp3'],
-  leaAlbedo: 'assets/leather/brown_leather_albedo_2k.jpg', leaNor: 'assets/leather/brown_leather_nor_gl_2k.jpg',
-  leaRough: 'assets/leather/brown_leather_rough_2k.jpg',
+  leaAlbedo: `assets/leather/brown_leather_albedo_${LEA}.jpg`, leaNor: `assets/leather/brown_leather_nor_gl_${LEA}.jpg`,
+  leaRough: `assets/leather/brown_leather_rough_${LEA}.jpg`,
   goldFront: 'models/gold_front.glb?v=2', goldBack: 'models/gold_back.glb?v=2',
   maskFront: 'models/gold_front_mask.png?v=2', maskBack: 'models/gold_back_mask.png?v=2',
   rock: 'models/rock.glb?v=2',
@@ -145,7 +150,10 @@ measureViewport();
    ==========================================================================*/
 const canvasEl = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: false, alpha: false, powerPreference: 'high-performance' });
-const DPR = Math.min(devicePixelRatio, 2);
+/* a phone starts at 1.5 device pixels to a CSS pixel and steps down while its frames run
+   slow (adaptPixels, 15. loop); the post passes and the forest are what fill its GPU */
+const DPR_MAX = Math.min(devicePixelRatio, HI_RES ? 2 : 1.5);
+let DPR = DPR_MAX;
 renderer.setPixelRatio(DPR);
 renderer.setSize(VW, VH, false);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -153,6 +161,11 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.04;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+/* the shadow maps are drawn again only when something casting one has moved: the book
+   (bookRoot's place) or its leaves and boards (layout); the boulder never moves */
+renderer.shadowMap.autoUpdate = false;
+let shadowDirty = true;
+const shadowKey = new Float32Array(16);
 setMaxAniso(renderer.capabilities.getMaxAnisotropy());
 
 const scene = new THREE.Scene();
@@ -307,7 +320,7 @@ class BeamPass extends Pass {
           if(disc <= 0.0 || a < 1e-6) return;
           float sq = sqrt(disc), t0 = max((-b - sq)/a, 0.0), t1 = min((-b + sq)/a, tEnd);
           if(t1 <= t0) return;
-          const int N = 32;
+          const int N = ${HI_RES ? 32 : 14};
           float dt = (t1 - t0)/float(N);
           float jit = fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
           vec2 sway = vec2(sin(uTime*0.13), cos(uTime*0.11))*0.006;
@@ -378,11 +391,16 @@ const beamMotes = (()=>{
 })();
 
 /* post: bloom for the gilt and the magic, then a warm grade */
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(VW*DPR, VH*DPR, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(VW*DPR, VH*DPR) }));
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(VW*DPR, VH*DPR, { type: THREE.HalfFloatType, samples: HI_RES ? 4 : 0, depthTexture: new THREE.DepthTexture(VW*DPR, VH*DPR) }));
+/* the second target's clone shares the first's depth source, so the beam would read the
+   depth the pass is drawing into; without MSAA in between, Safari draws nothing then */
+composer.renderTarget2.depthTexture = new THREE.DepthTexture(VW*DPR, VH*DPR);
 composer.setPixelRatio(DPR);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new BeamPass());
 const bloom = new UnrealBloomPass(new THREE.Vector2(VW, VH), 0.34, 0.6, 0.9);
+/* the glow is soft anyway: a phone blurs it from a sixteenth of the pixels */
+if(!HI_RES){ const setSize = bloom.setSize.bind(bloom); bloom.setSize = (w, h)=>setSize(w/4, h/4); }
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const gradePass = new ShaderPass({
@@ -1521,13 +1539,13 @@ const pageFont = n => fontById(pages[n].f || defaultFont);
 const pageMaterial = canvas => new THREE.MeshStandardMaterial({
   map: tex(canvas, {srgb:true, wrap:false}), normalMap: parch.normalTex,
   normalScale: new THREE.Vector2(0.22,0.22), roughness: 1, metalness: 1,
-  roughnessMap: gilt().pbr, metalnessMap: gilt().pbr
+  roughnessMap: gilt().pbr, metalnessMap: gilt().pbr, vertexColors: true
 });
 /* n = -2 / -1: an unnumbered recto / verso */
 const blankMat = [pageMaterial(pageBackground(-2)), pageMaterial(pageBackground(-1))];
 
 const pageCache = new Map();          // n -> { bg, canvas, glow, tex, glowTex, mat, used, lay }
-const CACHE_MAX = HI_RES ? 10 : 12;
+const CACHE_MAX = 12;
 function pageEntry(n){
   let e = pageCache.get(n);
   if(!e){
@@ -1710,7 +1728,8 @@ const GEM_GLSL = n => `
   }
   vec3 gemTrace(out float fIn){
     vec3 V = normalize(vGemP - vGemC);
-    vec3 N = normalize(cross(dFdx(vGemP), dFdy(vGemP)));
+    vec3 Nc = cross(dFdx(vGemP), dFdy(vGemP));
+    vec3 N = dot(Nc, Nc) > 1e-24 ? normalize(Nc) : -V;
     if(dot(N, V) > 0.0) N = -N;
     float ci = clamp(-dot(V, N), 0.0, 1.0);
     fIn = 0.077 + 0.923*pow(1.0 - ci, 5.0);
@@ -1758,7 +1777,7 @@ function gemMaterial(uni, nPlanes){
       .replace('#include <project_vertex>', '#include <project_vertex>\nvGemP = position; vGemC = (inverse(modelMatrix)*vec4(cameraPosition, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('void main() {', GEM_GLSL(nPlanes) + '\nvoid main() {')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat gemF; vec3 gemL = gemTrace(gemF); totalEmissiveRadiance += gemL*(1.0 - gemF);')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat gemF; vec3 gemL = gemTrace(gemF); if(any(isnan(gemL)) || any(isinf(gemL)) || isnan(gemF)) { gemL = vec3(0.0); gemF = 1.0; } totalEmissiveRadiance += gemL*(1.0 - gemF);')
       /* a mirror facet catching the sun is one HDR pixel the bloom blows into a square */
       .replace('#include <opaque_fragment>', 'outgoingLight *= min(1.0, 7.0/max(1e-4, max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b))));\n#include <opaque_fragment>');
   };
@@ -1775,7 +1794,7 @@ const haloMat = new THREE.ShaderMaterial({
   uniforms: { uHalo: { value: 0 } },
   vertexShader: `varying vec2 vU; void main(){ vU = uv*2.0 - 1.0; gl_Position = projectionMatrix*modelViewMatrix*vec4(position, 1.0); }`,
   fragmentShader: `varying vec2 vU; uniform float uHalo;
-    void main(){ float d = length(vU); float a = pow(smoothstep(1.0, 0.3, d), 2.2)*uHalo;
+    void main(){ float d = length(vU); float a = pow(1.0 - smoothstep(0.3, 1.0, d), 2.2)*uHalo;
       gl_FragColor = vec4(vec3(0.16, 0.36, 1.0)*a, a); }`
 });
 /* seat: how far the group's origin stands off the leather */
@@ -2134,11 +2153,14 @@ for(let i=0;i<N;i++){
   const len = PW*(1 - 0.011*rnd());
   const yb = -PH/2 + 0.009*(rnd()-0.35), yt = PH/2 - 0.009*(rnd()-0.35);
   const tint = 0.84 + rnd()*0.2;
+  /* the gutter: a page darkens as it runs down into the sewing, on both sides of
+     every leaf, so the spread reads as bound into the spine and not laid beside it */
+  const gutter = v => { const s = ((v % A_CNT) % (M+1))/M*len, f = 1 - smooth(clamp(s/0.42, 0, 1)); return 1 - 0.42*Math.pow(f, 1.6); };
   for(let v=0;v<V_CNT;v++){
-    const wallV = v >= 2*A_CNT;
-    col[v*3]   = wallV ? 0.84*tint : 1;
-    col[v*3+1] = wallV ? 0.68*tint : 1;
-    col[v*3+2] = wallV ? 0.42*tint*(0.92+rnd()*0.1) : 1;
+    const wallV = v >= 2*A_CNT, gs = wallV ? 1 : gutter(v);
+    col[v*3]   = wallV ? 0.84*tint : gs;
+    col[v*3+1] = wallV ? 0.68*tint : gs;
+    col[v*3+2] = wallV ? 0.42*tint*(0.92+rnd()*0.1) : gs;
   }
   g.setAttribute('position', new THREE.BufferAttribute(pos,3));
   g.setAttribute('normal', new THREE.BufferAttribute(nrm,3));
@@ -2211,6 +2233,7 @@ function backDir(C, i){
   _bd.x = x/l; _bd.z = z/l;
   return _bd;
 }
+const RAMP = 3.0;                  // run of a leaf's rise out of the sewing, per unit of stack thickness
 function restParams(C, i, left, H){
   let rise, q;
   if(!left){
@@ -2220,7 +2243,11 @@ function restParams(C, i, left, H){
     rise = (EPS + (i+0.5)*LT) - ((H.x-C.ex)*C.nx + (H.z-C.ez)*C.nz);
     q = C.sigma > 0.5 ? i/C.sigma : 0;
   }
-  const ell = clamp(0.45 + 2.2*Math.abs(rise), 0.45, 0.8*PW);
+  /* every leaf of a stack rises out of the sewing over the same run, set by how thick
+     the stack is: a leaf higher up then climbs more steeply all along and stays above
+     the one below it, instead of their ramps crossing and flickering through each other */
+  const thick = (left ? C.sigma : N - C.sigma)*LT;
+  const ell = clamp(0.45 + RAMP*Math.max(thick, Math.abs(rise)), 0.45, 0.8*PW);
   /* a leaf that has just landed shivers once before it lies still */
   const t = leaves[i].flt, flutter = t < 0.75 ? 0.08*Math.exp(-t*6)*Math.abs(Math.sin(t*16)) : 0;
   return { phi0: solvePhi(rise/ell), ell, fan: FAN*clamp(q,0,1)*C.b*C.b + flutter, left, theta: C.theta };
@@ -2342,6 +2369,7 @@ function layout(force){
   const sig = `${st.theta.toFixed(5)}|${sigma.toFixed(5)}|${fl ? fl.curl.toFixed(4)+','+fl.gy.toFixed(3) : ''}|${rf ? rf.tau.toFixed(5) : ''}|${fluttering.toFixed(3)}`;
   if(!force && sig === lastSig) return;
   lastSig = sig;
+  shadowDirty = true;
   const C = layoutCtx(sigma, st.theta);
 
   backGrp.position.set(C.xb, 0, ZB);
@@ -3042,7 +3070,7 @@ function stepSmoke(dt){
     if(smokeWait[s] > 0){ smokeWait[s] -= dt; smokeAlpha[s] = 0; continue; }
     if(smokeAge[s] >= smokeLife[s]){ smokeAlpha[s] = 0; continue; }
     smokeAge[s] += dt;
-    const q = s*3, t = smokeAge[s]/smokeLife[s], ph = smokeSeed[s]*6.283;
+    const q = s*3, t = Math.min(smokeAge[s]/smokeLife[s], 1), ph = smokeSeed[s]*6.283;
     smokeVel[q] *= drag; smokeVel[q+2] *= drag;
     const gust = smokeAge[s]*0.5;
     smokePos[q]   += (smokeVel[q] + SMOKE_WIND[0]*gust + Math.sin(smokeAge[s]*1.6 + ph)*0.04)*dt;
@@ -3704,7 +3732,7 @@ canvasEl.addEventListener('pointerdown', e=>{
   if(spinAnim){ spinAnim = null; spinGoal.copy(spinGrp.quaternion); }
   const hit = e.button === 2 ? null : pickAt(e.clientX, e.clientY);
   g = { id:e.pointerId, sx:e.clientX, sy:e.clientY, px:e.clientX, py:e.clientY, t:performance.now(),
-        moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1,
+        moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1, q0: spinGoal.clone(), o0: [orbit.azTo, orbit.elTo],
         slop: THRESH[e.pointerType] || THRESH.mouse };
 });
 canvasEl.addEventListener('pointermove', e=>{
@@ -3732,6 +3760,15 @@ canvasEl.addEventListener('pointermove', e=>{
        half in any direction; dragging it up or down, or the open book anywhere else,
        looks round instead of spinning the open book away from the reader */
     const sideways = Math.abs(e.clientX - g.sx) > Math.abs(e.clientY - g.sy)*0.8;
+    /* a sweep the other way from the page it starts on (leftward on a left page, as on a
+       phone, which shows one page while writing) still turns: the finger cannot hold
+       that leaf, so the leaf it means turns over by itself */
+    const back = e.clientX > g.sx;
+    if(!g.force && h && h.type === 'page' && sideways && (h.side === 'left') !== back){
+      g.mode = 'swept';
+      flip(back ? -1 : 1);
+      return;
+    }
     if(!g.force && h && h.type === 'page' && (h.s > PW*0.5 || sideways)) startTurn(h);
     else if(!g.force && h && h.type === 'front' && (st.open ? (h.inner && st.k === 0) : true) && h.outer && !st.flight && !st.riffle) startCover(h);
     else if(!g.force && (!h || st.open)){ g.mode = 'orbit'; st.focusTo = 0; dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
@@ -3778,7 +3815,15 @@ function endPointer(e, cancelled){
   rotating = false;
   document.body.classList.remove('grabbing');
   if(gg.mode === 'turn'){ endTurn(cancelled); return; }
-  if(gg.mode === 'cover'){ endCover(cancelled); return; }
+  /* a quick press that only slipped a few pixels was meant as a click */
+  const tap = !cancelled && performance.now() - gg.t < 350 && gg.moved < 18;
+  if(gg.mode === 'cover'){ if(tap && !st.open) click(gg.hit); else endCover(cancelled); return; }
+  if((gg.mode === 'rot' || gg.mode === 'orbit') && tap){
+    inertia = false; orbit.coast = false; angVel.x = angVel.y = 0; orbit.vx = orbit.vy = 0;
+    if(gg.mode === 'rot') spinGoal.copy(gg.q0); else { orbit.azTo = gg.o0[0]; orbit.elTo = gg.o0[1]; }
+    click(gg.hit);
+    return;
+  }
   if(gg.mode === 'rot'){
     if(performance.now() - (gg.lt||0) < 70 && Math.hypot(angVel.x, angVel.y) > 0.25) inertia = true;
     return;
@@ -3787,6 +3832,7 @@ function endPointer(e, cancelled){
     if(performance.now() - (gg.lt||0) < 70 && Math.hypot(orbit.vx, orbit.vy) > 0.2) orbit.coast = true;
     return;
   }
+  if(gg.mode === 'swept') return;
   if(!cancelled) click(gg.hit);
 }
 canvasEl.addEventListener('pointerup', e=>endPointer(e, false));
@@ -3854,13 +3900,16 @@ function endCover(cancelled){
   setOpen(open, true);
 }
 
-/* a click on any part of the book lays it down open and leans in to write */
+/* turning is done by dragging, so a click on the book, however it was left turned,
+   means writing: it swings back square to the reader, closed or open, and the quill
+   comes up where it was last written or where the click fell on a page */
 const EDGE_TURN = 0.84;
 function click(hit){
   if(!hit){ if(writing) exitWriting(); else st.focusTo = 0; return; }
+  if(!st.open){ writePose(); return; }
   if(hit.type === 'page' && st.open){
-    /* a click by the fore edge turns the leaf; the title page is only leaned in to */
-    if(hit.s > PW*EDGE_TURN){ flip(hit.side === 'right' ? 1 : -1); return; }
+    /* a click by the fore edge of a square book turns the leaf; the title page is only leaned in to */
+    if(hit.s > PW*EDGE_TURN && atHome() && !spinAnim){ flip(hit.side === 'right' ? 1 : -1); return; }
     if(hit.n === 0){ if(writing) exitWriting(); st.focusSide = 1; st.focusTo = 1; return; }
     const e = pageEntry(hit.n);
     if(!e.lay) paintPage(hit.n);
@@ -3922,7 +3971,7 @@ function hover(x, y){
     b.remove('cur-turn','cur-text','cur-pointer');
     if(!h) return;
     if(h.type === 'page') b.add(h.s > PW*EDGE_TURN ? 'cur-turn' : h.n === 0 ? 'cur-pointer' : 'cur-text');
-    else if(h.type === 'front' && !st.open) b.add('cur-pointer');
+    else if(!st.open) b.add('cur-pointer');
   });
 }
 
@@ -4079,7 +4128,12 @@ function stepFlight(dt){
   const dir = Math.abs(fl.vel) > 0.05 ? Math.sign(fl.vel) : (fl.j < st.k ? -1 : 1);
   const prog = dir > 0 ? fl.p : 1 - fl.p;
   const target = fl.dragging ? 0.55*Math.sin(Math.PI*fl.p)*dir : 0.5*Math.sin(2*Math.PI*prog)*dir;
-  fl.curl = lerp(fl.curl, target, 1 - Math.exp(-dt*10));
+  fl.c0 = lerp(fl.c0 ?? fl.curl, target, 1 - Math.exp(-dt*10));
+  /* the curl lags its target, so over the last stretch it is drawn out to nothing:
+     the leaf comes down flat and lands without snapping out of a twist */
+  const envT = fl.dragging ? 1 : smooth(clamp((1 - prog)/0.25, 0, 1));
+  fl.env = fl.env === undefined ? envT : lerp(fl.env, envT, 1 - Math.exp(-dt*18));
+  fl.curl = fl.c0*fl.env;
 }
 
 /* ============================================================================
@@ -5007,6 +5061,7 @@ function rockMaterial(img){
    keeping only the strands tall enough to reach it, darker toward the roots */
 function mossShells(rock, u, count){
   const grp = new THREE.Group();
+  grp.name = 'moss';
   for(let i=1;i<=count;i++){
     const t = i/count;
     const m = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, envMapIntensity: 0.6 });
@@ -5055,33 +5110,42 @@ async function decodeDepth(url, smooth){
   if(!res.ok) throw new Error('Could not load ' + url + ' (' + res.status + ')');
   const blob = await res.blob();
   const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
-  const c = cv(bmp.width, bmp.height), x = c.getContext('2d', { willReadFrequently: true });
-  x.drawImage(bmp, 0, 0);
-  const d = x.getImageData(0, 0, bmp.width, bmp.height).data, n = bmp.width*bmp.height;
-  const out = new Uint16Array(n);
-  /* stored top row first; textures read bottom row first */
-  for(let y=0;y<bmp.height;y++){
-    const src = (bmp.height - 1 - y)*bmp.width, dst = y*bmp.width;
-    for(let i=0;i<bmp.width;i++){ const k = (src + i)*4; out[dst + i] = THREE.DataUtils.toHalfFloat((d[k]*256 + d[k+1])/65535); }
+  const w = bmp.width, h = bmp.height, q = new Uint16Array(w*h);
+  /* read through a strip: iOS Safari refuses any canvas over 4096 x 4096 pixels */
+  const band = Math.max(1, Math.min(h, (4194304/w)|0));
+  const c = cv(w, band), x = c.getContext('2d', { willReadFrequently: true });
+  for(let y0=0;y0<h;y0+=band){
+    const rows = Math.min(band, h - y0);
+    x.clearRect(0, 0, w, band);
+    x.drawImage(bmp, 0, y0, w, rows, 0, 0, w, rows);
+    const d = x.getImageData(0, 0, w, rows).data;
+    for(let i=0, o=y0*w;i<w*rows;i++) q[o + i] = d[i*4]*256 + d[i*4 + 1];
   }
-  const t = new THREE.DataTexture(out, bmp.width, bmp.height, THREE.RedFormat, THREE.HalfFloatType);
+  bmp.close && bmp.close();
+  const out = new Uint16Array(w*h);
+  /* stored top row first; textures read bottom row first */
+  for(let y=0;y<h;y++){
+    const src = (h - 1 - y)*w, dst = y*w;
+    for(let i=0;i<w;i++) out[dst + i] = THREE.DataUtils.toHalfFloat(q[src + i]/65535);
+  }
+  const t = new THREE.DataTexture(out, w, h, THREE.RedFormat, THREE.HalfFloatType);
   /* the forest's own layer is read nearest, not filtered: a leaf against the sky must not
      blend into a surface halfway between. The layer behind only fills the strips a near
      trunk uncovers, and is read filtered, so what shows there is stretched smoothly over
      its own edges instead of breaking into blocks */
   t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter; t.needsUpdate = true;
-  if(!smooth) t.userData.soft = softDepth(d, bmp.width, bmp.height, 8);
+  if(!smooth) t.userData.soft = softDepth(q, w, h, Math.max(1, Math.round(w/768)));
   return t;
 }
 /* the canopy overhead seen as one soft surface: thousands of leaves against the sky
    leap in distance from texel to texel, and stepping aside from the capture point would
    break them into a mosaic of blocks. Averaged over a few leaves and blurred, the
    crown only bends a little as one walks round, the way a far crown does */
-function softDepth(d, w, h, k){
+function softDepth(q, w, h, k){
   const W = w/k|0, H = h/k|0, a = new Float32Array(W*H), b = new Float32Array(W*H);
   for(let y=0;y<H;y++) for(let x=0;x<W;x++){
     let s = 0;
-    for(let j=0;j<k;j++){ const row = ((H - 1 - y)*k + j)*w; for(let i=0;i<k;i++){ const q = (row + x*k + i)*4; s += d[q]*256 + d[q+1]; } }
+    for(let j=0;j<k;j++){ const row = ((H - 1 - y)*k + j)*w; for(let i=0;i<k;i++) s += q[row + x*k + i]; }
     a[y*W + x] = s/(k*k*65535);
   }
   const R = 3;
@@ -5164,7 +5228,9 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         /* past the book the lens lets the far wood go soft */
         float soft = mix(1.0, 2.6, smoothstep(150.0, 700.0, t));
         gx *= soft; gy *= soft;
-        vec4 wf = texture(tWater, uv);
+        /* read with the same gradients: along the seam an implicit fetch drops to the
+           coarsest mip, the whole stream averaged, and a line of sun glints ran over the grass */
+        vec4 wf = textureGrad(tWater, uv, gx/soft, gy/soft);
         vec3 col;
         if(wf.r > 0.02){
           /* running water: ripples of three sizes carried downstream bend what shows
@@ -5231,7 +5297,7 @@ function makeBackdrop(pano, depth, water, back, backDepth){
     material: m,
     picture: rt.texture,
     draw(){
-      const w = Math.max(1, Math.round(VW*BACKDROP_PR)), h = Math.max(1, Math.round(VH*BACKDROP_PR));
+      const pr = backdropPR(), w = Math.max(1, Math.round(VW*pr)), h = Math.max(1, Math.round(VH*pr));
       if(rt.width !== w || rt.height !== h) rt.setSize(w, h);
       march.position.copy(camera.position);
       const prev = renderer.getRenderTarget();
@@ -5242,7 +5308,8 @@ function makeBackdrop(pano, depth, water, back, backDepth){
   };
   return dome;
 }
-const BACKDROP_PR = Math.min(DPR, 1);
+/* a phone marches the forest at half its frame's pixels, the picture is hazy enough to bear it */
+const backdropPR = ()=> HI_RES ? Math.min(DPR, 1) : DPR*0.5;
 let backdrop = null;
 
 /* the near field: what grows round the boulder (ferns, flowers, grass, stones) is real
@@ -5272,6 +5339,7 @@ async function nearField(){
   list.forEach(it=>{ if(!byAsset.has(it.a)) byAsset.set(it.a, []); byAsset.get(it.a).push(it); });
   const SWAY = { fern_02: 1.0, grass_medium_02: 1.4, celandine_01: 0.6, periwinkle_plant: 0.6 };
   const grp = new THREE.Group();
+  grp.name = 'near';
   const _m = new THREE.Matrix4(), _c = new THREE.Color();
   await Promise.all([...byAsset].map(async ([a, items])=>{
     /* a plant that still will not come is left out rather than losing the whole book */
@@ -5365,7 +5433,7 @@ async function loadAssets(){
   rockGrp.position.y = ROCK_TOP;
   rock.position.set(0,0,0); rock.rotation.set(0,0,0);
   rockGrp.add(rock);
-  rockGrp.add(mossShells(rock, rock.material.userData.u, HI_RES ? 9 : 6));
+  rockGrp.add(mossShells(rock, rock.material.userData.u, HI_RES ? 9 : 4));
   const rockYaw = new THREE.Group();
   rockYaw.rotation.y = FOREST_YAW;
   rockYaw.add(rockGrp);
@@ -5468,8 +5536,12 @@ function update(dt){
     burning.forEach(n=>{
       const e = pageCache.get(n);
       if(!e){ burning.delete(n); return; }
-      paintPage(n, now);
       const lastBorn = (pages[n].born || []).reduce((a,b)=>Math.max(a, b||0), 0);
+      /* a phone sends the whole page to the GPU at most 30 times a second while letters
+         burn in, and 12 while only the caret breathes */
+      if(!HI_RES && now - (e.paintedAt || 0) < ((now - lastBorn)/1000 < GLOW_T || (pages[n].vapor && pages[n].vapor.length) ? 33 : 80)) return;
+      e.paintedAt = now;
+      paintPage(n, now);
       if(!(writing && writing.n === n) && (now - lastBorn)/1000 > GLOW_T && !(pages[n].vapor && pages[n].vapor.length)){ burning.delete(n); paintPage(n, now); }
     });
   }
@@ -5556,14 +5628,101 @@ function frame(){
   const w = innerWidth || 0, h = innerHeight || 0;
   if(w >= 2 && h >= 2 && (w !== VW || h !== VH)) onResize();
   const now = performance.now();
-  const dt = Math.min(0.05, (now-last)/1000);
+  const raw = (now-last)/1000, dt = Math.min(0.05, raw);
   last = now;
+  adaptPixels(raw);
   update(dt);
+  const m = bookRoot.matrixWorld.elements;
+  for(let i=0;i<16;i++) if(m[i] !== shadowKey[i]){ shadowKey[i] = m[i]; shadowDirty = true; }
+  renderer.shadowMap.needsUpdate = shadowDirty;
+  shadowDirty = false;
   if(backdrop) backdrop.draw();
   composer.render(dt);
+  prewarmPages(now);
 }
-function rafLoop(){ frame(); requestAnimationFrame(rafLoop); }
+/* a phone that cannot keep up draws fewer pixels: after two slow seconds it steps down,
+   after three quick ones in a row back up, only while nothing moves, since the new
+   targets take a moment to make */
+const PR_STEPS = [1, 1.25, 1.5, 2].filter(p=>p < DPR_MAX).concat(DPR_MAX);
+let prSum = 0, prN = 0, prQuick = 0;
+function adaptPixels(raw){
+  if(HI_RES) return;
+  if(document.hidden || raw > 0.5 || resting()){ prSum = 0; prN = 0; return; }
+  prSum += raw; prN++;
+  if(prSum < 2) return;
+  const avg = prSum/prN;
+  prSum = 0; prN = 0;
+  if(g || pinch || st.flight || st.riffle || coverAnim || spinAnim) return;
+  const i = PR_STEPS.indexOf(DPR);
+  let to = i;
+  if(avg > 1/32){ to = Math.max(0, i - 1); prQuick = 0; }
+  else if(avg < 1/48){ if(++prQuick >= 3){ to = Math.min(PR_STEPS.length - 1, i + 1); prQuick = 0; } }
+  else prQuick = 0;
+  if(to === i) return;
+  DPR = PR_STEPS[to];
+  renderer.setPixelRatio(DPR);
+  composer.setPixelRatio(DPR);
+  onResize();
+}
+/* the spreads either side of the one in view (or the one a closed book will open on) are
+   painted and sent to the GPU ahead, a page at a time while nothing moves, so neither a
+   turn nor the opening has to stop and paint eight pages in one frame */
+let warmAt = 0;
+function prewarmPages(now){
+  if(!booted || now - warmAt < 120 || st.flight || st.riffle || coverAnim || g || pinch) return;
+  const c = st.open ? st.k : homeSpread();
+  for(const i of [c - 1, c, c - 2, c + 1, c - 3, c + 2]){
+    if(i < 0 || i >= N) continue;
+    for(const n of [2*i, 2*i + 1]){
+      if(pageCache.has(n)) continue;
+      const e = pageEntry(n);
+      renderer.initTexture(e.tex); renderer.initTexture(e.glowTex);
+      warmAt = now;
+      return;
+    }
+  }
+}
+/* left alone, a phone draws every other frame: the water and the fireflies still move,
+   and a GPU kept cool has its full speed when a finger comes down. A touch, a key or
+   any motion of the book brings back every frame for a few seconds */
+let activeAt = 0, skipped = false;
+['pointerdown', 'pointermove', 'keydown', 'input'].forEach(t=>addEventListener(t, ()=>{ activeAt = performance.now(); }, { capture:true, passive:true }));
+function resting(){
+  return !HI_RES && performance.now() - activeAt > 2500 && !g && !pinch && !st.flight && !st.riffle
+    && !coverAnim && !spinAnim && !inertia && !orbit.coast && seek.goal === null;
+}
+function rafLoop(){
+  requestAnimationFrame(rafLoop);
+  if(resting() && (skipped = !skipped)) return;
+  frame();
+}
 setInterval(()=>{ if(document.hidden) frame(); }, 250);
+
+/* while the veil is still up: the spread the book will open on is painted and sent to the
+   GPU, and every shader is built, the hidden ones (glows, sparks) and a written page's
+   too. Left to the first opening, they froze it for a second on a phone */
+async function warmUp(){
+  const c = st.open ? st.k : homeSpread();
+  for(let i=Math.max(0, c - 2);i<=Math.min(N - 1, c + 1);i++) for(const n of [2*i, 2*i + 1]){
+    const e = pageEntry(n);
+    renderer.initTexture(e.tex); renderer.initTexture(e.glowTex);
+  }
+  layout(true);
+  const L = leaves[Math.min(N - 1, c)].mesh, mats = L.material.slice();
+  L.material[0] = pageEntry(2*Math.min(N - 1, c)).mat;
+  /* one real frame with nothing hidden and nothing culled: compile() alone keys the
+     shaders without the shadows and lights a real frame has, and builds them twice */
+  const hidden = [], culled = [];
+  scene.traverse(o=>{
+    if(!o.visible){ hidden.push(o); o.visible = true; }
+    if(o.frustumCulled){ culled.push(o); o.frustumCulled = false; }
+  });
+  try{ if(backdrop) backdrop.draw(); composer.render(0); }catch(_){}
+  hidden.forEach(o=>{ o.visible = false; });
+  culled.forEach(o=>{ o.frustumCulled = true; });
+  L.material = mats;
+  await new Promise(r=>requestAnimationFrame(()=>r()));
+}
 
 /* ============================================================================
    16. boot
@@ -5603,6 +5762,7 @@ async function boot(){
   blankMat[0].map.image = pageBackground(-2); blankMat[0].map.needsUpdate = true;
   blankMat[1].map.image = pageBackground(-1); blankMat[1].map.needsUpdate = true;
   pageCache.forEach((e,n)=>{ e.bg = pageBackground(n); paintPage(n); });
+  await warmUp();
   st.theta = st.open ? OPEN : 0;
   spinGrp.quaternion.copy(homeQuat());
   spinGoal.copy(spinGrp.quaternion);
@@ -5621,7 +5781,7 @@ async function boot(){
 }
 document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', ()=>{ pageCache.forEach((e,n)=>paintPage(n)); });
 
-window.__book = { st, orbit, leaves, pages, flip, setOpen, seekSpread, turnToPage, erasePages, restoreErased, quillTo, pour, enterWriting, exitWriting, pickAt, camera, scene, renderer, spinGrp, THREE, glideSpin, homeQuat,
+window.__book = { st, orbit, leaves, pages, composer, get backdrop(){ return backdrop; }, flip, setOpen, seekSpread, turnToPage, erasePages, restoreErased, quillTo, pour, enterWriting, exitWriting, pickAt, camera, scene, renderer, spinGrp, THREE, glideSpin, homeQuat,
   shelf: ()=> shelf,
   info(){ return { open:st.open, k:st.k, theta:st.theta, lift:+st.lift.toFixed(3), writing: writing && writing.n, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, cache: pageCache.size }; } };
 boot();
