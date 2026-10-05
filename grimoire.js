@@ -26,10 +26,12 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import {
   clamp, lerp, smooth, mulberry32, fbm, upsample, cv, normalFromHeight, tex,
   setMaxAniso, makeSpriteCanvas, makeRayAlpha, crackCanvas, fieldFromCanvas
 } from './textures.js?v=4';
+import { createShelf, sharingOn } from './shared.js?v=1';
 
 const T0 = performance.now();
 const easeIO = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
@@ -101,15 +103,17 @@ const ROCK_TOP = 0;                // the boulder's resting dome peaks here
 const LIFT_H = 3.0;                // how high the book floats while it is turned
 const GROUND_Y = -3.4;             // the forest floor the boulder is sunk in
 
-/* one hand for the whole book: Latin in Fondamento, a calligraphic book hand,
-   Russian in Ponomar, an Old Russian half-uncial; the canvas picks per glyph
-   from the stack. Initials are Fraktur capitals, Triodion for Cyrillic. */
+/* one hand for the whole book, the title page's own: Cormorant Garamond italic,
+   the face of its motto. It cuts Latin and Cyrillic as one design, so Russian
+   and English share every metric and burn in exactly alike. Initials are the
+   upright capitals of the same face. lead keeps the old line pitch, so pages
+   written before keep their line count */
 const FONTS = [
-  { id:'chronicle', name:'Chronicle', css:'"Fondamento", "Ponomar"', capCss:'"UnifrakturMaguntia", "Triodion"',
-    weight:400, style:'normal', size:42 }
+  { id:'chronicle', name:'Chronicle', css:'"Cormorant Garamond"', capCss:'"Cormorant Garamond"',
+    weight:500, style:'italic', size:44, lead:1.315, capWeight:600 }
 ];
 const fontById = id => FONTS.find(f=>f.id===id) || FONTS[0];
-const capFont = (f, size) => `${Math.round(size)}px ${f.capCss || f.css}, ${f.css}, serif`;
+const capFont = (f, size) => `${f.capWeight || 400} ${Math.round(size)}px ${f.capCss || f.css}, ${f.css}, serif`;
 const fontCss = (f, size, weight) => `${f.style==='italic'?'italic ':''}${weight||f.weight} ${Math.round(size)}px ${f.css}, "Cormorant Garamond", serif`;
 
 const ASSETS = {
@@ -161,7 +165,7 @@ camera.position.set(0, 8, 9);
    reader faces the sun through the trees, the way the reference is lit */
 const FOREST_YAW = 0.5;
 const SUN_DIR = new THREE.Vector3(0.45, 0.55, -0.70).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), FOREST_YAW);
-const sun = new THREE.DirectionalLight(0xfff2e2, 2.3);
+const sun = new THREE.DirectionalLight(0xfff2e2, 1.6);
 sun.position.copy(SUN_DIR).multiplyScalar(22);
 sun.castShadow = true;
 sun.shadow.mapSize.set(HI_RES ? 4096 : 2048, HI_RES ? 4096 : 2048);
@@ -174,10 +178,39 @@ sun.shadow.radius = 3;
 scene.add(sun, sun.target);
 const gemLight = new THREE.PointLight(0x5aa0ff, 0.5, 2.2, 2);
 scene.add(gemLight);
-/* a shaft of sun through the canopy, landing on the right-hand page */
-const beam = new THREE.SpotLight(0xffe2b8, 1.8, 0, 0.15, 1.0, 0);
-beam.position.copy(SUN_DIR).multiplyScalar(20).add(new THREE.Vector3(1.4, 0, -0.2));
-beam.target.position.set(1.6, 0, -0.3);
+/* a shaft of sun through a gap in the canopy, landing on the book: the book and the
+   crown of the boulder stand in a pool of light brighter than the wood round them */
+const BEAM_AT = new THREE.Vector3(0, 0.3, 0);
+const BEAM_R = 4.6;                      // its radius where it lands
+const BEAM_FROM = 34;                    // how far up the gap in the leaves is
+/* it is the forest's own sun, so the shaft runs the way every other ray in the wood
+   runs, up toward the bright gap behind the book */
+const BEAM_DIR = SUN_DIR;
+/* the gap is not round and clean: light comes through between leaves, so the shaft is
+   made of many soft rays. The pool on the book stays whole: flecks of it on the pages
+   read as stains on the parchment */
+const goboTex = (()=>{
+  const S = 256, c = cv(S, S), x = c.getContext('2d'), rnd = mulberry32(4711);
+  x.fillStyle = '#262626'; x.fillRect(0, 0, S, S);
+  for(let i=0;i<70;i++){
+    const px = rnd()*S, py = rnd()*S, r = 6 + Math.pow(rnd(), 2)*34, a = 0.25 + rnd()*0.55;
+    const g = x.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, `rgba(255,255,255,${a})`); g.addColorStop(0.55, `rgba(255,255,255,${a*0.6})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.beginPath(); x.ellipse(px, py, r, r*(0.7 + rnd()*0.3), rnd()*3, 0, 7); x.fill();
+  }
+  const b = cv(S, S), y = b.getContext('2d');
+  y.filter = 'blur(3px)'; y.drawImage(c, 0, 0);
+  const t = new THREE.CanvasTexture(b);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const beam = new THREE.SpotLight(0xffeedd, 2.5, 0, Math.atan(BEAM_R*1.25/BEAM_FROM), 0.9, 0);
+beam.position.copy(BEAM_DIR).multiplyScalar(BEAM_FROM).add(BEAM_AT);
+beam.target.position.copy(BEAM_AT);
+beam.castShadow = true;
+beam.shadow.mapSize.set(HI_RES ? 2048 : 1024, HI_RES ? 2048 : 1024);
+beam.shadow.camera.near = BEAM_FROM - 12; beam.shadow.camera.far = BEAM_FROM + 12;
+beam.shadow.bias = -0.0004; beam.shadow.normalBias = 0.02; beam.shadow.radius = 4;
 scene.add(beam, beam.target);
 
 /* shafts of light falling through the canopy, all parallel to the sun */
@@ -233,10 +266,122 @@ let dust;
   scene.add(dust);
 }
 
+/* the shaft itself, seen in the forest's haze. It is a pass over the finished picture:
+   each eye ray is marched through the beam up to the first thing it meets (the depth
+   the scene left behind), so the light falls on the book, the stone and the ground and
+   passes behind them, with no surface of its own to show an edge. The haze is thin and
+   drifts, the rays are the gaps in the leaves, and it scatters forward, so it glows
+   most when one looks up it toward the sun and almost vanishes from behind */
+const beamU = {
+  uA: { value: BEAM_AT }, uD: { value: BEAM_DIR }, uSig: { value: BEAM_R*0.5 }, uLen: { value: BEAM_FROM*1.1 },
+  uTime: { value: 0 }, uK: { value: 1 }, uGobo: { value: BEAM_R*2.5 },
+  uX: { value: new THREE.Vector3() }, uY: { value: new THREE.Vector3() },
+  uCol: { value: new THREE.Color(0xfff0dc).multiplyScalar(0.05) }
+};
+beamU.uX.value.crossVectors(new THREE.Vector3(0, 1, 0), BEAM_DIR).normalize();
+beamU.uY.value.crossVectors(BEAM_DIR, beamU.uX.value).normalize();
+class BeamPass extends Pass {
+  constructor(){
+    super();
+    this.material = new THREE.ShaderMaterial({
+      uniforms: { ...beamU, tColor: { value: null }, tDepth: { value: null }, tGobo: { value: goboTex },
+        uInvProj: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `uniform sampler2D tColor, tDepth, tGobo; uniform mat4 uInvProj, uCamWorld;
+        uniform vec3 uA, uD, uX, uY, uCol; uniform float uSig, uLen, uTime, uK, uGobo; varying vec2 vUv;
+        float h31(vec3 p){ p = fract(p*0.3183099 + 0.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x + p.y + p.z)); }
+        float vn3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0 - 2.0*f);
+          return mix(mix(mix(h31(i), h31(i + vec3(1,0,0)), f.x), mix(h31(i + vec3(0,1,0)), h31(i + vec3(1,1,0)), f.x), f.y),
+                     mix(mix(h31(i + vec3(0,0,1)), h31(i + vec3(1,0,1)), f.x), mix(h31(i + vec3(0,1,1)), h31(i + vec3(1,1,1)), f.x), f.y), f.z); }
+        void main(){
+          vec4 base = texture2D(tColor, vUv);
+          gl_FragColor = base;
+          if(uK < 0.001) return;
+          float z = texture2D(tDepth, vUv).x;
+          vec4 v = uInvProj*vec4(vUv*2.0 - 1.0, z*2.0 - 1.0, 1.0); v /= v.w;
+          float tEnd = z > 0.99999 ? 800.0 : length(v.xyz);
+          vec3 ro = (uCamWorld*vec4(0.0, 0.0, 0.0, 1.0)).xyz, rd = normalize((uCamWorld*vec4(v.xyz, 0.0)).xyz);
+          vec3 w0 = ro - uA, dp = rd - uD*dot(rd, uD), wp = w0 - uD*dot(w0, uD);
+          float R = uSig*(1.0 + uLen*0.012)*3.0;
+          float a = dot(dp, dp), b = dot(dp, wp), c = dot(wp, wp) - R*R, disc = b*b - a*c;
+          if(disc <= 0.0 || a < 1e-6) return;
+          float sq = sqrt(disc), t0 = max((-b - sq)/a, 0.0), t1 = min((-b + sq)/a, tEnd);
+          if(t1 <= t0) return;
+          const int N = 32;
+          float dt = (t1 - t0)/float(N);
+          float jit = fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+          vec2 sway = vec2(sin(uTime*0.13), cos(uTime*0.11))*0.006;
+          float acc = 0.0;
+          for(int i=0;i<N;i++){
+            vec3 p = ro + rd*(t0 + (float(i) + jit)*dt);
+            vec3 q = p - uA; float s = dot(q, uD); vec3 x = q - uD*s;
+            float sig = uSig*(1.0 + max(s, 0.0)*0.012);
+            float prof = exp(-dot(x, x)/(sig*sig));
+            float leaf = 0.25 + 1.5*texture2D(tGobo, vec2(dot(x, uX), dot(x, uY))/uGobo + 0.5 + sway).r;
+            float ax = smoothstep(-8.0, -3.0, s)*(1.0 - smoothstep(uLen*0.35, uLen, s));
+            float mist = 0.45 + vn3(p*0.08 + vec3(uTime*0.03, -uTime*0.04, 0.0));
+            acc += prof*leaf*ax*mist;
+          }
+          float cs = dot(rd, uD);
+          float hg = 0.3 + 0.64/pow(1.36 - 1.2*cs, 1.5)*0.2;
+          gl_FragColor = vec4(base.rgb + uCol*acc*dt*hg*uK, base.a);
+        }`
+    });
+    this.quad = new FullScreenQuad(this.material);
+  }
+  render(renderer, writeBuffer, readBuffer){
+    const u = this.material.uniforms;
+    u.tColor.value = readBuffer.texture; u.tDepth.value = readBuffer.depthTexture;
+    u.uInvProj.value.copy(camera.projectionMatrixInverse); u.uCamWorld.value.copy(camera.matrixWorld);
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+}
+
+/* motes drifting in the shaft, catching the sun and going dark as they leave it */
+const BEAM_MOTES = HI_RES ? 320 : 180;
+const beamMotes = (()=>{
+  const g = new THREE.BufferGeometry(), seed = new Float32Array(BEAM_MOTES*4), rnd = mulberry32(913);
+  for(let i=0;i<BEAM_MOTES;i++){
+    seed[i*4] = Math.pow(rnd(), 1.6)*BEAM_FROM*0.55;
+    seed[i*4+1] = rnd()*Math.PI*2;
+    seed[i*4+2] = Math.sqrt(rnd())*BEAM_R*1.15;
+    seed[i*4+3] = rnd();
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(BEAM_MOTES*3), 3));
+  g.setAttribute('seed', new THREE.BufferAttribute(seed, 4));
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uA: beamU.uA, uD: beamU.uD, uSig: beamU.uSig, uTime: beamU.uTime, uK: { value: 1 }, uScale: { value: 1 } },
+    vertexShader: `attribute vec4 seed; uniform vec3 uA, uD; uniform float uSig, uTime, uScale; varying float vA;
+      void main(){
+        vec3 n1 = normalize(cross(uD, vec3(0.0, 1.0, 0.0))), n2 = cross(n1, uD);
+        float ph = seed.w*40.0, t = uTime*(0.05 + 0.08*seed.w);
+        float s = seed.x + sin(t*1.3 + ph)*0.8;
+        float a = seed.y + t*0.4, r = seed.z*(1.0 + 0.12*sin(t*0.9 + ph));
+        vec3 p = uA + uD*s + (n1*cos(a) + n2*sin(a))*r + vec3(sin(t*2.1 + ph), cos(t*1.7 + ph*1.3), sin(t*1.9 + ph*0.7))*0.35;
+        float lit = exp(-r*r/(uSig*uSig*1.3))*smoothstep(-0.2, 1.5, s);
+        float glint = pow(0.5 + 0.5*sin(uTime*(0.7 + 1.6*seed.w) + ph), 6.0);
+        vA = lit*(0.25 + 0.75*glint);
+        vec4 mv = modelViewMatrix*vec4(p, 1.0);
+        gl_Position = projectionMatrix*mv;
+        gl_PointSize = uScale*(0.55 + 0.6*seed.w)/max(0.1, -mv.z);
+      }`,
+    fragmentShader: `varying float vA; uniform float uK;
+      void main(){ float d = length(gl_PointCoord - 0.5); float a = (smoothstep(0.5, 0.0, d)*0.5 + smoothstep(0.16, 0.0, d))*vA*uK;
+        gl_FragColor = vec4(vec3(1.0, 0.93, 0.8)*a*1.5, a); }`
+  });
+  const pts = new THREE.Points(g, m);
+  pts.frustumCulled = false;
+  scene.add(pts);
+  return pts;
+})();
+
 /* post: bloom for the gilt and the magic, then a warm grade */
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(VW*DPR, VH*DPR, { type: THREE.HalfFloatType, samples: 4 }));
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(VW*DPR, VH*DPR, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(VW*DPR, VH*DPR) }));
 composer.setPixelRatio(DPR);
 composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new BeamPass());
 const bloom = new UnrealBloomPass(new THREE.Vector2(VW, VH), 0.34, 0.6, 0.9);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
@@ -597,7 +742,7 @@ function pageBackground(n){
     ctx.drawImage(sigilArt(), -sigilArt().width/2, -sigilArt().height/2);
   }
   ctx.restore();
-  if(n >= 0){
+  if(n > 0){
     ctx.fillStyle = PINK(.8);
     ctx.font = `italic 500 ${13*SC}px "Cormorant Garamond", serif`;
     ctx.textAlign = 'center';
@@ -607,23 +752,118 @@ function pageBackground(n){
   if(n === 0) drawTitle(ctx);
   return c;
 }
+/* engraved headpiece of the title page: tapered rules, a lance through the
+   middle and scrolls curling away from the title (dir -1 turns them below) */
+function titleFlourish(ctx, cx, y, w, dir){
+  ctx.save(); ctx.translate(cx, y); ctx.scale(SC, SC*dir);
+  ctx.strokeStyle = PINK(.9); ctx.fillStyle = PINK(.88);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  [-1,1].forEach(s=>{
+    ctx.beginPath();
+    ctx.moveTo(s*3, -0.8); ctx.quadraticCurveTo(s*w*0.45, -0.5, s*w, 0);
+    ctx.quadraticCurveTo(s*w*0.45, 0.5, s*3, 0.8); ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 0.75;
+    ctx.beginPath(); ctx.moveTo(s*2.2, -1.2);
+    ctx.bezierCurveTo(s*8, -1.4, s*13, -3.2, s*17.5, -3.2);
+    spiralPath(ctx, s*17.5, -7.6, 4.4, 0.6, Math.PI/2, 1.2, -s); ctx.stroke();
+    ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.moveTo(s*2.4, -3.4);
+    ctx.bezierCurveTo(s*3.5, -10, s*8, -13.5, s*12.6, -12.4);
+    spiralPath(ctx, s*11.4, -9.9, 2.75, 0.4, -Math.PI*0.36, 1.1, -s); ctx.stroke();
+    ctx.lineWidth = 0.55;
+    ctx.beginPath(); ctx.moveTo(s*21.5, -1);
+    ctx.bezierCurveTo(s*24, -1.4, s*26, -2.6, s*27.4, -1.6);
+    spiralPath(ctx, s*27.4, -3.8, 2.2, 0.35, Math.PI/2, 1.1, -s); ctx.stroke();
+    ctx.lineWidth = 0.35;
+    inkLeaf(ctx, s*5.2, -1.6, s*0.55, 6.8, 1.8);
+    inkLeaf(ctx, s*20.5, -11.6, s*0.9, 5.2, 1.5);
+    inkLeaf(ctx, s*23.5, -1.2, s*1.15, 5.6, 1.6);
+    inkLeaf(ctx, s*32, -0.6, s*1.3, 4.2, 1.2);
+    [[s*15.2, -14.6, 0.75], [s*25.6, -8.2, 0.6], [s*35.4, -2.6, 0.55], [s*7, -7.4, 0.55]].forEach(([x, yy, r])=>{
+      ctx.beginPath(); ctx.arc(x, yy, r, 0, 7); ctx.fill();
+    });
+    ctx.beginPath(); ctx.moveTo(s*w, 0); ctx.lineTo(s*(w-4.5), -1.1); ctx.lineTo(s*(w-4.5), 1.1); ctx.closePath(); ctx.fill();
+  });
+  ctx.beginPath();
+  ctx.moveTo(0, -24); ctx.lineTo(1.5, -13); ctx.lineTo(0.55, -5); ctx.lineTo(0, -3);
+  ctx.lineTo(-0.55, -5); ctx.lineTo(-1.5, -13); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(0, 23); ctx.lineTo(2.1, 11); ctx.lineTo(0.7, 5); ctx.lineTo(0, 3);
+  ctx.lineTo(-0.7, 5); ctx.lineTo(-2.1, 11); ctx.closePath(); ctx.fill();
+  ctx.lineWidth = 0.6;
+  ctx.beginPath(); ctx.moveTo(-2.6, -15.5); ctx.lineTo(2.6, -15.5); ctx.moveTo(-3, 13.5); ctx.lineTo(3, 13.5); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, 2.3, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(222,196,150,.9)'; ctx.beginPath(); ctx.arc(0, 0, 0.9, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function titleTailpiece(ctx, cx, y){
+  ctx.save(); ctx.translate(cx, y); ctx.scale(SC, SC);
+  ctx.strokeStyle = PINK(.88); ctx.fillStyle = PINK(.85);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  [-1,1].forEach(s=>{
+    ctx.beginPath();
+    ctx.moveTo(s*3, -0.6); ctx.quadraticCurveTo(s*20, -0.35, s*40, 0);
+    ctx.quadraticCurveTo(s*20, 0.35, s*3, 0.6); ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(s*1.8, -1);
+    ctx.bezierCurveTo(s*4, -1.4, s*6, -2.2, s*7.2, -1.6);
+    spiralPath(ctx, s*7.2, -3.6, 2, 0.35, Math.PI/2, 1.05, -s); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s*1.8, 1);
+    ctx.bezierCurveTo(s*4, 1.4, s*6, 2.2, s*7.2, 1.6);
+    spiralPath(ctx, s*7.2, 3.6, 2, 0.35, -Math.PI/2, 1.05, s); ctx.stroke();
+  });
+  ctx.lineWidth = 0.35;
+  inkLeaf(ctx, 0, -2.4, 0, 5.4, 1.9);
+  inkLeaf(ctx, -0.6, -2.6, -0.8, 4.2, 1.3);
+  inkLeaf(ctx, 0.6, -2.6, 0.8, 4.2, 1.3);
+  ctx.beginPath();
+  ctx.moveTo(0, 13); ctx.lineTo(1.6, 6.5); ctx.lineTo(0.5, 3.2); ctx.lineTo(0, 2);
+  ctx.lineTo(-0.5, 3.2); ctx.lineTo(-1.6, 6.5); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, 1.9, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(222,196,150,.9)'; ctx.beginPath(); ctx.arc(0, 0, 0.7, 0, 7); ctx.fill();
+  ctx.restore();
+}
+/* the blackletter is cut like an engraving: dark ink with fine light hatching */
+function engravedTitle(ctx, text, cx, baseline, maxW){
+  let size = 44*SC;
+  const font = z => `${z}px "UnifrakturMaguntia", "Cormorant SC", serif`;
+  ctx.save(); ctx.font = font(size);
+  const tw = ctx.measureText(text).width;
+  if(tw > maxW*SC) size *= maxW*SC/tw;
+  ctx.font = font(size);
+  const w = Math.ceil(ctx.measureText(text).width + size*0.4), h = Math.ceil(size*1.5);
+  ctx.restore();
+  const c = cv(w, h), x = c.getContext('2d');
+  x.font = font(size); x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+  const by = Math.round(h*0.72);
+  const g = x.createLinearGradient(0, by - size*0.8, 0, by + size*0.2);
+  g.addColorStop(0, 'rgba(52,30,11,.96)'); g.addColorStop(0.55, 'rgba(36,20,7,.97)'); g.addColorStop(1, 'rgba(58,34,13,.95)');
+  x.fillStyle = g; x.fillText(text, w/2, by);
+  x.globalCompositeOperation = 'source-atop';
+  x.strokeStyle = 'rgba(214,170,104,.32)'; x.lineWidth = Math.max(1, 0.32*SC);
+  const step = 1.25*SC;
+  x.beginPath();
+  for(let k = -h; k < w; k += step){ x.moveTo(k, h); x.lineTo(k + h*0.7, 0); }
+  x.stroke();
+  ctx.save();
+  ctx.shadowColor = 'rgba(40,22,8,.4)'; ctx.shadowBlur = 1.5*SC; ctx.shadowOffsetY = 0.3*SC;
+  ctx.drawImage(c, cx - w/2, baseline - by);
+  ctx.restore();
+}
+const TITLE = 'No Notes Bible';
+const MOTTO = ['P.S. Read mindfully.', 'The why is on you.'];
 function drawTitle(ctx){
-  divider(ctx, PAGE_W/2, 108*SC, 62, SC);
+  const cx = PAGE_W/2;
+  titleFlourish(ctx, cx, 162*SC, 76, 1);
+  engravedTitle(ctx, TITLE, cx, 202*SC, 176);
+  titleFlourish(ctx, cx, 228*SC, 76, -1);
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(40,22,8,.92)';
-  ctx.shadowColor = 'rgba(40,22,8,.35)'; ctx.shadowBlur = 2;
-  ctx.font = `${46*SC}px "UnifrakturMaguntia", "Cormorant SC", serif`;
-  ctx.fillText('Liber Arcanum', PAGE_W/2, 152*SC);
+  ctx.fillStyle = 'rgba(48,28,10,.9)';
+  ctx.font = `italic 500 ${15.5*SC}px "Cormorant Garamond", serif`;
+  MOTTO.forEach((line, i)=>ctx.fillText(line, cx, (270 + i*18)*SC));
   ctx.restore();
-  divider(ctx, PAGE_W/2, 172*SC, 62, SC);
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.fillStyle = PINK(.85);
-  ctx.font = `italic 500 ${15*SC}px "Cormorant Garamond", serif`;
-  ctx.fillText('a book of secret writings', PAGE_W/2, 204*SC);
-  ctx.restore();
-  divider(ctx, PAGE_W/2, 218*SC, 26, SC*0.8);
+  titleTailpiece(ctx, cx, 314*SC);
 }
 function textBox(n){
   const recto = n%2===0;
@@ -635,7 +875,7 @@ function textBox(n){
 /* ---------------- text layout: the one geometry the ink and caret share ---------------- */
 const measCtx = cv(8,8).getContext('2d');
 function layoutText(text, f, box){
-  const size = f.size*FS, lh = Math.round(size*1.38);
+  const size = f.size*FS, lh = Math.round(size*(f.lead || 1.38));
   measCtx.font = fontCss(f, size);
   const lines = [];
   let cap = null;
@@ -645,8 +885,9 @@ function layoutText(text, f, box){
        baseline, the rest of the word running on from it */
     const capSize = size*2.45;
     measCtx.font = capFont(f, capSize);
-    const cw = measCtx.measureText(first).width;
-    cap = { ch:first, size:capSize, w: cw + size*0.06, lines:1, x: box.x };
+    const cm = measCtx.measureText(first);
+    const cw = Math.max(cm.width, cm.actualBoundingBoxRight);
+    cap = { ch:first, size:capSize, w: cw + size*0.06, l: Math.max(0, cm.actualBoundingBoxLeft), lines:1, x: box.x };
     measCtx.font = fontCss(f, size);
   }
   const W = box.w;
@@ -700,6 +941,9 @@ function layoutText(text, f, box){
   if(cap) cap.y = y0;
   return { lines, cap, ok, size, lh, f, box };
 }
+/* the band a line's ink can reach, in font sizes above and below its baseline:
+   the burn and the evaporation clip to it, so descenders burn with their letter */
+const INK_UP = 1.05, INK_DN = 0.42;
 function lineOf(lay, idx){
   let best = 0;
   for(let i=0;i<lay.lines.length;i++) if(lay.lines[i].start <= idx) best = i;
@@ -736,9 +980,14 @@ function glyphBox(lay, text, idx){
   if(j < 0 || j+1 >= ln.xs.length) return null;
   return { x: ln.xs[j], y: ln.y, w: ln.xs[j+1] - ln.xs[j], ln };
 }
-const GLOW_T = 0.95;
+/* how long a page keeps repainting after its last letter: the raised initial cools longest */
+const GLOW_T = 3.6;
+/* the spell burns a letter through in BURN_T, then the stroke cools in COOL_T */
+const BURN_T = 0.42, BURN_CAP = 1.2, COOL_T = 0.42, COOL_CAP = 0.65;
+/* how far ahead of the glowing rim the char line runs, in seconds of the front */
+const CHAR = 0.04;
 const lineText = (text, ln)=> text.slice(ln.start + (ln.skip||0), ln.end);
-/* every glowing letter, with its age 0..1 */
+/* every letter still burning, with its index and its age in seconds */
 function eachBurning(lay, text, born, now, fn){
   if(!born) return;
   for(let i=0;i<text.length;i++){
@@ -746,7 +995,8 @@ function eachBurning(lay, text, born, now, fn){
     if(age >= GLOW_T || age < 0) continue;
     const ch = text[i]; if(ch === ' ' || ch === '\n') continue;
     const gb = glyphBox(lay, text, i); if(!gb) continue;
-    fn(gb, age/GLOW_T);
+    if(age > (gb.cap ? BURN_CAP + 5*COOL_CAP : BURN_T + 5*COOL_T)) continue;
+    fn(gb, i, age);
   }
 }
 /* paints one burning letter exactly as the ink has it: the whole line is
@@ -756,21 +1006,322 @@ function paintThroughClip(ctx, lay, text, gb){
   ctx.beginPath();
   if(gb.cap){
     const c = lay.cap;
-    ctx.rect(c.x - lay.size*0.2, c.y - c.size*0.95, c.w + lay.size*0.2, c.size*1.2);
+    const l = Math.max(lay.size*0.2, c.l + lay.size*0.1);
+    ctx.rect(c.x - l, c.y - c.size*0.95, c.w + l, c.size*1.2);
     ctx.clip();
     ctx.font = capFont(lay.f, c.size);
     ctx.fillText(c.ch, c.x, c.y);
   }else{
-    ctx.rect(gb.x - 0.5, gb.y - lay.size*1.05, gb.w + 1, lay.lh);
+    ctx.rect(gb.x - 0.5, gb.y - lay.size*INK_UP, gb.w + 1, lay.size*(INK_UP + INK_DN));
     ctx.clip();
     ctx.font = fontCss(lay.f, lay.size);
     ctx.fillText(lineText(text, gb.ln), gb.ln.x0, gb.ln.y);
   }
   ctx.restore();
 }
+function burnDone(born, now, i){
+  const b = born[i];
+  return !b || (now - b)/1000 >= BURN_T;
+}
+/* the patch of sheet a letter's burn may touch */
+function burnRegion(lay, text, born, now, gb, i){
+  const s = lay.size;
+  if(gb.cap){
+    const c = lay.cap, top = c.y - c.size - s*0.1, bot = c.y + c.size*0.3, l = Math.max(s*0.3, c.l + s*0.1);
+    return { x0: c.x - l, y0: top, x1: c.x + c.w + s*0.1, y1: bot, rects: [[c.x - l, top, c.w + l + s*0.1, bot - top]] };
+  }
+  const ln = gb.ln, a0 = ln.start + (ln.skip||0);
+  const open = j => j < a0 || j >= ln.end || /\s/.test(text[j]);
+  const x0 = gb.x - (open(i-1) ? s*0.14 : 0.5);
+  const x1 = gb.x + gb.w + (open(i+1) || !burnDone(born, now, i+1) ? s*0.32 : 1);
+  const y0 = gb.y - s*INK_UP, bh = s*(INK_UP + INK_DN);
+  return { x0, y0, x1, y1: y0 + bh, rects: [[x0, y0, x1 - x0, bh]] };
+}
+function clipRects(ctx, R){
+  ctx.beginPath();
+  R.rects.forEach(q => ctx.rect(q[0], q[1], q[2], q[3]));
+  ctx.clip();
+}
+const burnCv = {};
+function burnScratch(k, w, h){
+  let c = burnCv[k];
+  if(!c){ c = burnCv[k] = document.createElement('canvas'); c.width = c.height = 64; }
+  if(c.width < w || c.height < h){ c.width = Math.max(c.width, w); c.height = Math.max(c.height, h); }
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  x.globalCompositeOperation = 'source-over'; x.globalAlpha = 1; x.shadowBlur = 0; x.filter = 'none';
+  x.clearRect(0, 0, w, h);
+  return x;
+}
+let burnNoise = null;
+/* the burn noise read smoothly between its texels, so fine detail has no grain */
+function noiseAt(x, y){
+  const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+  const r0 = (y0 & 255) << 8, r1 = ((y0 + 1) & 255) << 8, c0 = x0 & 255, c1 = (x0 + 1) & 255;
+  const a = burnNoise[r0 | c0], b = burnNoise[r0 | c1], c = burnNoise[r1 | c0], d = burnNoise[r1 | c1];
+  return (a + (b - a)*fx)*(1 - fy) + (c + (d - c)*fx)*fy;
+}
+const NIB_DX = 0.972, NIB_DY = 0.235;
+const ramp = (h, K)=>{
+  let k = 0;
+  while(k < K.length - 2 && h > K[k+1][0]) k++;
+  const a = K[k], b = K[k+1], t = clamp((h - a[0])/(b[0] - a[0]), 0, 1);
+  return [lerp(a[1], b[1], t), lerp(a[2], b[2], t), lerp(a[3], b[3], t)];
+};
+const SINGE = [[0, 46, 22, 10], [0.35, 120, 46, 16], [0.7, 214, 110, 40], [1, 255, 214, 150]];
+const EMBER = [[0, 0, 0, 0], [0.2, 190, 62, 14], [0.5, 255, 132, 40], [1, 255, 228, 180]];
+/* a fresh letter is burned into the sheet by the spell: the paper browns in the
+   letter's shape, a ragged white-gold front eats through it along the pen's
+   slant, and the stroke behind it glows ember, flickers and cools into char.
+   Returns the region and three images: the parchment still unburnt, the
+   letter's colour on the sheet, and its light for the glow layer */
+function burnLetter(lay, text, born, now, gb, i, ageS){
+  const T = gb.cap ? BURN_CAP : BURN_T, C = gb.cap ? COOL_CAP : COOL_T, PRE = T*(gb.cap ? 0.2 : 0.4);
+  /* the bands round the front, kept to the same width in pixels on the big initial */
+  const RIM = gb.cap ? 0.045 : 0.08, CH = gb.cap ? 0.022 : CHAR, HOT = gb.cap ? 0.035 : 0.06;
+  const R = burnRegion(lay, text, born, now, gb, i);
+  const X0 = Math.floor(R.x0), Y0 = Math.floor(R.y0);
+  const w = Math.ceil(R.x1) - X0, h = Math.ceil(R.y1) - Y0;
+  if(w < 1 || h < 1) return null;
+  if(!burnNoise) burnNoise = fbm(256, 256, 12, 12, 3, 4242);
+  const mx = burnScratch('m', w, h);
+  mx.translate(-X0, -Y0);
+  mx.fillStyle = '#fff';
+  paintThroughClip(mx, lay, text, gb);
+  const ink = mx.getImageData(0, 0, w, h).data;
+  const soft = softMask(ink, w, h, Math.max(1, Math.round(2.4*FS)));
+  const s = lay.size;
+  const gx0 = gb.cap ? lay.cap.x : gb.x, gx1 = gb.cap ? lay.cap.x + lay.cap.w : gb.x + gb.w;
+  const gy0 = gb.cap ? lay.cap.y - lay.cap.size*0.75 : gb.y - s*0.9, gy1 = gb.cap ? lay.cap.y + lay.cap.size*0.1 : gb.y + s*0.2;
+  const sMin = gx0*NIB_DX + gy0*NIB_DY, sSpan = Math.max(1, gx1*NIB_DX + gy1*NIB_DY - sMin);
+  const cover = mx.createImageData(w, h), paint = mx.createImageData(w, h), glow = mx.createImageData(w, h);
+  const cd = cover.data, pd = paint.data, ld = glow.data;
+  const nk = 1/FS, rise = ageS*70;
+  const spread = gb.cap ? capSpread(ink, w, h, X0, Y0, lay.cap.ch) : null;
+  let lit = false;
+  for(let y=0, p=0; y<h; y++){
+    const Y = Y0 + y, ny = ((Y*nk) & 255) << 8, fy = (((Y*nk*1.7 + rise) | 0) & 255) << 8;
+    for(let x=0; x<w; x++, p+=4){
+      const a = ink[p+3]/255, sa = soft[p>>2];
+      if(sa < 0.004) continue;
+      const X = X0 + x;
+      const F = spread ? spread[p>>2] :
+        clamp((X*NIB_DX + Y*NIB_DY - sMin)/sSpan, -0.2, 1.2)*0.74 + burnNoise[ny | ((X*nk) & 255)]*0.42 - 0.08;
+      const la = ageS - T*F;
+      if(la < 0){
+        cd[p+3] = Math.min(255, sa*640);
+        if(la > -PRE){
+          const k = 1 + la/PRE, q = k*k, c = la > -CH ? 1 + la/CH : 0;
+          pd[p] = lerp(120, 30, c); pd[p+1] = lerp(66, 14, c); pd[p+2] = lerp(28, 6, c);
+          pd[p+3] = Math.min(1, (a*0.55 + sa*0.1)*q + (a*0.9 + sa*0.25)*c)*255;
+          if(la > -HOT){
+            const e = a*(1 + la/HOT)*0.3;
+            ld[p] = 210; ld[p+1] = 90; ld[p+2] = 30; ld[p+3] = e*255;
+            lit = true;
+          }
+        }
+        continue;
+      }
+      if(la < HOT) cd[p+3] = Math.min(255, sa*640)*(1 - la/HOT);
+      const fl = burnNoise[fy | (((X*nk*1.7) | 0) & 255)];
+      const edge = clamp((1 - sa)*2.5, 0, 1);
+      const heat = Math.min(1, Math.exp(-la/(C*(0.55 + 1.1*edge)))*(0.72 + 0.56*fl));
+      const rim = la < RIM ? 1 - la/RIM : 0;
+      if(heat < 0.01 && rim === 0) continue;
+      lit = true;
+      if(a > 0.004){
+        const c = ramp(heat, SINGE), r = rim*0.8;
+        pd[p] = lerp(c[0], 255, r); pd[p+1] = lerp(c[1], 246, r); pd[p+2] = lerp(c[2], 220, r);
+        pd[p+3] = a*Math.min(1, heat*3 + rim)*255;
+      }
+      const c = ramp(heat, EMBER);
+      const ea = Math.min(1, a*Math.min(1, heat*1.6) + sa*(rim*0.55 + heat*0.3));
+      ld[p] = lerp(c[0], 255, rim); ld[p+1] = lerp(c[1], 240, rim); ld[p+2] = lerp(c[2], 205, rim);
+      ld[p+3] = ea*255;
+    }
+  }
+  return { R, X0, Y0, w, h, cover, paint, glow, lit };
+}
+/* the raised initial does not burn in one sweep, which on a letter that big
+   reads as stripes: it catches at the top of its first stroke and at two
+   more sparks, and the fire creeps out from them with a ragged edge. The
+   field is when each pixel catches, 0..1 over the letter */
+let spreadBuf = new Float32Array(0), spreadKey = '';
+function capSpread(ink, w, h, X0, Y0, ch){
+  const key = w + ',' + h + ',' + X0 + ',' + Y0 + ',' + ch;
+  if(key === spreadKey) return spreadBuf;
+  const N = w*h;
+  if(spreadBuf.length < N) spreadBuf = new Float32Array(N);
+  const pts = [];
+  let best = Infinity, bi = -1;
+  for(let i=0;i<N;i++) if(ink[i*4+3] > 128){ pts.push(i); const v = (i % w) + (i/w|0)*1.4; if(v < best){ best = v; bi = i; } }
+  if(!pts.length){ spreadBuf.fill(0, 0, N); spreadKey = key; return spreadBuf; }
+  const rnd = mulberry32(ch.codePointAt(0)*7919 + w);
+  const seeds = [bi, pts[(rnd()*pts.length)|0], pts[(rnd()*pts.length)|0]].map(i => [i % w, i/w|0]);
+  const delay = [0, 0.12, 0.24];
+  let dMax = 1;
+  for(let y=0, i=0; y<h; y++) for(let x=0; x<w; x++, i++){
+    let d = Infinity;
+    for(let k=0;k<seeds.length;k++){ const dd = Math.hypot(x - seeds[k][0], y - seeds[k][1]) + delay[k]*w; if(dd < d) d = dd; }
+    spreadBuf[i] = d;
+    if(ink[i*4+3] > 128 && d > dMax) dMax = d;
+  }
+  const nk = 1/FS;
+  for(let y=0, i=0; y<h; y++){
+    const Y = Y0 + y;
+    for(let x=0; x<w; x++, i++){
+      const X = X0 + x;
+      spreadBuf[i] = spreadBuf[i]/dMax*0.8 + (noiseAt(X*nk, Y*nk) - 0.5)*0.34 + (noiseAt(X*nk*2.3 + 31, Y*nk*2.3 + 97) - 0.5)*0.16 + 0.08;
+    }
+  }
+  spreadKey = key;
+  return spreadBuf;
+}
+/* the letter's alpha spread into a soft halo: two box passes each way */
+let softBuf = new Float32Array(0), softTmp = new Float32Array(0);
+function softMask(ink, w, h, r){
+  const N = w*h;
+  if(softBuf.length < N){ softBuf = new Float32Array(N); softTmp = new Float32Array(N); }
+  for(let i=0;i<N;i++) softBuf[i] = ink[i*4+3]/255;
+  const k = 1/(2*r + 1);
+  for(let pass=0; pass<2; pass++){
+    for(let y=0; y<h; y++){
+      const row = y*w;
+      let acc = 0;
+      for(let x=-r; x<=r; x++) acc += x >= 0 && x < w ? softBuf[row + x] : 0;
+      for(let x=0; x<w; x++){
+        softTmp[row + x] = acc*k;
+        const a = x - r, b = x + r + 1;
+        if(a >= 0) acc -= softBuf[row + a];
+        if(b < w) acc += softBuf[row + b];
+      }
+    }
+    for(let x=0; x<w; x++){
+      let acc = 0;
+      for(let y=-r; y<=r; y++) acc += y >= 0 && y < h ? softTmp[y*w + x] : 0;
+      for(let y=0; y<h; y++){
+        softBuf[y*w + x] = acc*k;
+        const a = y - r, b = y + r + 1;
+        if(a >= 0) acc -= softTmp[a*w + x];
+        if(b < h) acc += softTmp[b*w + x];
+      }
+    }
+  }
+  return softBuf;
+}
+/* letters taken back off the sheet evaporate: the char warms to a pale magic
+   gold, the strokes come apart in a ragged drift from the top down, each grain
+   flaring bright just before it goes, and the vapour rises off as mist and
+   motes. One record per touched line, so a wiped page goes line after line */
+const VAPOR_T = 0.85;
+function vaporRects(lay, text, a, b, pad){
+  const out = [];
+  if(lay.cap && a === 0){
+    const c = lay.cap;
+    out.push({ x0: c.x - c.l - pad, y0: c.y - c.size - pad, x1: c.x + c.w + pad, y1: c.y + c.size*0.3 + pad, a: 0, b: 1, cap: true });
+  }
+  lay.lines.forEach(ln=>{
+    const a0 = ln.start + (ln.skip||0);
+    const s = Math.max(a, a0), e = Math.min(b, ln.end);
+    if(e <= s || !text.slice(s, e).trim()) return;
+    out.push({ x0: ln.xs[s - ln.start] - pad, x1: ln.xs[e - ln.start] + pad, y0: ln.y - lay.size*INK_UP - pad, y1: ln.y + lay.size*INK_DN + pad, a: s, b: e, ln });
+  });
+  return out;
+}
+/* lifts the letters [a, b) off the page: each is redrawn as the sheet shows
+   it, char in the strokes and a brown singe round them, and that copy then
+   evaporates over the page that no longer has them */
+function addVapor(n, text, lay, a, b, stagger){
+  const rs = vaporRects(lay, text, a, b, Math.ceil(5*FS));
+  if(!rs.length) return;
+  const pg = pages[n], t0 = performance.now();
+  pg.vapor = pg.vapor || [];
+  rs.forEach((r, k)=>{
+    const X0 = Math.max(0, Math.floor(r.x0)), Y0 = Math.max(0, Math.floor(r.y0));
+    const w = Math.min(PAGE_W, Math.ceil(r.x1)) - X0, h = Math.min(PAGE_H, Math.ceil(r.y1)) - Y0;
+    if(w < 1 || h < 1) return;
+    const sx = burnScratch('v', w, h);
+    sx.translate(-X0, -Y0);
+    sx.fillStyle = '#fff';
+    if(r.cap){ sx.font = capFont(lay.f, lay.cap.size); sx.fillText(lay.cap.ch, lay.cap.x, lay.cap.y); }
+    else{ sx.font = fontCss(lay.f, lay.size); sx.fillText(text.slice(r.a, r.b), r.ln.xs[r.a - r.ln.start], r.ln.y); }
+    const ink = sx.getImageData(0, 0, w, h).data;
+    const soft = softMask(ink, w, h, Math.max(1, Math.round(1.8*FS)));
+    const px = new Uint8ClampedArray(w*h*4);
+    for(let i=0, p=0; i<w*h; i++, p+=4){
+      const ia = ink[p+3]/255*0.86, ha = Math.min(1, soft[i]*1.4)*0.26;
+      const al = ia + ha*(1 - ia);
+      if(al < 0.01) continue;
+      const t = ia/al;
+      px[p] = lerp(132, 62, t); px[p+1] = lerp(90, 40, t); px[p+2] = lerp(52, 22, t);
+      px[p+3] = al*255;
+    }
+    pg.vapor.push({ X0, Y0, w, h, px, t0: t0 + k*stagger*1000, out: false, lay, text, a: r.a, b: r.b });
+  });
+  while(pg.vapor.length > 80) pg.vapor.shift();
+  burning.add(n);
+}
+/* paints the evaporating letters over the page; returns their light */
+function drawVapor(ctx, n, now){
+  const pg = pages[n], lights = [];
+  if(!burnNoise) burnNoise = fbm(256, 256, 12, 12, 3, 4242);
+  const nk = 1/FS;
+  pg.vapor = pg.vapor.filter(v=>{
+    const tau = (now - v.t0)/1000;
+    if(tau >= VAPOR_T) return false;
+    const { X0, Y0, w, h, px } = v;
+    const sx = burnScratch('w', w, h);
+    if(tau < 0){
+      const img = sx.createImageData(w, h); img.data.set(px);
+      sx.putImageData(img, 0, 0);
+      ctx.drawImage(burnCv.w, 0, 0, w, h, X0, Y0, w, h);
+      return true;
+    }
+    if(!v.out){ v.out = true; vaporRise(n, v); }
+    const paint = sx.createImageData(w, h), glow = sx.createImageData(w, h);
+    const pd = paint.data, ld = glow.data;
+    const warm = smooth(clamp(tau/0.2, 0, 1)), drift = tau*40;
+    for(let y=0, p=0; y<h; y++){
+      const Y = Y0 + y, ny = ((Y*nk) & 255) << 8, my = (((Y*nk*2.2 + drift) | 0) & 255) << 8, fy = y/h;
+      for(let x=0; x<w; x++, p+=4){
+        const a = px[p+3];
+        if(a < 2) continue;
+        const X = X0 + x;
+        const F = burnNoise[ny | ((X*nk) & 255)]*0.62 + fy*0.38 + (burnNoise[my | (((X*nk*2.2) | 0) & 255)] - 0.5)*0.2;
+        const tg = 0.2 + F*0.5;
+        if(tau >= tg + 0.07) continue;
+        const rem = tau < tg ? 1 : 1 - (tau - tg)/0.07;
+        const rim = tau > tg - 0.09 ? clamp(1 - (tg - tau)/0.09, 0, 1) : 0;
+        const g = Math.min(1, warm*0.55 + rim*0.45);
+        pd[p] = lerp(px[p], 255, g); pd[p+1] = lerp(px[p+1], 222, g); pd[p+2] = lerp(px[p+2], 160, g);
+        pd[p+3] = a*rem;
+        const e = (a/255)*(warm*0.28 + rim*0.95)*rem;
+        ld[p] = lerp(255, 255, rim); ld[p+1] = lerp(196, 238, rim); ld[p+2] = lerp(110, 200, rim); ld[p+3] = Math.min(255, e*255);
+      }
+    }
+    sx.putImageData(paint, 0, 0);
+    ctx.drawImage(burnCv.w, 0, 0, w, h, X0, Y0, w, h);
+    lights.push({ R: { rects: [[X0, Y0, w, h]] }, X0, Y0, w, h, glow, lit: true });
+    return true;
+  });
+  return lights;
+}
+/* the letters' vapour leaving: mist off every few letters, a few gold motes */
+function vaporRise(n, v){
+  const L = v.b - v.a, step = L > 12 ? 3 : 1;
+  for(let i=v.a; i<v.b; i+=step){
+    emitSmoke(n, v.lay, v.text, i, 1, true);
+    if(Math.random() < 0.5) emitSparks(n, v.lay, v.text, i, 1, true);
+  }
+}
+function putScratch(k, img, w, h){
+  const x = burnScratch(k, w, h);
+  x.putImageData(img, 0, 0);
+  return burnCv[k];
+}
 /* iron-gall ink soaks into the vellum unevenly: a fibre mask for its density
    and a few browner pools where the quill ran dry */
-let inkMask = null, inkTint = null, inkLayer = null;
+let inkMask = null, inkTint = null, inkLayer = null, singeLayer = null, singeMask = null;
 function inkTextures(){
   if(inkMask) return;
   const W = PAGE_W, H = PAGE_H;
@@ -787,45 +1338,26 @@ function inkTextures(){
   mx.putImageData(md, 0, 0); tx.putImageData(td, 0, 0);
   inkMask = m; inkTint = t;
   inkLayer = cv(W, H);
+  singeLayer = cv(W, H);
+  const sw = W>>2, sh = H>>2, sn = fbm(sw, sh, 5, 7, 3, 919);
+  singeMask = cv(sw, sh);
+  const smx = singeMask.getContext('2d'), sd = smx.createImageData(sw, sh);
+  for(let i=0,p=0;i<sn.length;i++,p+=4) sd.data[p+3] = clamp(0.3 + (sn[i]-0.5)*2.4, 0.12, 1)*255;
+  smx.putImageData(sd, 0, 0);
 }
 /* the initial in the scribe's own ink: a figured capital with a fine inline
-   left in reserve, and pen flourishes curling off into the margin. Drawn into
-   the ink layer, so it soaks into the sheet exactly like the text. */
+   left in reserve. Drawn into the ink layer, so it is burned in like the text */
 function drawInitial(ctx, lay){
-  const c = lay.cap, f = lay.f, size = lay.size;
+  const c = lay.cap;
   ctx.save();
-  ctx.font = capFont(f, c.size);
-  const x = c.x, y = c.y, top = y - c.size*0.72;
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.strokeStyle = INK; ctx.fillStyle = INK;
-  /* penwork: a stem down the margin with curls and pearls, a sprig over the cap */
-  ctx.globalAlpha = 0.8;
-  ctx.lineWidth = Math.max(1.2, size*0.03);
-  const sx = x - size*0.3;
-  ctx.beginPath(); ctx.moveTo(sx, top + size*0.15);
-  ctx.bezierCurveTo(sx - size*0.12, top + c.size*0.5, sx + size*0.08, y + lay.lh*0.4, sx - size*0.04, y + lay.lh*1.2);
-  ctx.stroke();
-  ctx.beginPath(); spiralPath(ctx, sx + size*0.12, y + lay.lh*1.2, size*0.16, size*0.03, Math.PI, 1.3, -1); ctx.stroke();
-  ctx.beginPath(); spiralPath(ctx, sx + size*0.14, top + size*0.04, size*0.14, size*0.03, Math.PI*1.1, 1.25, 1); ctx.stroke();
-  [[0.42, 0.14], [0.6, -0.1], [0.8, 0.12]].forEach(([t, dx])=>{
-    const py = top + (y + lay.lh*1.2 - top)*t;
-    ctx.beginPath(); ctx.arc(sx + dx*size, py, size*0.03, 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(sx, py); ctx.quadraticCurveTo(sx - size*0.17, py - size*0.1, sx - size*0.22, py + size*0.04); ctx.stroke();
-  });
-  ctx.beginPath(); ctx.moveTo(x + c.w*0.3, top - size*0.1);
-  ctx.bezierCurveTo(x + c.w*0.55, top - size*0.42, x + c.w*0.95, top - size*0.32, x + c.w*1.05, top - size*0.08);
-  ctx.stroke();
-  ctx.beginPath(); spiralPath(ctx, x + c.w*1.12, top - size*0.02, size*0.1, size*0.02, Math.PI*1.2, 1.2, 1); ctx.stroke();
-  /* the capital, with a hairline inline knocked out of its body */
-  ctx.globalAlpha = 1;
-  ctx.fillText(c.ch, x, y);
+  ctx.font = capFont(lay.f, c.size);
+  ctx.fillStyle = INK; ctx.strokeStyle = INK;
+  ctx.fillText(c.ch, c.x, c.y);
   ctx.globalCompositeOperation = 'destination-out';
   ctx.lineWidth = Math.max(1, c.size*0.012);
   ctx.globalAlpha = 0.85;
-  ctx.save();
   ctx.translate(c.size*0.012, -c.size*0.012);
-  ctx.strokeText(c.ch, x, y);
-  ctx.restore();
+  ctx.strokeText(c.ch, c.x, c.y);
   ctx.restore();
 }
 /* the settled page: ink soaked into the sheet, and the initial */
@@ -850,20 +1382,49 @@ function drawInkBase(ctx, text, lay, hide){
   ix.globalCompositeOperation = 'source-atop';
   ix.drawImage(inkTint, 0, 0, PAGE_W, PAGE_H);
   ix.globalCompositeOperation = 'source-over';
-  /* a faint bleed into the fibres, then the ink itself, multiplied so the
-     grain of the sheet shows through every stroke */
+  /* the singe the spell left round every stroke, darker in patches where the
+     fire lingered, a tighter scorch, then the char itself, multiplied so the
+     grain of the sheet shows through */
+  const sx = singeLayer.getContext('2d');
+  sx.clearRect(0, 0, PAGE_W, PAGE_H);
+  sx.filter = `blur(${(3.6*FS).toFixed(2)}px) brightness(2.5)`;
+  sx.drawImage(inkLayer, 0, 0);
+  sx.filter = 'none';
+  sx.globalCompositeOperation = 'destination-in';
+  sx.drawImage(singeMask, 0, 0, PAGE_W, PAGE_H);
+  sx.globalCompositeOperation = 'source-over';
   ctx.save();
-  ctx.globalAlpha = 0.28;
-  ctx.filter = `blur(${(1.1*FS).toFixed(2)}px)`;
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.globalAlpha = 0.62;
+  ctx.drawImage(singeLayer, 0, 0);
+  ctx.globalAlpha = 0.3;
+  ctx.filter = `blur(${(1.1*FS).toFixed(2)}px) brightness(1.6)`;
   ctx.drawImage(inkLayer, 0, 0);
   ctx.restore();
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
   ctx.drawImage(inkLayer, 0, 0);
   ctx.restore();
+  /* the strokes sit a hair below the sheet: the far wall of each groove
+     catches the light as a faint warm sheen along the char */
+  const o = 1.1*FS;
+  sx.clearRect(0, 0, PAGE_W, PAGE_H);
+  sx.drawImage(inkLayer, 0, 0);
+  sx.globalCompositeOperation = 'destination-out';
+  sx.drawImage(inkLayer, -o, -o);
+  sx.globalCompositeOperation = 'source-in';
+  sx.fillStyle = 'rgb(214,170,112)';
+  sx.fillRect(0, 0, PAGE_W, PAGE_H);
+  sx.globalCompositeOperation = 'source-over';
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.globalAlpha = 0.32;
+  ctx.filter = `blur(${(0.5*FS).toFixed(2)}px)`;
+  ctx.drawImage(singeLayer, 0, 0);
+  ctx.restore();
 }
 /* what changes from frame to frame: selection, the letters still warm, the caret */
-function drawInkOverlay(ctx, text, lay, sel, born, now){
+function drawInkOverlay(ctx, text, lay, sel, born, now, bg, caretA){
   const { lines, size, lh } = lay;
   if(sel && sel.a !== sel.b){
     ctx.save();
@@ -876,46 +1437,76 @@ function drawInkOverlay(ctx, text, lay, sel, born, now){
     });
     ctx.restore();
   }
-  /* a fresh letter is warm amber for a moment, then cools into the ink */
-  if(born && now){
-    ctx.save();
-    ctx.fillStyle = '#c8893a';
-    eachBurning(lay, text, born, now, (gb, age)=>{
-      ctx.globalAlpha = 0.65*(1 - smooth(age));
-      paintThroughClip(ctx, lay, text, gb);
+  /* a burning letter: the sheet laid back where the spell has not reached yet,
+     then the letter's own scorch and ember colour; the glow layer reuses it */
+  const burns = [];
+  if(born && now && bg){
+    eachBurning(lay, text, born, now, (gb, i, ageS)=>{
+      const b = burnLetter(lay, text, born, now, gb, i, ageS);
+      if(!b) return;
+      burns.push(b);
+      const { R, X0, Y0, w, h } = b;
+      const sx = burnScratch('s', w, h);
+      sx.drawImage(bg, X0, Y0, w, h, 0, 0, w, h);
+      sx.globalCompositeOperation = 'destination-in';
+      sx.drawImage(putScratch('c', b.cover, w, h), 0, 0);
+      ctx.save();
+      clipRects(ctx, R);
+      ctx.drawImage(burnCv.s, 0, 0, w, h, X0, Y0, w, h);
+      ctx.drawImage(putScratch('p', b.paint, w, h), 0, 0, w, h, X0, Y0, w, h);
+      ctx.restore();
     });
-    ctx.restore();
   }
   if(sel && sel.caret){
     const c = caretXY(lay, sel.b);
+    ctx.save();
+    ctx.globalAlpha = caretA === undefined ? 1 : caretA;
     ctx.fillStyle = INK;
-    ctx.fillRect(c.x - 1.4*FS, c.y - size*0.82, 2.8*FS, size*1.06);
+    caretPath(ctx, c.x, c.y, size, 2.9*FS);
+    ctx.restore();
   }
+  return burns;
 }
-/* the glow layer: emissive, half resolution, only what is burning right now */
-function drawGlow(ctx, text, lay, born, now, caret){
+/* a hairline caret that swells in the middle and tapers to points, like a nib stroke */
+function caretPath(ctx, x, y, size, w){
+  const top = y - size*0.86, bot = y + size*0.2, mid = (top + bot)/2;
+  ctx.beginPath();
+  ctx.moveTo(x, top);
+  ctx.quadraticCurveTo(x + w, mid, x, bot);
+  ctx.quadraticCurveTo(x - w, mid, x, top);
+  ctx.fill();
+}
+/* the caret breathes: solid while the quill moves, then a slow soft pulse */
+function caretBreath(){
+  const t = Math.max(0, blinkPhase - 0.5);
+  return 0.6 + 0.4*Math.cos(t*Math.PI*2/1.6);
+}
+/* the glow layer: emissive, half resolution, only what is burning right now.
+   Drawn over black: the canvas is uploaded unpremultiplied, so a soft edge
+   kept only in alpha would light up at full strength */
+function drawGlow(ctx, lay, burns, caret, caretA){
   const k = 0.5;
-  ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.save();
   ctx.scale(k, k);
   let any = false;
-  eachBurning(lay, text, born, now, (gb, age)=>{
+  burns.forEach(b=>{
+    if(!b.lit) return;
     any = true;
-    const a = 1 - smooth(age);
-    ctx.globalAlpha = a*0.45;
-    ctx.shadowColor = 'rgba(255,170,80,1)'; ctx.shadowBlur = 4;
-    ctx.fillStyle = 'rgb(255,196,120)';
-    paintThroughClip(ctx, lay, text, gb);
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = a*0.7;
-    ctx.fillStyle = 'rgb(255,226,170)';
-    paintThroughClip(ctx, lay, text, gb);
+    const { R, X0, Y0, w, h } = b;
+    ctx.save();
+    clipRects(ctx, R);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(putScratch('g', b.glow, w, h), 0, 0, w, h, X0, Y0, w, h);
+    ctx.restore();
   });
   if(caret){
-    const pulse = 0.3 + 0.12*Math.sin(now/220);
-    ctx.globalAlpha = pulse;
-    ctx.fillStyle = 'rgb(255,214,140)';
-    ctx.fillRect(caret.x - 1.2*FS, caret.y - lay.size*0.82, 2.4*FS, lay.size*1.06);
+    ctx.save();
+    ctx.globalAlpha = 0.05 + 0.08*(caretA === undefined ? 1 : caretA);
+    ctx.fillStyle = 'rgb(255,170,80)';
+    caretPath(ctx, caret.x, caret.y, lay.size, 1.6*FS);
+    ctx.restore();
     any = true;
   }
   ctx.restore();
@@ -944,7 +1535,7 @@ function pageEntry(n){
     const glow = cv(PAGE_W/2, PAGE_H/2);
     const mat = pageMaterial(canvas);
     const glowTex = tex(glow, {srgb:true, wrap:false});
-    mat.emissive = new THREE.Color(0xffd08a);
+    mat.emissive = new THREE.Color(0xffffff);
     mat.emissiveMap = glowTex;
     mat.emissiveIntensity = 0;
     e = { bg: pageBackground(n), canvas, glow, tex: mat.map, glowTex, mat, used: 0, lay: null, glowing: false };
@@ -991,21 +1582,20 @@ function paintPage(n, now){
   }
   const lay = e.lay;
   ctx.drawImage(e.inked, 0, 0);
-  const fade = pages[n].fade;
-  if(fade) fadeInk(ctx, n, fade, now);
   let sel = null, caret = null;
   if(editing){
     const a = quill.selectionStart, b = quill.selectionEnd;
-    sel = { a:Math.min(a,b), b:Math.max(a,b), caret: caretOn && a === b };
+    sel = { a:Math.min(a,b), b:Math.max(a,b), caret: a === b };
     if(a === b){ sel.b = a; caret = caretXY(lay, a); }
   }
-  drawInkOverlay(ctx, pages[n].t, lay, sel, pages[n].born, now);
+  const breath = editing ? caretBreath() : 1;
+  const burns = drawInkOverlay(ctx, pages[n].t, lay, sel, pages[n].born, now, e.bg, breath);
+  if(pages[n].vapor && pages[n].vapor.length) burns.push(...drawVapor(ctx, n, now));
   e.tex.needsUpdate = true;
-  let lit = drawGlow(e.glow.getContext('2d'), pages[n].t, lay, pages[n].born, now, caret);
-  if(fade && fadeGlow(e.glow.getContext('2d'), fade, now)) lit = true;
+  let lit = drawGlow(e.glow.getContext('2d'), lay, burns, caret, breath);
   if(lit || e.glowing){
     e.glowTex.needsUpdate = true;
-    e.mat.emissiveIntensity = lit ? 0.6 : 0;
+    e.mat.emissiveIntensity = lit ? 1.4 : 0;
   }
   e.glowing = lit;
   /* only the page under the quill keeps its composed ink in memory */
@@ -1047,31 +1637,204 @@ function endpaper(flipV){
   m.receiveShadow = true;
   return m;
 }
-function sapphire(scale){
+/* ---------------- the sapphire: an oval brilliant, cut and set like a jewel ----------------
+   only the crown is modelled; the shader traces each ray that enters it through the
+   whole stone: down to a virtual pavilion, round by total internal reflection, out
+   through a facet (split a little into its colours) into the forest and the sun, the
+   blue deepening with every millimetre of corundum the light has crossed; the
+   pavilion is backed with foil, so what goes down comes back up as brilliance */
+const GEM_A = 0.21, GEM_B = 0.29, GEM_H = 0.095, GEM_G = 0.02, GEM_D = 0.22;
+const GEMS = [];
+function gemCrownGeometry(){
+  const P = (ang, r, z)=>new THREE.Vector3(Math.cos(ang)*r*GEM_A, Math.sin(ang)*r*GEM_B, z);
+  const T = [], S = [], G = [], L = [];
+  for(let k=0;k<8;k++){ T.push(P(k*Math.PI/4, 0.54, GEM_H)); S.push(P(k*Math.PI/4 + Math.PI/8, 0.8, GEM_H*0.5)); }
+  for(let j=0;j<16;j++){ G.push(P(j*Math.PI/8, 1, 0)); L.push(P(j*Math.PI/8, 1, -GEM_G)); }
+  const top = new THREE.Vector3(0, 0, GEM_H), bot = new THREE.Vector3(0, 0, -GEM_G);
+  const v = [], f = (a, b, c)=>v.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  for(let k=0;k<8;k++){
+    const k1 = (k+1)%8, km = (k+7)%8, g0 = G[2*k], g1 = G[2*k+1], g2 = G[(2*k+2)%16];
+    f(top, T[k], T[k1]);                              // table
+    f(T[k], S[k], T[k1]);                             // star
+    f(T[k], g0, S[k]); f(T[k], S[km], g0);            // bezel kite
+    f(S[k], g0, g1); f(S[k], g1, g2);                 // upper girdle
+  }
+  for(let j=0;j<16;j++){
+    const j1 = (j+1)%16;
+    f(G[j], L[j], L[j1]); f(G[j], L[j1], G[j1]); f(bot, L[j1], L[j]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.computeVertexNormals();
+  return g;
+}
+/* the stone as a convex solid: the crown's facets, the girdle, and a pavilion of eight
+   mains to the culet with sixteen lower-girdle facets, turned off the crown's star */
+function gemPlanes(crown){
+  const out = [], add = (n, w)=>{
+    if(!out.some(p=>p.x*n.x + p.y*n.y + p.z*n.z > 0.99999 && Math.abs(p.w - w) < 1e-5)) out.push(new THREE.Vector4(n.x, n.y, n.z, w));
+  };
+  const pos = crown.attributes.position, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for(let i=0;i<pos.count;i+=3){
+    a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i+1); c.fromBufferAttribute(pos, i+2);
+    const n = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+    if(n.z < -0.99) continue;
+    add(n, n.dot(a));
+  }
+  const pav = (ang, z0)=>{
+    const g = new THREE.Vector3(Math.cos(ang)*GEM_A, Math.sin(ang)*GEM_B, -GEM_G);
+    const t = new THREE.Vector3(-Math.sin(ang)*GEM_A, Math.cos(ang)*GEM_B, 0);
+    const n = t.clone().cross(g.clone().sub(new THREE.Vector3(0, 0, z0))).normalize();
+    add(n, n.dot(g));
+  };
+  for(let k=0;k<8;k++) pav(k*Math.PI/4 + Math.PI/8, -GEM_G - GEM_D);
+  for(let k=0;k<16;k++) pav(k*Math.PI/8 + Math.PI/16, -GEM_G - GEM_D*1.32);
+  return out;
+}
+const GEM_GLSL = n => `
+  #define GEM_NP ${n}
+  uniform vec4 uGemPl[GEM_NP];
+  uniform mat3 uGemRot;
+  uniform vec3 uGemSig, uSunDir, uSunCol;
+  uniform float uGemEnv, uGemGlow;
+  varying vec3 vGemP, vGemC;
+  vec3 gemSky(vec3 d){
+    vec3 w = normalize(uGemRot*d);
+    #if defined(USE_ENVMAP) && defined(ENVMAP_TYPE_CUBE_UV)
+      vec3 c = textureCubeUV(envMap, envMapRotation*w, 0.0).rgb;
+    #else
+      vec3 c = vec3(0.25, 0.3, 0.35)*(0.4 + 0.6*max(w.y, 0.0));
+    #endif
+    float s = max(dot(w, uSunDir), 0.0);
+    return c*uGemEnv + uSunCol*(pow(s, 3000.0)*90.0 + pow(s, 300.0)*1.2);
+  }
+  vec3 gemTrace(out float fIn){
+    vec3 V = normalize(vGemP - vGemC);
+    vec3 N = normalize(cross(dFdx(vGemP), dFdy(vGemP)));
+    if(dot(N, V) > 0.0) N = -N;
+    float ci = clamp(-dot(V, N), 0.0, 1.0);
+    fIn = 0.077 + 0.923*pow(1.0 - ci, 5.0);
+    vec3 rd = refract(V, N, 1.0/1.77), p = vGemP;
+    vec3 T = vec3(1.0), L = vec3(0.0);
+    for(int b = 0; b < 7; b++){
+      float tm = 10.0; vec3 nh = vec3(0.0, 0.0, 1.0);
+      for(int i = 0; i < GEM_NP; i++){
+        vec4 pl = uGemPl[i];
+        float dn = dot(pl.xyz, rd);
+        if(dn > 1e-4){
+          float t = (pl.w - dot(pl.xyz, p))/dn;
+          if(t > 2e-4 && t < tm){ tm = t; nh = pl.xyz; }
+        }
+      }
+      if(tm > 9.0) break;
+      p += rd*tm;
+      T *= exp(-uGemSig*tm);
+      float c = dot(rd, nh), k = 1.0 - 3.1329*(1.0 - c*c);
+      /* below the girdle the stone sits on bright foil in a closed collet, as old jewels did */
+      if(nh.z < 0.05) T *= 0.9;
+      else if(k > 0.0){
+        float F = 0.077 + 0.923*pow(1.0 - sqrt(k), 5.0);
+        vec3 og = refract(rd, -nh, 1.77), orr = refract(rd, -nh, 1.745), ob = refract(rd, -nh, 1.80);
+        if(dot(ob, ob) < 0.5) ob = og;
+        L += T*(1.0 - F)*vec3(gemSky(orr).r, gemSky(og).g, gemSky(ob).b);
+        T *= F;
+      }
+      rd = reflect(rd, nh);
+    }
+    L += T*vec3(0.01, 0.02, 0.08)*uGemEnv;
+    /* when the book wakes, a light kindles inside the stone */
+    L += uGemGlow*vec3(0.1, 0.3, 1.0)*(0.25 + 0.75*exp(-dot(p.xy, p.xy)*40.0));
+    return L;
+  }`;
+const SAPPHIRE_SIG = new THREE.Vector3(4.6, 3.8, 0.32);
+function gemMaterial(uni, nPlanes){
+  const m = new THREE.MeshPhysicalMaterial({
+    color: 0x000000, metalness: 0, roughness: 0.012, ior: 1.77, specularIntensity: 0.75, flatShading: true,
+    envMapIntensity: 1.0 });
+  m.onBeforeCompile = sh=>{
+    Object.assign(sh.uniforms, uni);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGemP, vGemC;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvGemP = position; vGemC = (inverse(modelMatrix)*vec4(cameraPosition, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('void main() {', GEM_GLSL(nPlanes) + '\nvoid main() {')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat gemF; vec3 gemL = gemTrace(gemF); totalEmissiveRadiance += gemL*(1.0 - gemF);')
+      /* a mirror facet catching the sun is one HDR pixel the bloom blows into a square */
+      .replace('#include <opaque_fragment>', 'outgoingLight *= min(1.0, 7.0/max(1e-4, max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b))));\n#include <opaque_fragment>');
+  };
+  m.customProgramCacheKey = ()=>'gem-trace';
+  return m;
+}
+/* polished yellow gold for the setting, brighter than the gilt tooling */
+const matJewelGold = new THREE.MeshPhysicalMaterial({
+  color: 0xe0b45c, metalness: 1, roughness: 0.17, envMapIntensity: 1.6, emissive: 0xffc56e, emissiveIntensity: 0 });
+/* a breath of blue on the leather round the bezel, only while the book wakes */
+const haloMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  uniforms: { uHalo: { value: 0 } },
+  vertexShader: `varying vec2 vU; void main(){ vU = uv*2.0 - 1.0; gl_Position = projectionMatrix*modelViewMatrix*vec4(position, 1.0); }`,
+  fragmentShader: `varying vec2 vU; uniform float uHalo;
+    void main(){ float d = length(vU); float a = pow(smoothstep(1.0, 0.3, d), 2.2)*uHalo;
+      gl_FragColor = vec4(vec3(0.16, 0.36, 1.0)*a, a); }`
+});
+/* seat: how far the group's origin stands off the leather */
+function sapphire(scale, seat, flareW){
   const grp = new THREE.Group();
-  const dome = new THREE.SphereGeometry(1, 48, 24, 0, Math.PI*2, 0, Math.PI/2);
-  dome.rotateX(Math.PI/2);
-  const gem = new THREE.Mesh(dome,
-    new THREE.MeshPhysicalMaterial({
-      color: 0x1d4fb8, metalness: 0.1, roughness: 0.06, ior: 1.77, specularIntensity: 1.0,
-      clearcoat: 1.0, clearcoatRoughness: 0.02, envMapIntensity: 2.6, sheen: 0.4, sheenColor: new THREE.Color(0x9cc4ff),
-      emissive: new THREE.Color(0x0b2f8a), emissiveIntensity: 0.55 }));
-  gem.scale.set(0.21, 0.29, 0.16);
-  gem.position.z = -0.02;
+  const crown = gemCrownGeometry(), planes = gemPlanes(crown);
+  const uni = {
+    uGemPl: { value: planes }, uGemRot: { value: new THREE.Matrix3() }, uGemSig: { value: SAPPHIRE_SIG },
+    uSunDir: { value: SUN_DIR }, uSunCol: { value: new THREE.Color() }, uGemEnv: { value: 2.4 }, uGemGlow: { value: 0 } };
+  const gem = new THREE.Mesh(crown, gemMaterial(uni, planes.length));
+  gem.position.z = 0.006;
   grp.add(gem);
-  const bezelMat = matGold;
-  const bez = new THREE.Mesh(new THREE.TorusGeometry(1, 0.075, 16, 64), bezelMat);
-  bez.scale.set(0.228, 0.31, 0.45); bez.position.z = 0.02;
-  grp.add(bez);
-  for(let i=0;i<4;i++){
-    const a = Math.PI/4 + i*Math.PI/2;
-    const p = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 10), bezelMat);
-    p.position.set(Math.cos(a)*0.20, Math.sin(a)*0.275, 0.03);
-    grp.add(p);
+  const hm = haloMat.clone();
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(GEM_A*5.2, GEM_B*4.4), hm);
+  halo.position.z = -(seat - 0.002)/scale;
+  halo.userData.noPick = true; halo.raycast = ()=>{};
+  halo.renderOrder = 1;
+  grp.add(halo);
+  /* collet: a slim rim round the girdle, edged with milgrain */
+  const ZG = gem.position.z;
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 12, 96), matJewelGold);
+  rim.scale.set(GEM_A + 0.012, GEM_B + 0.012, 0.32); rim.position.z = ZG - GEM_G*0.5;
+  grp.add(rim);
+  const NB = 64, bead = new THREE.InstancedMesh(new THREE.SphereGeometry(0.0085, 10, 8), matJewelGold, NB);
+  const _m = new THREE.Matrix4();
+  for(let i=0;i<NB;i++){
+    const a = i/NB*Math.PI*2;
+    _m.makeTranslation(Math.cos(a)*(GEM_A + 0.034), Math.sin(a)*(GEM_B + 0.034), ZG - GEM_G*0.5);
+    bead.setMatrixAt(i, _m);
+  }
+  grp.add(bead);
+  /* eight claws, leaning in over the girdle to hold the stone */
+  const clawGeo = new THREE.CapsuleGeometry(0.013, 0.022, 4, 10);
+  const up = new THREE.Vector3(0, 1, 0);
+  for(let k=0;k<8;k++){
+    const a = k*Math.PI/4 + Math.PI/8;
+    const rad = new THREE.Vector3(Math.cos(a)*GEM_B, Math.sin(a)*GEM_A, 0).normalize();
+    const base = new THREE.Vector3(Math.cos(a)*(GEM_A + 0.006), Math.sin(a)*(GEM_B + 0.006), ZG - GEM_G*0.6);
+    const dir = rad.clone().multiplyScalar(-0.62).add(new THREE.Vector3(0, 0, 0.78)).normalize();
+    const claw = new THREE.Mesh(clawGeo, matJewelGold);
+    claw.quaternion.setFromUnitVectors(up, dir);
+    claw.position.copy(base).addScaledVector(dir, 0.02);
+    grp.add(claw);
   }
   grp.scale.setScalar(scale);
   grp.userData.gem = gem;
+  GEMS.push({ gem, uni, halo: hm, flareW });
   return grp;
+}
+const _gemM4 = new THREE.Matrix4();
+function stepGems(){
+  matJewelGold.emissiveIntensity = st.aura*0.12 + st.gemFlare*0.2;
+  GEMS.forEach(G=>{
+    const fl = st.gemFlare*G.flareW;
+    G.uni.uGemRot.value.setFromMatrix4(_gemM4.extractRotation(G.gem.matrixWorld));
+    G.uni.uSunCol.value.copy(sun.color).multiplyScalar(sun.intensity);
+    G.uni.uGemGlow.value = fl*0.9 + st.aura*0.35;
+    G.halo.uniforms.uHalo.value = fl*0.4 + st.aura*0.22;
+  });
 }
 
 /* back board: local z from -CVR (outer) to 0 (inner) */
@@ -1084,7 +1847,7 @@ let backGoldSlot, frontGoldSlot;
   backGrp.add(board);
   const ep = endpaper(); ep.position.z = 0.002;
   backGrp.add(ep);
-  const gm = sapphire(0.6);
+  const gm = sapphire(0.6, 0.008, 0.5);
   gm.position.set(CW/2, 0, -CVR-0.008); gm.rotation.y = Math.PI;
   backGrp.add(gm);
   /* the gilt is authored with +z out of the board: flip it onto the outer face */
@@ -1102,7 +1865,7 @@ let frontGem;
   frontGrp.add(board);
   const ep = endpaper(true); ep.rotation.x = Math.PI; ep.position.z = -0.002;
   frontGrp.add(ep);
-  frontGem = sapphire(1.0); frontGem.position.set(CW/2, 0, CVR + 0.012);
+  frontGem = sapphire(1.0, 0.012, 1); frontGem.position.set(CW/2, 0, CVR + 0.012);
   frontGrp.add(frontGem);
   frontGoldSlot = new THREE.Group();
   frontGoldSlot.position.z = CVR;
@@ -1551,24 +2314,32 @@ const st = {
   theta: 0,           // front board angle, 0 closed .. PI open
   k: 0,               // leaves lying on the left
   flight: null,       // { j, p, dragging, curl, vel, gy, anim }
+  riffle: null,       // a long jump: several leaves in the air at once
   open: false,
   zoom: 1, camD: 14,
   bob: 1,
   lift: 0,
   focus: 0, focusTo: 0, focusSide: 1,  // the camera leaning in over the page being written
   thetaVel: 0,
-  hover: 0, hoverTo: 0, aura: 0, auraTo: 0, glow: 0, glowTo: 0, gemFlare: 0   // the opening's quiet magic
+  hover: 0, hoverTo: 0, aura: 0, auraTo: 0, glow: 0, glowTo: 0, gemFlare: 0,  // the opening's quiet magic
+  jolt: 0, joltV: 0   // the whole tome giving on the moss as the board lands
 };
 const queue = [];
 const _H = { x:0, z:0 };
 let lastSig = '';
-function currentSigma(){ return st.flight ? st.flight.j + st.flight.p : st.k; }
+function currentSigma(){
+  const rf = st.riffle;
+  if(rf){ let s = Math.min(rf.k0, rf.k1); for(let m=0;m<rf.d;m++) s += rf.p[m]; return s; }
+  return st.flight ? st.flight.j + st.flight.p : st.k;
+}
 
+const _rfAir = { p:0, curl:0, gy:-0.85 };
 function layout(force){
   const fl = st.flight;
   const sigma = currentSigma();
   const fluttering = leaves.reduce((a, L)=> L.flt < 0.75 ? a + L.flt : a, 0);
-  const sig = `${st.theta.toFixed(5)}|${sigma.toFixed(5)}|${fl ? fl.curl.toFixed(4)+','+fl.gy.toFixed(3) : ''}|${fluttering.toFixed(3)}`;
+  const rf = st.riffle;
+  const sig = `${st.theta.toFixed(5)}|${sigma.toFixed(5)}|${fl ? fl.curl.toFixed(4)+','+fl.gy.toFixed(3) : ''}|${rf ? rf.tau.toFixed(5) : ''}|${fluttering.toFixed(3)}`;
   if(!force && sig === lastSig) return;
   lastSig = sig;
   const C = layoutCtx(sigma, st.theta);
@@ -1580,18 +2351,25 @@ function layout(force){
   for(let i=0;i<N;i++){
     const L = leaves[i];
     hingeOf(C, i, _H);
-    if(fl && i === fl.j){
+    let air = fl && i === fl.j ? fl : null, left = i < (fl ? fl.j : st.k);
+    if(rf){
+      const m = rf.fwd ? i - rf.k0 : rf.k0 - 1 - i;
+      if(m >= 0 && m < rf.d){
+        if(rf.p[m] > 0 && rf.p[m] < 1){ air = _rfAir; air.p = rf.p[m]; air.curl = rf.curl[m]; }
+        else left = rf.p[m] >= 1;
+      }else left = i < rf.k0;
+    }
+    if(air){
       const PR = restParams(C, i, false, _H), PL = restParams(C, i, true, _H);
       for(let r=0;r<=R;r++){
         const yN = -1 + 2*r/R;
-        const cr = fl.curl*(1 + TWIST*fl.gy*yN);
-        integrate(_H.x, _H.z, s=>flightAngle(PR, PL, fl.p, cr, s), _X[r], _Z[r], _A[r], L.ds);
+        const cr = air.curl*(1 + TWIST*air.gy*yN);
+        integrate(_H.x, _H.z, s=>flightAngle(PR, PL, air.p, cr, s), _X[r], _Z[r], _A[r], L.ds);
       }
       writeLeaf(L, true);
       L.sig = '';
       L.a0 = _A[R>>1][0];
     }else{
-      const left = i < (fl ? fl.j : st.k);
       const P = restParams(C, i, left, _H);
       const s2 = `${_H.x.toFixed(5)},${_H.z.toFixed(5)},${P.phi0.toFixed(5)},${P.ell.toFixed(4)},${P.fan.toFixed(4)},${left?C.theta.toFixed(5):'r'}`;
       if(force || s2 !== L.sig){
@@ -1656,14 +2434,19 @@ function updateBack(C){
 
 /* which page textures are live, and which leaves cast shadows */
 function updateVisibility(){
-  const c = st.flight ? st.flight.j : st.k;
+  const rf = st.riffle;
+  const c = rf ? Math.round(currentSigma()) : st.flight ? st.flight.j : st.k;
+  const lo = rf ? 3 : 2, hi = rf ? 2 : 1;
   const keep = new Set();
   const open = st.theta > 0.02;
   for(let i=0;i<N;i++){
     const L = leaves[i];
-    const near = open && i >= c-2 && i <= c+1;
+    const near = open && i >= c-lo && i <= c+hi;
     const mats = L.mesh.material;
-    if(near){
+    /* in the thick of a riffle a leaf with nothing written on it goes by too
+       fast to read, so it is not given a page of its own to paint */
+    const blur = rf && !pages[2*i].t && !pages[2*i+1].t && !pageCache.has(2*i) && !pageCache.has(2*i+1);
+    if(near && !blur){
       const er = pageEntry(2*i), ev = pageEntry(2*i+1);
       keep.add(2*i); keep.add(2*i+1);
       mats[0] = er.mat; mats[1] = ev.mat;
@@ -1692,11 +2475,52 @@ const camTarget = new THREE.Vector3();
    the framing's own elevation; dragging the forest moves the goals */
 const orbit = { az:0, azTo:0, el:0, elTo:0, vx:0, vy:0, coast:false };
 const ORBIT_EL = [0.06, 1.38];
+/* how far the eye may stand from the boulder: beyond about 3 m the forest picture
+   tears, and walking round the old oak would step into its trunk */
+const CAM_REACH = 30;
 
 function homeQuat(){ return st.open ? qOpenHome : qClosedHome; }
-function camElevation(){ return lerp(0.26, 0.9, smooth(clamp(st.theta/OPEN,0,1))); }
+/* nearly straight down: square enough to read as a flat sheet, not so square
+   that the eye's up direction is lost */
+const WRITE_EL = 1.5;
+/* how much of the screen the buttons and the pager take, top/bottom and sides */
+let uiIn = null;
+function uiInsets(){
+  if(uiIn && uiIn.vw === VW && uiIn.vh === VH) return uiIn;
+  const bar = document.querySelector('.ui.bar'), pg = document.getElementById('pager');
+  const rb = bar ? bar.getBoundingClientRect() : null, rp = pg && !pg.hidden ? pg.getBoundingClientRect() : null;
+  const top = rb && rb.height ? rb.bottom : 0, bot = rp && rp.height ? VH - rp.top : 0;
+  const r = { vw: VW, vh: VH, v: clamp(Math.max(top, bot) + 10, 18, VH*0.2), s: clamp(VW*0.03, 8, 18) };
+  if(rp && rp.height) uiIn = r;
+  return r;
+}
+/* what the camera frames: it follows the board while the book opens, but a
+   book being shut is watched from where the reader sits, as a person would;
+   only once the board is down and still do the view and the tome ease back */
+const shut = { th: null, hold: false, ease: null, spin: null };
+const frameTheta = () => shut.th === null ? st.theta : shut.th;
+function holdFrame(spinTo, settle){
+  shut.th = frameTheta(); shut.hold = true; shut.ease = null;
+  shut.spin = spinTo ? { to: spinTo, settle } : null;
+}
+function releaseFrame(){
+  if(!shut.hold) return;
+  shut.hold = false;
+  shut.ease = { t: -0.45, d: 2.2, from: shut.th };
+}
+function freeFrame(){ shut.th = null; shut.hold = false; shut.ease = null; shut.spin = null; }
+function stepFrame(dt){
+  const E = shut.ease;
+  if(!E) return;
+  E.t += dt;
+  if(E.t >= 0 && shut.spin){ glideSpin(shut.spin.to, 2.4, shut.spin.settle); shut.spin = null; }
+  const k = clamp(E.t/E.d, 0, 1);
+  shut.th = lerp(E.from, 0, easeSine(k));
+  if(k >= 1) freeFrame();
+}
+function camElevation(){ return lerp(0.26, 0.9, smooth(clamp(frameTheta()/OPEN,0,1))); }
 function fitDistance(){
-  const b = smooth(clamp(st.theta/OPEN,0,1));
+  const b = smooth(clamp(frameTheta()/OPEN,0,1));
   const fov = camera.fov*Math.PI/180, aspect = VW/VH;
   const w = lerp(CW + 8.5, 2*(CW + XJ_O) + 2.0, b);
   const el = camElevation();
@@ -1715,7 +2539,7 @@ function glideSpin(to, dur, settle){
   spinAnim = { q0: spinGrp.quaternion.clone(), q1: to.clone(), t:0, dur, settle: !!settle };
   inertia = false;
 }
-function atHome(){ return (spinAnim && spinAnim.settle) || spinGoal.angleTo(homeQuat()) < 0.05; }
+function atHome(){ return (spinAnim && spinAnim.settle) || (shut.spin && shut.spin.settle) || spinGoal.angleTo(homeQuat()) < 0.05; }
 
 /* ============================================================================
    9.  persistence
@@ -1728,24 +2552,91 @@ function toast(msg, ms){
   clearTimeout(toastTm); toastTm = setTimeout(()=>toastEl.classList.remove('show'), ms || 1400);
 }
 let saveTm = 0;
+/* every browser that writes in the book is one hand with its own mark; each
+   letter keeps the mark of the hand that wrote it, so a hand can only ever
+   erase or delete its own ink and never another's */
+const HAND_KEY = 'liber-arcanum.hand';
+const BROWSER_HAND = (()=>{
+  let h = null;
+  try{ h = localStorage.getItem(HAND_KEY); }catch(e){}
+  if(!/^h[0-9a-z]{8,}$/.test(h || '')){
+    h = 'h' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    try{ localStorage.setItem(HAND_KEY, h); }catch(e){}
+  }
+  return h;
+})();
+/* in a shared book the hand is the signed-in person, and the book lives
+   under a key of its own */
+let HAND = BROWSER_HAND, bookKey = LS_KEY, shelf = null, booted = false;
+function handsOf(n){
+  const pg = pages[n];
+  if(!pg.a || pg.a.length !== pg.t.length) pg.a = Array(pg.t.length).fill(HAND);
+  return pg.a;
+}
+const hasMine = n => !!pages[n].t && handsOf(n).includes(HAND);
+const hasOthers = n => !!pages[n].t && handsOf(n).some(h => h !== HAND);
+/* hands are stored once per book, each page as runs of [hand, letters] */
+function packHands(a, list){
+  const runs = [];
+  a.forEach(h=>{
+    let i = list.indexOf(h);
+    if(i < 0){ i = list.length; list.push(h); }
+    const r = runs[runs.length - 1];
+    if(r && r[0] === i) r[1]++; else runs.push([i, 1]);
+  });
+  return runs;
+}
+function unpackHands(runs, list, len){
+  if(!Array.isArray(runs) || !Array.isArray(list)) return null;
+  const a = [];
+  for(const r of runs){
+    const h = list[r && r[0]], c = r ? r[1]|0 : 0;
+    if(typeof h !== 'string' || c <= 0 || a.length + c > len) return null;
+    for(let i=0;i<c;i++) a.push(h);
+  }
+  return a.length === len ? a : null;
+}
 function serialise(){
-  const out = {};
-  pages.forEach((p,n)=>{ if(p.t || p.f) out[n] = p.c ? { t:p.t, f:p.f, c:1 } : { t:p.t, f:p.f }; });
-  return { pages: out, open: st.open, k: st.k, font: defaultFont, fv: 4 };
+  const out = {}, hands = [HAND];
+  pages.forEach((p,n)=>{
+    if(!p.t && !p.f) return;
+    const o = { t:p.t, f:p.f };
+    if(p.c) o.c = 1;
+    if(p.t) o.a = packHands(handsOf(n), hands);
+    out[n] = o;
+  });
+  return { pages: out, hands, open: st.open, k: st.k, w: lastWritten, font: defaultFont, fv: 5 };
 }
 function saveNow(quiet){
   clearTimeout(saveTm);
   try{
-    localStorage.setItem(LS_KEY, JSON.stringify(serialise()));
+    localStorage.setItem(bookKey, JSON.stringify(serialise()));
     if(!quiet) toast('✒  INSCRIBED');
   }catch(e){ toast('COULD NOT SAVE', 2200); }
+  if(shelf) shelf.sync();
 }
+/* the book opens on its title page, or, once there is writing in it, on the
+   page last written on (failing that, the last page that has any ink) */
+let lastWritten = null;
+function homePage(){
+  let w = lastWritten;
+  if(!(w >= 1 && w < 2*N && pages[w].t)){
+    w = 0;
+    for(let n=2*N-1;n>=1;n--) if(pages[n].t){ w = n; break; }
+  }
+  return w;
+}
+function homeSpread(){ return spreadOf(homePage()); }
 function saveSoon(quiet){ clearTimeout(saveTm); saveTm = setTimeout(()=>saveNow(quiet), 450); }
 function applyData(d){
-  pages.forEach(p=>{ p.t=''; p.f=null; p.born=null; p.c=false; });
+  pages.forEach(p=>{ p.t=''; p.f=null; p.born=null; p.c=false; p.a=null; });
   if(d && d.pages) Object.entries(d.pages).forEach(([n,v])=>{
     const i = n|0;
-    if(i>=0 && i<pages.length && v){ pages[i].t = String(v.t||'').slice(0, 6000); pages[i].f = FONTS.some(f=>f.id===v.f) ? v.f : null; pages[i].c = !!v.c; }
+    if(i>=0 && i<pages.length && v){
+      pages[i].t = String(v.t||'').slice(0, 6000); pages[i].f = FONTS.some(f=>f.id===v.f) ? v.f : null; pages[i].c = !!v.c;
+      /* a book from before hands were kept was written in this browser */
+      pages[i].a = unpackHands(v.a, d.hands, pages[i].t.length);
+    }
   });
   /* books saved under an older default hand move onto Chronicle; a page given
      any of today's other hands on purpose keeps it */
@@ -1756,8 +2647,9 @@ function loadAll(){
   try{ d = JSON.parse(localStorage.getItem(LS_KEY)); }catch(e){}
   if(d){
     applyData(d);
+    lastWritten = (d.w|0) >= 1 ? d.w|0 : null;
     st.open = !!d.open;
-    st.k = clamp(d.k|0, 0, N);
+    st.k = homeSpread();
     return;
   }
   /* the first build stored HTML per page under liber-arcanum.page.N */
@@ -1772,15 +2664,94 @@ function loadAll(){
     }
   }catch(e){}
 }
+/* another tab of the same book saved: take its pages, so this tab never
+   writes an older copy back over them when it closes */
+addEventListener('storage', e=>{
+  if(e.key !== bookKey || !e.newValue) return;
+  let d = null;
+  try{ d = JSON.parse(e.newValue); }catch(err){ return; }
+  clearTimeout(saveTm);
+  applyData(d);
+  lastWritten = (d.w|0) >= 1 ? d.w|0 : null;
+  if(writing){
+    const n = writing.n, i = Math.min(quill.selectionEnd, pages[n].t.length);
+    quill.value = pages[n].t; quill.setSelectionRange(i, i);
+    lastGood = { v: quill.value, a: i, b: i };
+  }
+  pageCache.forEach((_, n)=>paintPage(n));
+});
+const fileDate = () => new Date().toISOString().slice(0,10);
+function download(name, text, type){
+  const blob = new Blob([text], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+function exportText(){
+  saveNow(true);
+  const parts = [];
+  pages.forEach((p, n)=>{
+    if(n < 1 || !p.t.trim()) return;
+    const who = shelf && shelf.shared() ? [...new Set(handsOf(n))].map(h => shelf.name(h)).filter(Boolean) : [];
+    parts.push(`Page ${n + 1}${who.length ? ' · ' + who.join(', ') : ''}\n\n${p.t.trim()}`);
+  });
+  if(!parts.length){ toast('THE BOOK IS STILL EMPTY', 1600); return; }
+  download(`liber-arcanum-${fileDate()}.txt`, `Liber Arcanum\n\n\n${parts.join('\n\n\n')}\n`, 'text/plain;charset=utf-8');
+  toast('BOOK SAVED AS TEXT', 1800);
+}
+/* the pages of another book are taken up in place of these */
+function useBook(key, hand, booting){
+  if(writing) exitWriting();
+  saveNow(true);
+  clearTimeout(saveTm);
+  bookKey = key; HAND = hand; lastErase = null;
+  let d = null;
+  try{ d = JSON.parse(localStorage.getItem(key)); }catch(e){}
+  applyData(d);
+  lastWritten = d && (d.w|0) >= 1 ? d.w|0 : null;
+  pageCache.forEach((_, n)=>paintPage(n));
+  if(booting || !st.open) st.k = st.open ? homeSpread() : st.k;
+  else seekSpread(homeSpread(), { flourish: false });
+  refreshUI();
+}
+/* the pages written in this browser's own book, wherever the reader is now */
+function personalPages(){
+  let list = pages.map((p, n)=>({ n, t: p.t, a: bookKey === LS_KEY ? handsOf(n) : null, f: p.f, c: p.c }));
+  if(bookKey !== LS_KEY){
+    let d = null;
+    try{ d = JSON.parse(localStorage.getItem(LS_KEY)); }catch(e){}
+    list = Object.entries((d && d.pages) || {}).map(([n, v])=>{
+      const t = String(v.t || '');
+      return { n: n|0, t, a: unpackHands(v.a, d.hands, t.length) || Array(t.length).fill(BROWSER_HAND), f: v.f || null, c: !!v.c };
+    });
+  }
+  return list.filter(p => p.n >= 1 && p.n < 2*N && p.t);
+}
+/* letters that came from another hand over the network burn in where they land */
+function applyPage(n, t, a, f, c, quiet){
+  if(composing && writing && writing.n === n) return false;
+  const pg = pages[n], now = performance.now(), sp = editSpan(pg.t, t), ob = pg.born || [];
+  const step = Math.min(14, 900/Math.max(1, sp.ins));
+  pg.born = quiet ? null : Array.from({length: sp.at}, (_, i)=> ob[i] || 0)
+    .concat(Array.from({length: sp.ins}, (_, i)=> now + i*step), Array.from({length: t.length - sp.at - sp.ins}, (_, i)=> ob[sp.at + sp.del + i] || 0));
+  pg.t = t; pg.a = a.slice(); pg.f = FONTS.some(x => x.id === f) ? f : pg.f; pg.c = !!c && !!t;
+  if(writing && writing.n === n){
+    let i = quill.selectionEnd;
+    if(i >= sp.at + sp.del) i += sp.ins - sp.del; else if(i > sp.at) i = sp.at;
+    i = clamp(i, 0, t.length);
+    quill.value = t; quill.setSelectionRange(i, i);
+    lastGood = { v: t, a: i, b: i };
+  }
+  if(pageCache.has(n)){ if(!quiet) burning.add(n); paintPage(n, now); }
+  saveSoon(true);
+  return true;
+}
 function exportFile(){
   saveNow(true);
   const data = { format:'liber-arcanum', version:2, savedAt:new Date().toISOString(), ...serialise() };
-  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `liber-arcanum-${new Date().toISOString().slice(0,10)}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+  download(`liber-arcanum-${fileDate()}.json`, JSON.stringify(data, null, 2), 'application/json');
   toast('BOOK SAVED TO FILE', 1800);
 }
 /* ============================================================================
@@ -1788,9 +2759,8 @@ function exportFile(){
    ==========================================================================*/
 const quill = document.getElementById('quill');
 let writing = null;           // { n }
-let caretOn = true, composing = false;
+let composing = false;
 let lastGood = { v:'', a:0, b:0 };
-const hintEl = document.getElementById('hint');
 const pageNoEl = document.getElementById('pageNo');
 const burning = new Set();    // pages with letters still glowing
 
@@ -1804,7 +2774,7 @@ function enterWriting(n, idx){
   quill.focus({ preventScroll:true });
   quill.setSelectionRange(i, i);
   lastGood = { v:quill.value, a:i, b:i };
-  caretOn = true; blinkPhase = 0;
+  blinkPhase = 0;
   st.bob = 0;
   burning.add(n);
   paintPage(n);
@@ -1819,6 +2789,34 @@ function exitWriting(keepFocus){
   saveNow(true);
   st.bob = 1;
   refreshUI();
+}
+/* where an edit changed the text: the common head, then what went and what came */
+/* what one stroke of the quill did: at `at`, `del` letters went and `ins`
+   came; given the selection it was made on (a, b) and the caret after (c),
+   a letter typed beside the same letter of another hand is not taken for theirs */
+function editSpan(oldV, newV, a, b, c){
+  const lo = Math.min(oldV.length, newV.length);
+  let p = 0;
+  while(p < lo && oldV[p] === newV[p]) p++;
+  let s = 0;
+  while(s < lo - p && oldV[oldV.length-1-s] === newV[newV.length-1-s]) s++;
+  const least = { at: p, del: oldV.length - p - s, ins: newV.length - p - s };
+  /* a reading from the selection is taken only if it deletes no more than
+     the plainest reading does */
+  if(a !== undefined){
+    const d = oldV.length - newV.length;
+    const fits = (at, del, ins) => at >= 0 && del >= 0 && ins >= 0 && at + del <= oldV.length &&
+      del <= least.del && oldV.length - del + ins === newV.length &&
+      newV.slice(0, at) === oldV.slice(0, at) && newV.slice(at + ins) === oldV.slice(at + del);
+    for(const [at, del, ins] of [[a, b - a, b - a - d], [c, a - c, 0], [a, d, 0], [a, d + c - a, c - a]])
+      if(fits(at, del, ins)) return { at, del, ins };
+  }
+  return least;
+}
+function refuseStroke(msg){
+  quill.value = lastGood.v;
+  quill.setSelectionRange(lastGood.a, lastGood.b);
+  toast(msg, 2200);
 }
 /* keep one birth time per character, so new letters can burn in */
 function trackBirths(n, oldV, newV){
@@ -1839,31 +2837,38 @@ function trackBirths(n, oldV, newV){
 function onQuillInput(){
   if(!writing || composing) return;
   const n = writing.n, v = quill.value;
+  const sp = editSpan(pages[n].t, v, lastGood.a, lastGood.b, quill.selectionEnd), was = handsOf(n);
+  if(was.slice(sp.at, sp.at + sp.del).some(h => h !== HAND)){ refuseStroke('ANOTHER HAND WROTE THIS · IT STAYS'); return; }
+  const hands = was.slice(0, sp.at).concat(Array(sp.ins).fill(HAND), was.slice(sp.at + sp.del));
   const lay = layoutText(v, pageFont(n), textBox(n));
   if(!lay.ok){
-    const res = pour(n, v, quill.selectionEnd);
-    if(!res){
-      quill.value = lastGood.v;
-      quill.setSelectionRange(lastGood.a, lastGood.b);
-      toast('THE BOOK IS FULL', 2000);
-      return;
-    }
+    const res = pour(n, v, quill.selectionEnd, hands);
+    if(!res || res.blocked){ refuseStroke(res ? 'NO ROOM · ANOTHER HAND WROTE BELOW' : 'THE BOOK IS FULL'); return; }
     trackBirths(n, pages[n].t, v);
     applyPour(n, res);
+    lastWritten = writing ? writing.n : n;
     return;
   }
-  const ins = trackBirths(n, pages[n].t, v);
+  const old = pages[n].t, cut = editSpan(old, v), e0 = pageCache.get(n);
+  if(cut.del > 0 && e0 && e0.lay){
+    addVapor(n, old, e0.lay, cut.at, cut.at + cut.del, cut.del > 40 ? Math.min(0.07, 0.9/Math.max(1, e0.lay.lines.length)) : 0);
+    if(!cut.ins) sfx.vanish(cut.del > 1);
+  }
+  const ins = trackBirths(n, old, v);
   pages[n].t = v;
+  pages[n].a = hands;
+  lastWritten = n;
   if(!v) pages[n].c = false;
   if(!pages[n].f) pages[n].f = defaultFont;
   lastGood = { v, a:quill.selectionStart, b:quill.selectionEnd };
-  caretOn = true; blinkPhase = 0;
+  blinkPhase = 0;
   burning.add(n);
   document.fonts.load(fontCss(pageFont(n), 40), v.slice(-24) || 'a').then(()=>{ if(pageCache.has(n)) paintPage(n); }).catch(()=>{});
   paintPage(n);
   if(ins.count > 0 && ins.count < 40){
     emitSparks(n, lay, v, ins.at, ins.count);
-    sfx.quill();
+    emitSmoke(n, lay, v, ins.at, ins.count);
+    sfx.burn(ins.at === 0 && !!lay.cap);
     if(/[.!?]/.test(v.charAt(ins.at + ins.count - 1))) sfx.chime();
   }
   saveSoon(false);
@@ -1871,7 +2876,12 @@ function onQuillInput(){
 quill.addEventListener('input', onQuillInput);
 quill.addEventListener('compositionstart', ()=>{ composing = true; });
 quill.addEventListener('compositionend', ()=>{ composing = false; onQuillInput(); });
-const onSel = ()=>{ if(writing){ caretOn = true; blinkPhase = 0; lastGood.a = quill.selectionStart; lastGood.b = quill.selectionEnd; paintPage(writing.n); } };
+const onSel = ()=>{
+  if(!writing) return;
+  blinkPhase = 0;
+  if(!composing){ lastGood.a = quill.selectionStart; lastGood.b = quill.selectionEnd; }
+  paintPage(writing.n);
+};
 document.addEventListener('selectionchange', ()=>{ if(document.activeElement === quill) onSel(); });
 quill.addEventListener('keyup', onSel);
 quill.addEventListener('keydown', e=>{
@@ -1915,11 +2925,12 @@ quill.addEventListener('keydown', e=>{
 });
 let blinkPhase = 0;
 
-/* sparks rising from a freshly written letter */
+/* a few embers lifting off a freshly burned letter: slow, drifting,
+   breathing in and out rather than spitting out */
 const SPARKS = 240;
 const sparkGeo = new THREE.BufferGeometry();
 const sparkPos = new Float32Array(SPARKS*3), sparkVel = new Float32Array(SPARKS*3), sparkLife = new Float32Array(SPARKS);
-const sparkAlpha = new Float32Array(SPARKS);
+const sparkAlpha = new Float32Array(SPARKS), sparkMax = new Float32Array(SPARKS).fill(1), sparkSeed = new Float32Array(SPARKS);
 sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
 sparkGeo.setAttribute('alpha', new THREE.BufferAttribute(sparkAlpha, 1));
 const sparkMat = new THREE.ShaderMaterial({
@@ -1930,35 +2941,135 @@ const sparkMat = new THREE.ShaderMaterial({
   fragmentShader: `varying float vA;
     void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d)*vA; gl_FragColor = vec4(vec3(1.0, 0.82, 0.5)*1.6*a, a); }`
 });
-const sparks = new THREE.Points(sparkGeo, sparkMat);
+/* the burn's own motes: a white-gold ember in a soft orange halo */
+const inkSparkMat = sparkMat.clone();
+inkSparkMat.vertexShader = `attribute float alpha; varying float vA; uniform float uScale;
+    void main(){ vA = alpha; vec4 mv = modelViewMatrix*vec4(position,1.0); gl_Position = projectionMatrix*mv; gl_PointSize = uScale*(0.8 + 1.1*alpha)/max(0.1, -mv.z); }`;
+inkSparkMat.fragmentShader = `varying float vA;
+    void main(){ float d = length(gl_PointCoord - 0.5); float core = smoothstep(0.16, 0.0, d); float halo = smoothstep(0.5, 0.05, d); halo *= halo;
+      float a = (core*0.9 + halo*0.4)*vA; gl_FragColor = vec4(mix(vec3(1.0, 0.52, 0.18), vec3(1.0, 0.9, 0.7), core)*1.5*a, a); }`;
+const sparks = new THREE.Points(sparkGeo, inkSparkMat);
 sparks.frustumCulled = false;
 scene.add(sparks);
 let sparkNext = 0;
-function emitSparks(n, lay, text, at, count){
+/* lift: the ink leaving the sheet when a page is wiped, a little livelier */
+function emitSparks(n, lay, text, at, count, lift){
   for(let i=at; i<at+count; i++){
     const gb = glyphBox(lay, text, i);
     if(!gb) continue;
-    const { p, n: nrm } = pagePointWorld(n, gb.x + gb.w*0.5, gb.y - lay.size*0.35);
-    for(let k=0;k<2;k++){
-      const s = sparkNext; sparkNext = (sparkNext+1) % SPARKS;
-      sparkPos[s*3] = p.x; sparkPos[s*3+1] = p.y; sparkPos[s*3+2] = p.z;
-      const sp = 0.18 + Math.random()*0.25;
-      sparkVel[s*3]   = nrm.x*sp + (Math.random()-0.5)*0.35;
-      sparkVel[s*3+1] = nrm.y*sp + (Math.random()-0.5)*0.35 + 0.15;
-      sparkVel[s*3+2] = nrm.z*sp + (Math.random()-0.5)*0.35;
-      sparkLife[s] = 0.45 + Math.random()*0.45;
+    if(!lift && Math.random() > 0.55) continue;
+    const { p, n: nrm } = pagePointWorld(n, gb.x + gb.w*Math.random(), gb.y - lay.size*(0.15 + Math.random()*0.6));
+    const s = sparkNext; sparkNext = (sparkNext+1) % SPARKS;
+    sparkPos[s*3] = p.x; sparkPos[s*3+1] = p.y; sparkPos[s*3+2] = p.z;
+    const sp = lift ? 0.14 + Math.random()*0.16 : 0.05 + Math.random()*0.06, j = lift ? 0.16 : 0.06;
+    sparkVel[s*3]   = nrm.x*sp + (Math.random()-0.5)*j;
+    sparkVel[s*3+1] = nrm.y*sp + (Math.random()-0.5)*j + 0.04;
+    sparkVel[s*3+2] = nrm.z*sp + (Math.random()-0.5)*j;
+    sparkMax[s] = sparkLife[s] = (lift ? 1.0 : 1.3) + Math.random()*0.9;
+    sparkSeed[s] = Math.random()*6.283;
+  }
+}
+/* a thread of smoke off each burning letter: a few soft puffs that rise,
+   curl and widen, lit amber by the ember at first, then a cool grey veil
+   over the sheet, gone within two seconds */
+const SMOKE = 160;
+const smokeGeo = new THREE.BufferGeometry();
+const smokePos = new Float32Array(SMOKE*3), smokeVel = new Float32Array(SMOKE*3);
+const smokeAge = new Float32Array(SMOKE).fill(1), smokeLife = new Float32Array(SMOKE).fill(1), smokeWait = new Float32Array(SMOKE);
+const smokeAlpha = new Float32Array(SMOKE), smokeT = new Float32Array(SMOKE), smokeSeed = new Float32Array(SMOKE), smokeSize = new Float32Array(SMOKE);
+const smokeKind = new Float32Array(SMOKE);
+smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePos, 3));
+smokeGeo.setAttribute('alpha', new THREE.BufferAttribute(smokeAlpha, 1));
+smokeGeo.setAttribute('age', new THREE.BufferAttribute(smokeT, 1));
+smokeGeo.setAttribute('seed', new THREE.BufferAttribute(smokeSeed, 1));
+smokeGeo.setAttribute('size', new THREE.BufferAttribute(smokeSize, 1));
+smokeGeo.setAttribute('kind', new THREE.BufferAttribute(smokeKind, 1));
+const smokeMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false,
+  uniforms: { uScale: { value: 1 } },
+  vertexShader: `attribute float alpha, age, seed, size, kind; varying float vA, vT, vS, vK; uniform float uScale;
+    void main(){ vA = alpha; vT = age; vS = seed; vK = kind; vec4 mv = modelViewMatrix*vec4(position,1.0); gl_Position = projectionMatrix*mv;
+      gl_PointSize = alpha > 0.0 ? uScale*size/max(0.1, -mv.z) : 0.0; }`,
+  fragmentShader: `varying float vA, vT, vS, vK;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7)))*43758.5453); }
+    float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0 - 2.0*f);
+      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
+    void main(){
+      vec2 p = gl_PointCoord - 0.5;
+      p.x += 0.13*sin(p.y*7.0 + vS*6.283 + vT*3.0);
+      float r = length(p*vec2(1.8, 1.0));
+      float n = vnoise(p*4.5 + vec2(vS*17.0, -vT*2.2))*0.65 + vnoise(p*10.0 + vec2(-vT*3.0, vS*9.0))*0.35;
+      float d = smoothstep(0.5, 0.08, r)*smoothstep(0.28, 0.78, n);
+      float warm = 1.0 - smoothstep(0.0, 0.3, vT);
+      vec3 col = mix(vec3(0.4, 0.4, 0.44), vec3(1.0, 0.64, 0.34), warm);
+      col = mix(col, mix(vec3(0.86, 0.84, 0.78), vec3(1.0, 0.86, 0.6), warm), vK);
+      gl_FragColor = vec4(col, d*vA*(0.75 + 0.25*warm));
+    }`
+});
+const smoke = new THREE.Points(smokeGeo, smokeMat);
+smoke.frustumCulled = false;
+scene.add(smoke);
+let smokeNext = 0;
+/* the forest breeze the smoke leans into */
+const SMOKE_WIND = [0.16, 0, -0.08];
+function emitSmoke(n, lay, text, at, count, vapor){
+  for(let i=at; i<at+count; i++){
+    const ch = text[i];
+    if(!ch || /\s/.test(ch)) continue;
+    const gb = glyphBox(lay, text, i);
+    if(!gb) continue;
+    const puffs = vapor ? (gb.cap ? 4 : 1 + (Math.random() < 0.5 ? 1 : 0)) : gb.cap ? 7 : 2 + (Math.random() < 0.4 ? 1 : 0), T = gb.cap ? BURN_CAP : BURN_T;
+    const x0 = gb.cap ? lay.cap.x : gb.x, w = gb.cap ? lay.cap.w : gb.w, yy = gb.cap ? lay.cap.y - lay.cap.size*0.35 : gb.y - lay.size*0.35;
+    for(let k=0;k<puffs;k++){
+      const f = (k + 0.5)/puffs;
+      const { p, n: nrm } = pagePointWorld(n, x0 + w*(gb.cap ? f : 0.25 + Math.random()*0.5), yy + (Math.random() - 0.5)*lay.size*0.3);
+      const s = smokeNext; smokeNext = (smokeNext + 1) % SMOKE;
+      smokePos[s*3] = p.x + nrm.x*0.01; smokePos[s*3+1] = p.y + nrm.y*0.01; smokePos[s*3+2] = p.z + nrm.z*0.01;
+      smokeVel[s*3] = nrm.x*0.05 + (Math.random() - 0.5)*0.03;
+      smokeVel[s*3+1] = nrm.y*0.05 + 0.14 + Math.random()*0.06;
+      smokeVel[s*3+2] = nrm.z*0.05 + (Math.random() - 0.5)*0.03;
+      smokeWait[s] = vapor ? 0.12 + Math.random()*0.35 : T*(gb.cap ? f*0.9 : 0.25 + k*0.12);
+      smokeKind[s] = vapor ? 1 : 0;
+      smokeAge[s] = 0;
+      smokeLife[s] = 1.4 + Math.random()*0.7;
+      smokeSeed[s] = Math.random();
     }
   }
 }
+function stepSmoke(dt){
+  const drag = Math.exp(-dt*0.6);
+  for(let s=0;s<SMOKE;s++){
+    if(smokeWait[s] > 0){ smokeWait[s] -= dt; smokeAlpha[s] = 0; continue; }
+    if(smokeAge[s] >= smokeLife[s]){ smokeAlpha[s] = 0; continue; }
+    smokeAge[s] += dt;
+    const q = s*3, t = smokeAge[s]/smokeLife[s], ph = smokeSeed[s]*6.283;
+    smokeVel[q] *= drag; smokeVel[q+2] *= drag;
+    const gust = smokeAge[s]*0.5;
+    smokePos[q]   += (smokeVel[q] + SMOKE_WIND[0]*gust + Math.sin(smokeAge[s]*1.6 + ph)*0.04)*dt;
+    smokePos[q+1] += smokeVel[q+1]*dt;
+    smokePos[q+2] += (smokeVel[q+2] + SMOKE_WIND[2]*gust + Math.cos(smokeAge[s]*1.3 + ph)*0.04)*dt;
+    smokeT[s] = t;
+    smokeSize[s] = 22 + 46*Math.pow(t, 0.6);
+    smokeAlpha[s] = smooth(clamp(t/0.1, 0, 1))*Math.pow(1 - t, 1.4)*0.42;
+  }
+  smokeGeo.attributes.position.needsUpdate = true;
+  smokeGeo.attributes.alpha.needsUpdate = true;
+  smokeGeo.attributes.age.needsUpdate = true;
+  smokeGeo.attributes.size.needsUpdate = true;
+  smokeGeo.attributes.kind.needsUpdate = true;
+}
 function stepSparks(dt){
+  const drag = Math.exp(-dt*0.9);
   for(let s=0;s<SPARKS;s++){
     if(sparkLife[s] <= 0){ sparkAlpha[s] = 0; continue; }
     sparkLife[s] -= dt;
-    sparkPos[s*3]   += sparkVel[s*3]*dt;
-    sparkPos[s*3+1] += sparkVel[s*3+1]*dt;
-    sparkPos[s*3+2] += sparkVel[s*3+2]*dt;
-    sparkVel[s*3+1] += 0.25*dt;
-    sparkAlpha[s] = clamp(sparkLife[s]/0.8, 0, 1);
+    const age = sparkMax[s] - sparkLife[s], q = s*3, ph = sparkSeed[s];
+    sparkVel[q] *= drag; sparkVel[q+1] = sparkVel[q+1]*drag + 0.07*dt; sparkVel[q+2] *= drag;
+    sparkPos[q]   += (sparkVel[q] + Math.sin(age*1.7 + ph)*0.018)*dt;
+    sparkPos[q+1] += sparkVel[q+1]*dt;
+    sparkPos[q+2] += (sparkVel[q+2] + Math.cos(age*1.3 + ph)*0.018)*dt;
+    const life = clamp(sparkLife[s]/sparkMax[s], 0, 1);
+    sparkAlpha[s] = smooth(clamp(age/0.22, 0, 1))*Math.pow(life, 1.3)*(0.78 + 0.22*Math.sin(age*9 + ph))*0.85;
   }
   sparkGeo.attributes.position.needsUpdate = true;
   sparkGeo.attributes.alpha.needsUpdate = true;
@@ -1968,8 +3079,8 @@ function stepSparks(dt){
 const MUTE_KEY = 'liber-arcanum.muted';
 const sfx = (()=>{
   let ac = null, out = null, noise = null;
-  let muted = false, ambStarted = false;
-  try{ muted = localStorage.getItem(MUTE_KEY) === '1'; }catch(e){}
+  let muted = true, ambStarted = false;
+  try{ muted = localStorage.getItem(MUTE_KEY) !== '0'; }catch(e){}
   function ready(){
     if(muted) return null;
     if(!ac){
@@ -2105,10 +3216,23 @@ const sfx = (()=>{
       tone(t, 70, 0.22, 0.08);
       hiss(t, 0.2, 600, 220, 0.7, 0.08);
     },
-    quill(){
+    /* a letter burning in: a soft sizzle, a warm breath of flame, a few dry
+       crackles, and now and then the faintest glass note of the spell */
+    burn(cap){
+      if(!ready()) return;
+      const t = ac.currentTime, len = cap ? 1.1 : 0.32;
+      hiss(t, len + Math.random()*0.1, 7000 + Math.random()*1500, 4200, 0.9, cap ? 0.03 : 0.022, 'bandpass');
+      hiss(t + 0.02, len*1.2, 700, 420, 0.7, cap ? 0.05 : 0.03, 'lowpass');
+      const n = cap ? 7 : 1 + Math.floor(Math.random()*3);
+      for(let i=0;i<n;i++) hiss(t + Math.random()*len, 0.008 + Math.random()*0.012, 2500 + Math.random()*3500, 1800, 1.4, 0.04 + Math.random()*0.06, 'highpass');
+      if(Math.random() < (cap ? 1 : 0.16)) tone(t + 0.05, [2637, 3136, 3520, 3951][Math.floor(Math.random()*4)], cap ? 1.4 : 0.7, cap ? 0.006 : 0.0035);
+    },
+    /* a letter evaporating: a small breath drawn upward, now and then a high glass note */
+    vanish(many){
       if(!ready()) return;
       const t = ac.currentTime;
-      hiss(t, 0.05 + Math.random()*0.05, 4200 + Math.random()*2500, 2800, 2.5, 0.06, 'bandpass');
+      hiss(t, many ? 0.7 : 0.4, 1500, 5600, 1.1, many ? 0.04 : 0.026);
+      if(Math.random() < (many ? 1 : 0.2)) tone(t + 0.08, [3520, 3136, 2637][Math.floor(Math.random()*3)], 0.8, many ? 0.008 : 0.004);
     },
     /* ink lifting off the sheet: a breath drawn upward, falling glass notes */
     erase(){
@@ -2298,79 +3422,151 @@ function emitDustPuff(){
     dust2.emit(_dc.x, _dc.y + 0.05, _dc.z, v.x*sp, 0.12 + Math.random()*0.25, v.z*sp, 1.4 + Math.random()*1.4, 0.07 + Math.random()*0.07);
   }
 }
-/* warm light spilling out of the gap as the board lifts */
-const innerGlow = new THREE.PointLight(0xff9f45, 0, 6, 1.6);
+/* warm light spilling out of the gap as the board lifts: a breath of it, the colour
+   of the sun on the page, not an orange lamp inside the book */
+const innerGlow = new THREE.PointLight(0xffdcb0, 0, 6, 1.6);
 scene.add(innerGlow);
 const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
   map: (()=>{ const t = new THREE.CanvasTexture(makeSpriteCanvas(128)); t.colorSpace = THREE.SRGBColorSpace; return t; })(),
-  color: 0xffa850, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true }));
+  color: 0xffe2bc, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true }));
 glowSprite.scale.set(5, 5, 1);
 scene.add(glowSprite);
 const _gp = new THREE.Vector3();
-/* the forest is alive round the rock: leaves come down now and then, turning as
-   they fall, and fireflies wander low over the moss. Nothing drifts between the
-   camera and the book */
-const leafMats = [[0x8f9a4e, 0], [0xa88a46, 1], [0x6f8a3e, 2]].map(([tint, seed])=>{
-  const c = cv(64, 96), x = c.getContext('2d');
-  const gr = x.createLinearGradient(0, 0, 0, 96);
-  gr.addColorStop(0, '#fff'); gr.addColorStop(1, '#c9c9b0');
-  x.fillStyle = gr;
-  x.beginPath(); x.moveTo(32, 94); x.bezierCurveTo(70, 70, 60, 20, 32, 2); x.bezierCurveTo(4, 20, -6, 70, 32, 94); x.fill();
-  x.strokeStyle = 'rgba(90,80,40,.45)'; x.lineWidth = 1.4;
-  x.beginPath(); x.moveTo(32, 92); x.lineTo(32, 8);
-  for(let k=0;k<5;k++){ const y = 80 - k*14; x.moveTo(32, y); x.lineTo(14 + k*2, y - 10); x.moveTo(32, y); x.lineTo(50 - k*2, y - 10); }
-  x.stroke();
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  /* emissive from the same map: the low sun shines through a thin leaf */
-  return new THREE.MeshStandardMaterial({ map: t, color: tint, emissive: tint, emissiveMap: t, emissiveIntensity: 0.12, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.75, metalness: 0 });
+/* the forest is alive round the rock: now and then a leaf comes down from the crowns,
+   and fireflies wander low over the moss in the shade. Nothing drifts between the
+   camera and the book.
+   The leaves are real ones, photographed (Poly Haven, CC0), some still green, some
+   turning. A falling leaf does not sink and spin like a coin: it swings from side to
+   side like a pendulum, tilting into each swing, hanging a moment at the ends and
+   dropping fastest through the middle, while the breeze carries it along. One in four
+   tumbles end over end instead and glides off sideways */
+const leafTex = new THREE.TextureLoader().load('assets/leaves/fall_leaves.png');
+leafTex.colorSpace = THREE.SRGBColorSpace; leafTex.anisotropy = 4;
+const leafSun = { value: SUN_DIR }, leafHaze = { value: null };
+const leafMats = [0xd6dcc4, 0xe8dc9a, 0xd8b06c, 0xa88660].map(tint=>{
+  const m = new THREE.MeshStandardMaterial({ map: leafTex, color: tint, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85, metalness: 0, envMapIntensity: 0.55 });
+  /* a thin leaf lets the light through, most of all with the low sun behind it, and
+     stands in the same haze as the wood behind it */
+  m.onBeforeCompile = sh=>{
+    sh.uniforms.uSunW = leafSun; sh.uniforms.tHaze = leafHaze;
+    sh.vertexShader = 'varying vec4 vScr;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvScr = gl_Position;');
+    sh.fragmentShader = 'uniform vec3 uSunW; uniform sampler2D tHaze; varying vec4 vScr;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', `
+      { vec3 sv = normalize((viewMatrix*vec4(uSunW, 0.0)).xyz);
+        float back = pow(clamp(-dot(normalize(vViewPosition), sv), 0.0, 1.0), 2.0);
+        outgoingLight += diffuseColor.rgb*vec3(1.0, 0.95, 0.62)*(0.3 + 2.4*back);
+        vec3 haze = textureLod(tHaze, vScr.xy/vScr.w*0.5 + 0.5, 4.0).rgb;
+        outgoingLight = mix(outgoingLight, haze, clamp(1.0 - exp(-max(length(vViewPosition) - 4.0, 0.0)*0.03), 0.0, 0.45)); }
+      #include <opaque_fragment>`);
+  };
+  return m;
 });
-const leafGeo = new THREE.PlaneGeometry(0.24, 0.36);
-const fallers = Array.from({length: 22}, (_, i)=>{
-  const m = new THREE.Mesh(leafGeo, leafMats[i % 3]);
-  m.userData = { vy:0, ph:0, amp:0, w:0, spin:new THREE.Vector3() };
+/* each leaf of the atlas on its own little sheet, curled along its length and cupped
+   across, as a dry leaf is */
+const leafGeos = Array.from({length: 8}, (_, c)=>{
+  const g = new THREE.PlaneGeometry(0.42, 0.84, 2, 6);
+  const p = g.attributes.position, uv = g.attributes.uv;
+  const bend = 0.06 + Math.random()*0.1, cup = 0.03 + Math.random()*0.05;
+  for(let i=0;i<p.count;i++){
+    const x = p.getX(i)/0.21, y = p.getY(i)/0.42;
+    p.setZ(i, bend*y*y + cup*x*x);
+    uv.setXY(i, (c % 4 + uv.getX(i))/4, 1 - ((c >> 2) + 1 - uv.getY(i))/2);
+  }
+  g.computeVertexNormals();
+  return g;
+});
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qc = new THREE.Quaternion();
+const AX_Y = new THREE.Vector3(0, 1, 0), AX_Z = new THREE.Vector3(0, 0, 1);
+const LEAF_FLAT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI/2);
+const fallers = Array.from({length: 14}, (_, i)=>{
+  const m = new THREE.Mesh(leafGeos[i % 8], leafMats[(i*3 + (i >> 2)) % 4]);
+  m.userData = {};
+  m.frustumCulled = false;
   scene.add(m);
   return m;
 });
 function spawnLeaf(m, anywhere){
   let x, z;
-  do{ x = -13 + Math.random()*26; z = -16 + Math.random()*18; }while(Math.hypot(x, z) < 4.5 || (Math.abs(x) < 5 && z > -3.5));
-  m.position.set(x, anywhere ? -2 + Math.random()*11 : 9 + Math.random()*3, z);
-  m.rotation.set(Math.random()*6.3, Math.random()*6.3, Math.random()*6.3);
+  do{ x = -18 + Math.random()*36; z = -20 + Math.random()*23; }while(Math.hypot(x, z) < 4.5 || (Math.abs(x) < 5 && z > -3.5));
   const u = m.userData;
-  u.vy = 0.28 + Math.random()*0.3; u.ph = Math.random()*6.3; u.amp = 0.4 + Math.random()*0.6; u.w = 0.8 + Math.random()*0.9;
-  u.spin.set((Math.random()-0.5)*2.2, (Math.random()-0.5)*1.6, (Math.random()-0.5)*2.4);
+  u.x = x; u.z = z; u.y = anywhere ? GROUND_Y + 2 + Math.random()*26 : 24 + Math.random()*8;
+  u.tumble = Math.random() < 0.25;
+  u.v0 = (u.tumble ? 4.2 : 2.6) + Math.random()*1.6;
+  u.w = 2.0 + Math.random()*1.3; u.ph = Math.random()*6.3;
+  u.A = 0.8 + Math.random()*1.2; u.tilt = 0.45 + Math.random()*0.4;
+  u.dir = Math.random()*6.3; u.dirW = (Math.random() - 0.5)*0.5;
+  u.spin = Math.random()*6.3; u.spinW = (Math.random() - 0.5)*0.6;
+  u.roll = Math.random()*6.3; u.rollW = (Math.random() < 0.5 ? -1 : 1)*(4 + Math.random()*3);
+  m.scale.setScalar(0.75 + Math.random()*0.5);
 }
 fallers.forEach(m=>spawnLeaf(m, true));
-const FLIES = 72;
+
+/* fireflies: the warm yellow-green of the real ones, a few among the shade. Each
+   drifts lazily on its own, dark most of the time, and now and then lights: a quick
+   swell and a slow fade, sometimes twice, lifting a little as it glows. So at any
+   moment only a handful shine, each in its own time, never all breathing together */
+const FLIES = 44;
+const fireflyMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uScale: { value: 1 } },
+  vertexShader: `attribute float alpha, tint; varying float vA, vT; uniform float uScale;
+    void main(){ vA = alpha; vT = tint; vec4 mv = modelViewMatrix*vec4(position,1.0); gl_Position = projectionMatrix*mv; gl_PointSize = uScale*(0.7 + 0.9*min(alpha, 1.0))/max(0.1, -mv.z); }`,
+  fragmentShader: `varying float vA, vT;
+    void main(){ vec2 c = gl_PointCoord - 0.5; float r2 = dot(c, c);
+      float core = exp(-r2*220.0), glow = exp(-r2*20.0);
+      vec3 col = mix(vec3(0.72, 1.0, 0.34), vec3(1.0, 0.85, 0.45), vT);
+      gl_FragColor = vec4((col*glow*1.1 + vec3(1.0, 1.0, 0.8)*core*2.6)*vA, 1.0); }`
+});
 const flyGeo = new THREE.BufferGeometry();
 const flyPos = new Float32Array(FLIES*3), flyAlpha = new Float32Array(FLIES), flyTint = new Float32Array(FLIES);
-const flySeed = Array.from({length: FLIES}, (_, i)=>{
-  let x, z; do{ x = -12 + Math.random()*24; z = -14 + Math.random()*17; }while(Math.hypot(x, z) < 3.4 || (Math.abs(x) < 3.5 && z > 2));
-  flyTint[i] = i % 3 ? 0 : 1;
-  return { x, z, y: GROUND_Y + 0.4 + Math.pow(Math.random(), 1.6)*6.5, ph: Math.random()*40, f: 0.2 + Math.random()*0.35 }; });
+const flySeed = Array.from({length: FLIES}, ()=>{
+  let x, z; do{ x = -20 + Math.random()*40; z = -22 + Math.random()*26; }while(Math.hypot(x, z) < 4 || (Math.abs(x) < 4 && z > 1));
+  const r = ()=>Math.random();
+  return { x, z, y: GROUND_Y + 0.8 + Math.pow(r(), 1.8)*11,
+    a: [0.05 + r()*0.12, 0.11 + r()*0.2, 0.07 + r()*0.14], p: [r()*40, r()*40, r()*40], R: 1.5 + r()*2.5,
+    T: 3.5 + r()*5, off: r()*10, twice: r() < 0.3, b: 0.55 + r()*0.45, tint: Math.pow(r(), 2.5) };
+});
+flySeed.forEach((q, i)=>{ flyTint[i] = q.tint; });
 flyGeo.setAttribute('position', new THREE.BufferAttribute(flyPos, 3));
 flyGeo.setAttribute('alpha', new THREE.BufferAttribute(flyAlpha, 1));
 flyGeo.setAttribute('tint', new THREE.BufferAttribute(flyTint, 1));
-const flies = new THREE.Points(flyGeo, flyMat);
+const flies = new THREE.Points(flyGeo, fireflyMat);
 flies.frustumCulled = false;
 scene.add(flies);
+function pulse(t){ return t < 0 ? 0 : (t < 0.2 ? smooth(t/0.2) : Math.exp(-(t - 0.2)*4.2)); }
 
 function stepLife(dt){
+  const wx = 0.35 + 0.3*Math.sin(clock*0.11), wz = 0.12*Math.sin(clock*0.07 + 1.3);
   for(const m of fallers){
     const u = m.userData;
-    m.position.y -= u.vy*dt;
-    m.position.x += (Math.sin(clock*u.w + u.ph)*u.amp + 0.15)*dt;
-    m.position.z += Math.cos(clock*u.w*0.7 + u.ph)*u.amp*0.5*dt;
-    m.rotation.x += u.spin.x*dt; m.rotation.y += u.spin.y*dt; m.rotation.z += u.spin.z*dt;
-    if(m.position.y < -3) spawnLeaf(m, false);
+    u.ph += u.w*dt; u.dir += u.dirW*dt; u.spin += u.spinW*dt;
+    u.x += wx*dt; u.z += wz*dt;
+    const s = Math.sin(u.ph), c = Math.cos(u.ph), dx = Math.cos(u.dir), dz = Math.sin(u.dir);
+    _qa.setFromAxisAngle(AX_Y, -u.dir);
+    if(u.tumble){
+      u.y -= u.v0*dt;
+      u.roll += u.rollW*dt;
+      u.x += dx*0.9*dt; u.z += dz*0.9*dt;
+      m.position.set(u.x, u.y, u.z);
+      _qb.setFromAxisAngle(AX_Z, u.roll);
+      m.quaternion.copy(_qa).multiply(_qb).multiply(LEAF_FLAT);
+    }else{
+      u.y -= u.v0*(0.25 + 0.75*c*c)*dt;
+      const lat = u.A*s;
+      m.position.set(u.x + dx*lat, u.y + 0.18*u.A*s*s, u.z + dz*lat);
+      _qb.setFromAxisAngle(AX_Z, -u.tilt*c);
+      _qc.setFromAxisAngle(AX_Y, u.spin);
+      m.quaternion.copy(_qa).multiply(_qb).multiply(_qc).multiply(LEAF_FLAT);
+    }
+    if(u.y < GROUND_Y + 0.3) spawnLeaf(m, false);
   }
   for(let i=0;i<FLIES;i++){
-    const q = flySeed[i], t = clock*q.f + q.ph;
-    flyPos[i*3]   = q.x + Math.sin(t*0.9)*0.8 + Math.sin(t*0.37)*0.6;
-    flyPos[i*3+1] = q.y + Math.sin(t*0.6 + 1.3)*0.45;
-    flyPos[i*3+2] = q.z + Math.cos(t*0.7)*0.8;
-    const blink = 0.5 + 0.5*Math.sin(t*1.6);
-    flyAlpha[i] = (0.3 + Math.pow(blink, 4)*0.9)*(flyTint[i] ? 0.85 : 1);
+    const q = flySeed[i], t = clock;
+    const k = ((t + q.off) % q.T + q.T) % q.T;
+    const f = Math.min(1, pulse(k) + (q.twice ? 0.8*pulse(k - 0.7) : 0));
+    flyPos[i*3]   = q.x + Math.sin(t*q.a[0] + q.p[0])*q.R + Math.sin(t*q.a[1]*1.7 + q.p[1])*q.R*0.35;
+    flyPos[i*3+1] = q.y + Math.sin(t*q.a[1] + q.p[2])*0.9 + f*0.35;
+    flyPos[i*3+2] = q.z + Math.sin(t*q.a[2] + q.p[1])*q.R + Math.cos(t*q.a[0]*1.3 + q.p[2])*q.R*0.35;
+    flyAlpha[i] = 0.03 + f*q.b;
   }
   flyGeo.attributes.position.needsUpdate = true;
   flyGeo.attributes.alpha.needsUpdate = true;
@@ -2389,9 +3585,9 @@ function stepMagic(dt){
   _gp.set(lerp(CW*0.5, 0, smooth(clamp(st.theta/OPEN, 0, 1))), 0, T/2 + 0.8);
   bookRoot.localToWorld(_gp);
   innerGlow.position.copy(_gp);
-  innerGlow.intensity = gl*5.5;
+  innerGlow.intensity = gl*1.8;
   glowSprite.position.copy(_gp);
-  glowSprite.material.opacity = gl*0.15;
+  glowSprite.material.opacity = gl*0.06;
   glowSprite.visible = gl > 0.003;
 }
 
@@ -2403,7 +3599,8 @@ const ndc = new THREE.Vector2();
 function pickables(){
   const list = [];
   const c = st.k;
-  if(!st.flight){
+  if(st.riffle){}
+  else if(!st.flight){
     if(c > 0) list.push(leaves[c-1].mesh);
     if(c < N) list.push(leaves[c].mesh);
   }else list.push(leaves[st.flight.j].mesh);
@@ -2422,7 +3619,7 @@ function pickAt(cx, cy){
   if(ud.grab === 'leaf'){
     const i = ud.leaf, mi = h.face ? h.face.materialIndex : 2;
     const L = leaves[i];
-    const open = st.open && Math.abs(st.theta-OPEN) < 1e-3 && !st.flight;
+    const open = st.open && Math.abs(st.theta-OPEN) < 1e-3 && !st.flight && !st.riffle;
     if(open && mi === 0 && i === st.k) return { type:'page', n:2*i, leaf:i, side:'right', uv:h.uv, s: h.uv.x*L.len, y: h.uv.y };
     if(open && mi === 1 && i === st.k-1) return { type:'page', n:2*i+1, leaf:i, side:'left', uv:h.uv, s:(1-h.uv.x)*L.len, y: h.uv.y };
     return { type:'book' };
@@ -2482,7 +3679,7 @@ function solveCoverTheta(local, px, py, prev){
   return (lo+hi)/2;
 }
 
-const THRESH = 6;
+const THRESH = { mouse:6, pen:10, touch:14 };
 const pointers = new Map();
 let g = null;   // the gesture in progress
 let pinch = null;
@@ -2507,7 +3704,8 @@ canvasEl.addEventListener('pointerdown', e=>{
   if(spinAnim){ spinAnim = null; spinGoal.copy(spinGrp.quaternion); }
   const hit = e.button === 2 ? null : pickAt(e.clientX, e.clientY);
   g = { id:e.pointerId, sx:e.clientX, sy:e.clientY, px:e.clientX, py:e.clientY, t:performance.now(),
-        moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1 };
+        moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1,
+        slop: THRESH[e.pointerType] || THRESH.mouse };
 });
 canvasEl.addEventListener('pointermove', e=>{
   const pp = pointers.get(e.pointerId);
@@ -2528,11 +3726,15 @@ canvasEl.addEventListener('pointermove', e=>{
   g.px = e.clientX; g.py = e.clientY;
   g.moved += Math.abs(dx) + Math.abs(dy);
   if(g.mode === 'pending'){
-    if(g.moved < THRESH) return;
+    if(Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < g.slop) return;
     const h = g.hit;
-    if(!g.force && h && h.type === 'page' && h.s > PW*0.5) startTurn(h);
-    else if(!g.force && h && h.type === 'front' && (st.open ? (h.inner && st.k === 0) : true) && h.outer && !st.flight) startCover(h);
-    else if(!g.force && !h){ g.mode = 'orbit'; st.focusTo = 0; dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
+    /* a page is turned by sweeping it sideways from anywhere on it, or by its outer
+       half in any direction; dragging it up or down, or the open book anywhere else,
+       looks round instead of spinning the open book away from the reader */
+    const sideways = Math.abs(e.clientX - g.sx) > Math.abs(e.clientY - g.sy)*0.8;
+    if(!g.force && h && h.type === 'page' && (h.s > PW*0.5 || sideways)) startTurn(h);
+    else if(!g.force && h && h.type === 'front' && (st.open ? (h.inner && st.k === 0) : true) && h.outer && !st.flight && !st.riffle) startCover(h);
+    else if(!g.force && (!h || st.open)){ g.mode = 'orbit'; st.focusTo = 0; dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
     else { g.mode = 'rot'; rotating = true; st.focusTo = 0; dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
     document.body.classList.add('grabbing');
   }
@@ -2589,10 +3791,36 @@ function endPointer(e, cancelled){
 }
 canvasEl.addEventListener('pointerup', e=>endPointer(e, false));
 canvasEl.addEventListener('pointercancel', e=>endPointer(e, true));
+/* trackpad: two-finger swipe looks around, pinch zooms; a mouse wheel zooms */
+let padUntil = 0;
+function fromTrackpad(e){
+  const now = performance.now();
+  if(e.deltaMode !== 0) return false;
+  if(e.deltaX !== 0 || (e.wheelDeltaY && e.wheelDeltaY === -3*e.deltaY)) padUntil = now + 400;
+  return now < padUntil;
+}
 canvasEl.addEventListener('wheel', e=>{
   e.preventDefault();
-  st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.0012), 0.3, 3.2);
+  if(e.ctrlKey){
+    st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.01), 0.3, 3.2);
+    return;
+  }
+  if(!fromTrackpad(e)){
+    st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.0012), 0.3, 3.2);
+    return;
+  }
+  if(g && g.mode !== 'pending') return;
+  const k = 0.0045;
+  orbit.coast = false; orbit.vx = orbit.vy = 0;
+  st.focusTo = 0;
+  orbit.azTo += e.deltaX*k;
+  orbit.elTo -= e.deltaY*k;
 }, { passive:false });
+/* Safari reports a trackpad pinch as gesture events, not ctrl+wheel */
+let gestureZoom = 1;
+addEventListener('gesturestart', e=>{ e.preventDefault(); gestureZoom = st.zoom; });
+addEventListener('gesturechange', e=>{ e.preventDefault(); st.zoom = clamp(gestureZoom / Math.max(0.05, e.scale), 0.3, 3.2); });
+addEventListener('gestureend', e=>e.preventDefault());
 
 function startTurn(h){
   if(writing){ resumeWriting = true; exitWriting(true); }
@@ -2614,6 +3842,7 @@ function endTurn(cancelled){
 }
 function startCover(h){
   if(writing) exitWriting();
+  if(!st.open && st.theta < 1e-3 && !coverAnim){ st.k = homeSpread(); lastSig = ''; }
   g.mode = 'cover';
   g.local = h.local;
   g.goal = st.theta;
@@ -2626,9 +3855,13 @@ function endCover(cancelled){
 }
 
 /* a click on any part of the book lays it down open and leans in to write */
+const EDGE_TURN = 0.84;
 function click(hit){
   if(!hit){ if(writing) exitWriting(); else st.focusTo = 0; return; }
   if(hit.type === 'page' && st.open){
+    /* a click by the fore edge turns the leaf; the title page is only leaned in to */
+    if(hit.s > PW*EDGE_TURN){ flip(hit.side === 'right' ? 1 : -1); return; }
+    if(hit.n === 0){ if(writing) exitWriting(); st.focusSide = 1; st.focusTo = 1; return; }
     const e = pageEntry(hit.n);
     if(!e.lay) paintPage(hit.n);
     const idx = indexAt(e.lay, hit.uv.x*PAGE_W, (1-hit.uv.y)*PAGE_H);
@@ -2638,22 +3871,27 @@ function click(hit){
   writePose();
 }
 /* the title page is never written on: writing starts on the spread after it */
+let writeOnOpen = false;
 function writePose(n, idx){
-  if(st.flight) return;
+  if(st.flight || st.riffle) return;
   if(n === 0) n = idx = undefined;
   if(!st.open){
-    /* closed, the two stacks lie exactly alike, so the book can open on the
-       first spread after the title without a leaf visibly moving: the title
-       leaf simply rides over with the cover */
-    if(!coverAnim){ st.k = 1; lastSig = ''; }
+    /* closed, the two stacks lie exactly alike, so the book can open on any
+       spread without a leaf visibly moving: on the page last written on, or
+       on its title when it is still empty */
+    const h = homePage();
+    if(!coverAnim){ st.k = spreadOf(h); lastSig = ''; }
+    if(n === undefined && h >= 1 && st.k === spreadOf(h)) n = h;
     setOpen(true);
   }
   const homing = spinAnim && spinAnim.q1.angleTo(qOpenHome) < 1e-4;
   if(!homing && (!atHome() || spinAnim)) glideSpin(qOpenHome, 1.4, st.lift < 0.05);
   st.zoom = 1;
   if(st.k === 0){
+    /* the title is shown first; the leaf is turned over once the board is down */
+    if(coverAnim){ writeOnOpen = true; return; }
     st.focusSide = -1; st.focusTo = 1;
-    if(!coverAnim){ resumeWriting = true; flip(1); }
+    resumeWriting = true; flip(1);
     return;
   }
   if(n === undefined) n = nextWritablePage();
@@ -2683,7 +3921,7 @@ function hover(x, y){
     const b = document.body.classList;
     b.remove('cur-turn','cur-text','cur-pointer');
     if(!h) return;
-    if(h.type === 'page') b.add(h.s > PW*0.5 && !writing ? 'cur-turn' : 'cur-text');
+    if(h.type === 'page') b.add(h.s > PW*EDGE_TURN ? 'cur-turn' : h.n === 0 ? 'cur-pointer' : 'cur-text');
     else if(h.type === 'front' && !st.open) b.add('cur-pointer');
   });
 }
@@ -2706,12 +3944,45 @@ function coverPath(open){
     st.hoverTo = 0.3; st.auraTo = 1; st.glowTo = 1;
     sfx.shimmer();
   }else{
-    if(th > 1.6) segs.push({ d:Math.max(0.3, 0.85*(th - 1.52)/(OPEN - 1.52)), to:1.52, e:easeSine }, { d:0.34, to:1.44, e:easeSine, fire:'settle' });
-    segs.push({ d:0.44*Math.sqrt(Math.min(th, 1.44)/1.44), to:0, e:easeIn2, end:'thud' });
-    segs.push({ d:0.09, to:0.04, e:easeOut2 }, { d:0.13, to:0, e:easeIn2 });
+    /* the board is lifted just past upright and let go still moving, so it
+       tips over by itself; fallCover takes it from there */
+    const d = Math.max(0.28, 0.95*(th - TIP)/(OPEN - TIP));
     st.hoverTo = 0.16; st.auraTo = 0.45; st.glowTo = 0;
+    if(th <= TIP) return fallCover(Math.min(st.thetaVel, 0));
+    segs.push({ d, to:TIP, e:easeLift });
+    return { path: segs, i:0, t:0, from: th, to: 0, fallV: (TIP - th)*EASE_LIFT_END/d };
   }
   return { path: segs, i:0, t:0, from: th, to: open ? OPEN : 0 };
+}
+/* a stiff board on its hinge: gravity pulls harder the lower it gets, then the
+   air caught between board and block cushions the last few degrees before it
+   shuts with a small rebound */
+const TIP = 1.5, FALL_G = 16, FALL_AIR = 3.5, FALL_CUSHION = 0.6;
+const easeLift = t => (1 - Math.cos(Math.PI*0.8*t))/(1 - Math.cos(Math.PI*0.8));
+const EASE_LIFT_END = Math.PI*0.8*Math.sin(Math.PI*0.8)/(1 - Math.cos(Math.PI*0.8));
+function fallCover(v){ return { fall: { v, hits: 0, done: false }, to: 0 }; }
+function stepFall(F, dt){
+  let th = st.theta;
+  const n = Math.ceil(dt/0.004), h = dt/n;
+  for(let i=0;i<n && !F.done;i++){
+    let a = -FALL_G*Math.cos(th);
+    if(F.v < 0 && th < FALL_CUSHION) a -= FALL_AIR*F.v/(th + 0.05)*(1 - th/FALL_CUSHION);
+    F.v += a*h; th += F.v*h;
+    if(th <= 0){
+      th = 0;
+      const hit = -F.v;
+      if(!F.hits) coverImpact(hit);
+      F.hits++;
+      if(hit < 0.3 || F.hits > 3) F.done = true;
+      else F.v = hit*0.2;
+    }
+  }
+  st.theta = th;
+  return F.done;
+}
+function coverImpact(speed){
+  coverEvent('thud');
+  st.joltV -= clamp(speed, 0.6, 3)*0.9;
 }
 function coverEvent(name){
   if(name === 'burst') emitOpenBurst();
@@ -2728,21 +3999,24 @@ function coverLanded(A){
 /* thrown: the board swings on with the speed the hand gave it; an animation
    already under way is also carried on, never restarted from rest */
 function setOpen(open, thrown){
-  if(st.flight && open === false) return;
+  if((st.flight || st.riffle) && open === false) return;
+  if(!open) writeOnOpen = false;
   if(writing && !open) exitWriting();
   if(!open && seek.goal !== null){ seek.goal = null; seek.resume = null; pageNoEl.classList.remove('seeking'); }
   const wasOpen = st.open;
   st.open = open;
   const to = open ? OPEN : 0;
   const dur = 1.15*Math.max(0.35, Math.abs(to - st.theta)/OPEN);
-  if(thrown || (coverAnim && Math.abs(st.thetaVel) > 0.05)){
+  if(!open) coverAnim = coverPath(false);
+  else if(thrown || (coverAnim && Math.abs(st.thetaVel) > 0.05)){
     coverAnim = { glide: glideFrom(st.theta, st.thetaVel, to, dur), to };
     st.hoverTo = st.auraTo = st.glowTo = 0;
   }else coverAnim = coverPath(open);
   if(Math.abs(to - st.theta) > 0.4) sfx.creak(open);
   if(wasOpen !== open){
-    const from = open ? qClosedHome : qOpenHome;
-    if(spinGrp.quaternion.angleTo(from) < 0.07) glideSpin(open ? qOpenHome : qClosedHome, open ? 2.2 : 1.4, st.lift < 0.05);
+    const from = open ? qClosedHome : qOpenHome, home = spinGrp.quaternion.angleTo(from) < 0.07;
+    if(open){ freeFrame(); if(home) glideSpin(qOpenHome, 2.2, st.lift < 0.05); }
+    else holdFrame(home ? qClosedHome : null, st.lift < 0.05);
   }
   saveSoon(true);
   refreshUI();
@@ -2760,11 +4034,13 @@ function landFlight(to){
   saveSoon(true);
   refreshUI();
   if(queue.length){ flip(queue.shift()); return; }
-  if(resumeWriting){ resumeWriting = false; writePose(); }
+  /* back on the title page the reader went there to look: the quill stays down */
+  if(resumeWriting){ resumeWriting = false; if(st.k > 0) writePose(); }
 }
 let resumeWriting = false;
 function flip(dir, magic){
   if(!st.open || st.theta < OPEN - 1e-3 || coverAnim){ return; }
+  if(st.riffle) return;
   if(!magic && seek.goal !== null){ seek.goal = null; seek.resume = null; st.auraTo = 0; pageNoEl.classList.remove('seeking'); }
   if(writing && !(magic && seek.keepQuill)){ resumeWriting = !magic; exitWriting(true); }
   if(st.flight){ if(queue.length < 8) queue.push(dir); return; }
@@ -2812,7 +4088,7 @@ function stepFlight(dt){
    ==========================================================================*/
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
 const MOD = IS_MAC ? '⌘' : 'Ctrl+';
-const spreadOf = n => n <= 0 ? 0 : (n % 2 ? (n + 1)/2 : n/2);
+function spreadOf(n){ return n <= 0 ? 0 : (n % 2 ? (n + 1)/2 : n/2); }
 const seek = { goal: null, resume: null, keepQuill: false, flourish: true };
 let lastErase = null;
 
@@ -2880,29 +4156,43 @@ function stepWisps(dt){
 /* ---------------- a full page runs on to the next ---------------- */
 /* the lines that no longer fit go over to the next page, pushing what is
    there along, page after page; null when even the last page is full */
-function pour(n, v, caret){
-  const out = new Map(), moves = [];
-  let page = n, text = v, cp = n, ci = caret;
+function pour(n, v, caret, hv){
+  const out = new Map(), hout = new Map(), moves = [];
+  let page = n, text = v, hands = hv, cp = n, ci = caret, inc = null;
+  const joinSep = (a, b) => a && b && !/\s$/.test(a) && !/^\s/.test(b) ? ' ' : '';
   for(;;){
     const lay = layoutText(text, pageFont(page), page === n ? textBox(page) : { ...textBox(page), flow: true });
-    if(lay.ok){ out.set(page, text); break; }
+    if(lay.ok){ out.set(page, text); hout.set(page, hands); break; }
     const bad = lay.lines.findIndex(ln => ln.y + lay.size*0.3 > lay.box.bottom);
     const cut = lay.lines[bad].start;
     const m = page + 1;
     if(cut <= 0 || m >= 2*N) return null;
-    let keep = text.slice(0, cut);
-    if(keep.endsWith('\n')) keep = keep.slice(0, -1);
+    /* another hand's ink is never pushed on to the next page: what came over
+       from the page before goes past this one, to the next */
+    if(hands.slice(cut).some(h => h !== HAND)){
+      if(!inc) return { blocked: true };
+      const nextT = pages[m].t, sep = joinSep(inc.t, nextT), mv = moves[moves.length - 1];
+      mv.to = m; mv.count = inc.t.length + sep.length;
+      if(cp === page) cp = m;
+      hands = inc.h.concat(sep ? [inc.h[inc.h.length - 1]] : [], handsOf(m));
+      page = m; text = inc.t + sep + nextT;
+      continue;
+    }
+    let keep = text.slice(0, cut), kh = hands.slice(0, cut);
+    if(keep.endsWith('\n')){ keep = keep.slice(0, -1); kh = kh.slice(0, -1); }
     const moved = text.slice(cut), nextT = pages[m].t;
-    const sep = moved && nextT && !/\s$/.test(moved) && !/^\s/.test(nextT) ? ' ' : '';
-    out.set(page, keep);
+    const sep = joinSep(moved, nextT);
+    out.set(page, keep); hout.set(page, kh);
     if(cp === page){
       if(ci >= cut){ cp = m; ci -= cut; }
       else ci = Math.min(ci, keep.length);
     }
     moves.push({ from: page, to: m, count: moved.length + sep.length });
+    inc = { t: moved, h: hands.slice(cut) };
+    hands = inc.h.concat(sep ? [inc.h[inc.h.length - 1]] : [], handsOf(m));
     page = m; text = moved + sep + nextT;
   }
-  return { out, moves, cp, ci };
+  return { out, hout, moves, cp, ci };
 }
 /* the words arriving on a page write themselves in, one after another */
 function applyPour(n, res){
@@ -2919,7 +4209,7 @@ function applyPour(n, res){
       if(!pg.f) pg.f = f;
       pg.c = true;
     }
-    pg.t = T; pg.born = born;
+    pg.t = T; pg.a = res.hout.get(p); pg.born = born;
     if(pageCache.has(p)){ burning.add(p); paintPage(p, now); }
   });
   if(!pages[n].f) pages[n].f = defaultFont;
@@ -2934,7 +4224,7 @@ function applyPour(n, res){
     quill.value = pages[n].t;
     quill.setSelectionRange(res.ci, res.ci);
     lastGood = { v: quill.value, a: res.ci, b: res.ci };
-    caretOn = true; blinkPhase = 0;
+    blinkPhase = 0;
     paintPage(n);
   }
   saveSoon(true);
@@ -2951,92 +4241,60 @@ function quillTo(m, idx){
 }
 
 /* ---------------- a page wiped clean, and the ink called back ---------------- */
-/* line after line the ink warms to gold and lifts off the sheet as sparks */
-const FADE_D = 0.6;
-function fadeLines(fade, now, fn){
-  const L = fade.lay.lines, stag = Math.min(0.07, 0.9/Math.max(1, L.length));
-  let alive = false;
-  L.forEach((ln, li)=>{
-    const k = ((now - fade.t0)/1000 - li*stag)/FADE_D;
-    if(k < 1) alive = true;
-    fn(ln, li, clamp(k, 0, 1));
-  });
-  return alive;
-}
-function fadeInk(ctx, n, fade, now){
-  const lay = fade.lay, bx = lay.box.x;
-  const alive = fadeLines(fade, now, (ln, li, k)=>{
-    if(k > 0 && li >= fade.next){
-      fade.next = li + 1;
-      const step = Math.max(2, Math.round((ln.end - ln.start)/9));
-      for(let i=ln.start; i<ln.end; i+=step) emitSparks(n, lay, fade.text, i, 1);
-    }
-    if(k >= 1) return;
-    const y0 = ln.y - lay.size*1.05;
-    ctx.save();
-    ctx.beginPath();
-    if(li === 0){ ctx.rect(0, 0, PAGE_W, y0 + lay.lh); ctx.rect(0, y0 + lay.lh, bx - 1, lay.lh*2); }
-    else ctx.rect(bx - 1, y0, PAGE_W - bx + 1, li === fade.lay.lines.length - 1 ? PAGE_H - y0 : lay.lh);
-    ctx.clip();
-    ctx.globalAlpha = 1 - smooth(k);
-    ctx.drawImage(fade.cv, 0, 0);
-    ctx.restore();
-  });
-  if(!alive) pages[n].fade = null;
-}
-function fadeGlow(gx, fade, now){
-  const lay = fade.lay;
-  let any = false;
-  gx.save();
-  gx.scale(0.5, 0.5);
-  fadeLines(fade, now, (ln, li, k)=>{
-    if(k <= 0 || k >= 1) return;
-    any = true;
-    gx.globalAlpha = Math.sin(Math.PI*k)*0.85;
-    gx.fillStyle = 'rgb(255,214,150)';
-    if(li === 0 && lay.cap){ gx.font = capFont(lay.f, lay.cap.size); gx.fillText(lay.cap.ch, lay.cap.x, lay.cap.y); }
-    gx.font = fontCss(lay.f, lay.size);
-    gx.fillText(lineText(fade.text, ln), ln.x0, ln.y);
-  });
-  gx.restore();
-  return any;
-}
+/* only the ink of this hand goes; what another hand wrote on the page
+   settles back and writes itself in again once the vapour is gone */
 function erasePages(list){
   const now = performance.now(), gone = [];
+  let kept = 0;
   list.forEach(n=>{
     if(n < 1 || n >= 2*N || !pages[n].t) return;
+    if(!hasMine(n)){ kept++; return; }
+    const pg = pages[n], hands = handsOf(n);
     const e = pageEntry(n);
     burning.add(n);
     paintPage(n, now);
-    const old = cv(PAGE_W, PAGE_H);
-    old.getContext('2d').drawImage(e.inked, 0, 0);
-    gone.push({ n, t: pages[n].t, f: pages[n].f, c: pages[n].c });
-    pages[n].fade = { cv: old, lay: e.lay, text: pages[n].t, t0: now, next: 0 };
-    pages[n].t = ''; pages[n].born = null; pages[n].c = false;
+    const stag = Math.min(0.07, 0.9/Math.max(1, e.lay.lines.length));
+    let left = '';
+    const lh = [];
+    for(let i=0;i<pg.t.length;){
+      let j = i;
+      while(j < pg.t.length && (hands[j] === HAND) === (hands[i] === HAND)) j++;
+      if(hands[i] === HAND) addVapor(n, pg.t, e.lay, i, j, stag);
+      else{ left += pg.t.slice(i, j); lh.push(...hands.slice(i, j)); }
+      i = j;
+    }
+    gone.push({ n, t: pg.t, a: hands.slice(), f: pg.f, c: pg.c, left });
+    pg.t = left; pg.a = lh;
+    if(left){
+      kept++;
+      const after = now + (VAPOR_T + stag*e.lay.lines.length)*1000, step = Math.min(14, 1200/left.length);
+      pg.born = Array.from({length: left.length}, (_, i)=> after + i*step);
+    }else{ pg.born = null; pg.c = false; }
     if(writing && writing.n === n){
-      quill.value = ''; quill.setSelectionRange(0, 0);
-      lastGood = { v:'', a:0, b:0 };
+      quill.value = left; quill.setSelectionRange(left.length, left.length);
+      lastGood = { v: left, a: left.length, b: left.length };
     }
     paintPage(n, now);
   });
-  if(!gone.length){ toast('NOTHING TO ERASE', 1200); return; }
+  if(!gone.length){ toast(kept ? 'ONLY ANOTHER HAND\'S INK IS HERE' : 'NOTHING TO ERASE', 1800); return; }
   lastErase = { pages: gone, at: now };
   sfx.erase();
   saveSoon(true);
-  toast(`ERASED · ${MOD}Z BRINGS IT BACK`, 2800);
+  toast(kept ? 'YOUR INK IS ERASED · THE OTHER HAND\'S STAYS' : `ERASED · ${MOD}Z BRINGS IT BACK`, 2800);
 }
 /* the ink comes back and writes itself in, letter by letter */
 function restoreErased(){
   if(!lastErase || performance.now() - lastErase.at > 60000) return false;
-  const back = lastErase.pages.filter(p => !pages[p.n].t);
+  const back = lastErase.pages.filter(p => pages[p.n].t === p.left);
   lastErase = null;
   if(!back.length) return false;
   const now = performance.now();
   back.forEach(p=>{
     const pg = pages[p.n];
     const step = Math.min(14, 1500/Math.max(1, p.t.length));
-    pg.t = p.t; pg.f = p.f; pg.c = p.c; pg.fade = null;
-    pg.born = Array.from({length: p.t.length}, (_, i)=> now + 120 + i*step);
+    pg.t = p.t; pg.a = p.a; pg.f = p.f; pg.c = p.c; pg.vapor = null;
+    let j = 0;
+    pg.born = p.a.map(h => h === HAND ? now + 120 + (j++)*step : 0);
     if(writing && writing.n === p.n){
       quill.value = pg.t; quill.setSelectionRange(pg.t.length, pg.t.length);
       lastGood = { v: pg.t, a: pg.t.length, b: pg.t.length };
@@ -3048,10 +4306,22 @@ function restoreErased(){
   toast('THE INK RETURNS', 1600);
   return true;
 }
+/* one page at a time, never the whole book: the page under the quill, else
+   the one page of the open spread that has this hand's ink on it */
+function eraseTargets(){
+  if(writing) return [writing.n];
+  if(!st.open) return [];
+  return [2*st.k - 1, 2*st.k].filter(n => n >= 1 && n < 2*N && pages[n].t);
+}
 function eraseHere(){
-  if(writing) return erasePages([writing.n]);
-  if(!st.open){ toast('OPEN THE BOOK FIRST', 1400); return; }
-  erasePages([2*st.k - 1, 2*st.k]);
+  if(!writing && !st.open){ toast('OPEN THE BOOK FIRST', 1400); return; }
+  const list = eraseTargets(), mine = list.filter(hasMine);
+  if(mine.length === 2){
+    if(mine.includes(lastWritten)) return erasePages([lastWritten]);
+    toast('CHOOSE THE PAGE IN THE ⋯ MENU', 2000);
+    return;
+  }
+  erasePages(mine.length ? mine : list);
 }
 
 /* ---------------- the book turns itself to a page ---------------- */
@@ -3081,6 +4351,17 @@ function seekSpread(k, opts = {}){
 }
 function stepSeek(){
   if(seek.goal === null) return;
+  const rf = st.riffle;
+  if(rf){
+    /* gold sparks off the fore edges going over */
+    for(let m=0;m<rf.d;m++){
+      const p = rf.p[m];
+      if(p <= 0.08 || p >= 0.92 || Math.random() > 0.35) continue;
+      const { p: q, n: nrm } = pagePointWorld(2*riffleLeaf(rf, m), PAGE_W*0.98, PAGE_H*Math.random());
+      trail.emit(q.x, q.y, q.z, nrm.x*0.16 + (Math.random() - 0.5)*0.16, 0.1 + Math.random()*0.08, nrm.z*0.16 + (Math.random() - 0.5)*0.16, 0.6 + Math.random()*0.5, 0.42);
+    }
+    return;
+  }
   const fl = st.flight;
   if(fl){
     if(Math.abs(seek.goal - st.k) > 1 && Math.random() < 0.7){
@@ -3091,7 +4372,52 @@ function stepSeek(){
   }
   if(coverAnim || !st.open || st.theta < OPEN - 1e-3 || (g && g.mode === 'turn')) return;
   if(seek.goal === st.k){ arrive(); return; }
-  flip(Math.sign(seek.goal - st.k), true);
+  if(Math.abs(seek.goal - st.k) > 1) startRiffle(seek.goal);
+  else flip(Math.sign(seek.goal - st.k), true);
+}
+/* a long way to go: the leaves fan over together, several in the air at once,
+   the riffle gathering speed through the middle and easing down for the last
+   few, which settle one on another */
+const easeRiffle = t => 1 - Math.pow(1 - easeSine(t), 1.4);
+const riffleLeaf = (rf, m)=> rf.fwd ? rf.k0 + m : rf.k0 - 1 - m;
+function startRiffle(k1){
+  if(writing && !seek.keepQuill) exitWriting(true);
+  const k0 = st.k, d = Math.abs(k1 - k0);
+  st.riffle = { k0, k1, d, fwd: k1 > k0, W: Math.min(3.4, 1.2 + d*0.28), t: 0, dur: 0.9 + 0.42*Math.sqrt(d),
+    tau: 0, p: new Float32Array(d).fill(k1 > k0 ? 0 : 1), curl: new Float32Array(d), lifted: 0, landed: 0, tick: 0, shown: k0,
+    warm: [2*k1 - 1, 2*k1, 2*k1 - 2, 2*k1 + 1, 2*k1 - 3, 2*k1 - 4, 2*k1 + 2, 2*k1 + 3].filter(n => n >= 0 && n < 2*N && !pageCache.has(n)) };
+  sfx.page();
+}
+function stepRiffle(dt){
+  const rf = st.riffle;
+  if(!rf) return;
+  rf.t += dt; rf.tick -= dt;
+  /* the spreads it lands among are painted one a frame on the way, not all at the end */
+  if(rf.warm.length) pageEntry(rf.warm.shift());
+  const e = easeRiffle(clamp(rf.t/rf.dur, 0, 1));
+  rf.tau = e*(rf.d - 1 + rf.W);
+  const dir = rf.fwd ? 1 : -1;
+  for(let m=0;m<rf.d;m++){
+    const u = clamp((rf.tau - m)/rf.W, 0, 1), q = easeSine(u);
+    rf.p[m] = rf.fwd ? q : 1 - q;
+    /* the fore edge leads while the leaf rises and trails as it falls */
+    rf.curl[m] = 0.42*Math.sin(2*Math.PI*q)*dir;
+    if(u > 0 && m >= rf.lifted){
+      rf.lifted = m + 1;
+      if(rf.tick <= 0){ m ? sfx.flick() : sfx.page(); rf.tick = 0.07; }
+    }
+    if(u >= 1 && m >= rf.landed){ rf.landed = m + 1; leaves[riffleLeaf(rf, m)].flt = 0; }
+  }
+  const shown = Math.round(currentSigma());
+  if(shown !== rf.shown && document.activeElement !== seekIn){ rf.shown = shown; seekIn.value = spreadLabel(shown); }
+  if(rf.t >= rf.dur){
+    st.k = rf.k1;
+    st.riffle = null;
+    lastSig = '';
+    sfx.settle();
+    saveSoon(true);
+    refreshUI();
+  }
 }
 function arrive(){
   const r = seek.resume, flourish = seek.flourish;
@@ -3110,25 +4436,26 @@ function turnToPage(P){
   const resume = writing && n >= 1 ? { n, idx: pages[n].t.length } : null;
   if(writing && spreadOf(n) !== st.k) exitWriting(true);
   seekSpread(spreadOf(n), { resume });
-  if(seek.goal === st.k && st.open && !coverAnim && !st.flight) arrive();
+  if(seek.goal === st.k && st.open && !coverAnim && !st.flight && !st.riffle) arrive();
 }
 
 /* ---------------- the little windows: a page to turn to, the list of spells ---------------- */
-const seekEl = document.getElementById('seek'), seekIn = document.getElementById('seekIn');
 const spellsEl = document.getElementById('spells');
+/* the page field in the pager: tap it, type a number, Go */
+const seekIn = document.getElementById('pageIn');
 function openSeek(first){
-  closeSpells();
-  seekEl.hidden = false;
+  closeSpells(); closeMenu();
+  if(!st.open) toggleBook();
   seekIn.value = first || '';
   seekIn.focus({ preventScroll: true });
-  seekIn.setSelectionRange(seekIn.value.length, seekIn.value.length);
 }
 function closeSeek(){
-  if(seekEl.hidden) return;
-  seekEl.hidden = true;
+  if(document.activeElement !== seekIn) return;
   if(writing) quill.focus({ preventScroll: true });
   else seekIn.blur();
 }
+seekIn.addEventListener('focus', ()=>{ seekIn.value = ''; });
+seekIn.addEventListener('blur', ()=> refreshUI());
 seekIn.addEventListener('input', ()=>{ seekIn.value = seekIn.value.replace(/\D/g, '').slice(0, 3); });
 seekIn.addEventListener('keydown', e=>{
   e.stopPropagation();
@@ -3140,9 +4467,6 @@ seekIn.addEventListener('keydown', e=>{
     if(P >= 1) turnToPage(Math.min(P, 2*N));
   }
 });
-seekIn.addEventListener('blur', ()=> setTimeout(()=>{ if(document.activeElement !== seekIn) seekEl.hidden = true; }, 120));
-pageNoEl.addEventListener('click', ()=> openSeek());
-pageNoEl.addEventListener('mousedown', e=> e.preventDefault());
 
 const SPELLS = [
   ['The book', [
@@ -3152,10 +4476,16 @@ const SPELLS = [
     ['Shift ← →', 'Riffle five leaves'],
     ['Home  End', 'First or last page'],
     ['G  0–9', 'Turn to a page'],
-    ['E', 'Erase the open spread'],
+    ['E', 'Erase your ink on the open page'],
+  ]],
+  ['By hand', [
+    ['Swipe', 'Sweep a page sideways to turn it'],
+    ['Edge', 'Click by a page\'s outer edge to turn it'],
+    ['Click', 'Write where you click on the page'],
+    ['Drag', 'Off the pages: look round the glade'],
   ]],
   ['With the quill', [
-    [`${MOD}E`, 'Erase this page'],
+    [`${MOD}E`, 'Erase your ink on this page'],
     [`${MOD}Z`, 'Bring the erased ink back'],
     [`${MOD}G`, 'Turn to a page'],
     [`${MOD}Enter`, 'Carry on at the next page'],
@@ -3165,8 +4495,8 @@ const SPELLS = [
   ]],
   ['Always', [
     ['M', 'Sound on or off'],
-    [`${MOD}S`, 'Save'],
-    [`${MOD}Shift S`, 'Save the book to a file'],
+    [`${MOD}S`, 'Save now (it saves itself anyway)'],
+    [`${MOD}Shift S`, 'Download the book'],
     ['?', 'This list'],
   ]],
 ];
@@ -3185,8 +4515,11 @@ const SPELLS = [
   const foot = document.createElement('p'); foot.className = 'foot';
   foot.textContent = 'When a page is full, the words run on to the next page by themselves';
   card.appendChild(foot);
+  const foot2 = document.createElement('p'); foot2.className = 'foot';
+  foot2.textContent = 'Everything you write is kept on its own. You can erase only your own ink, one page at a time; what another hand wrote stays';
+  card.appendChild(foot2);
 })();
-function openSpells(){ closeSeek(); spellsEl.hidden = false; if(writing) quill.blur(); }
+function openSpells(){ closeSeek(); closeMenu(); spellsEl.hidden = false; if(writing) quill.blur(); }
 function closeSpells(){
   if(spellsEl.hidden) return;
   spellsEl.hidden = true;
@@ -3198,14 +4531,58 @@ spellsEl.querySelector('.close').addEventListener('click', closeSpells);
 /* ============================================================================
    13. UI
    ==========================================================================*/
+const pagerEl = document.getElementById('pager');
 const btnPrev = document.getElementById('btnPrev');
 const btnNext = document.getElementById('btnNext');
 const btnWrite = document.getElementById('btnWrite');
+const btnBook = document.getElementById('btnBook');
 btnPrev.addEventListener('click', ()=> flip(-1));
 btnNext.addEventListener('click', ()=> flip(1));
-btnWrite.addEventListener('mousedown', e=>e.preventDefault());
-btnWrite.addEventListener('click', ()=> writePose());
-[btnPrev, btnNext].forEach(b=>b.addEventListener('mousedown', e=>e.preventDefault()));
+btnWrite.addEventListener('click', ()=> writing ? exitWriting() : writePose());
+btnBook.addEventListener('click', ()=> toggleBook());
+
+/* everything that otherwise lives on a key, for a phone */
+const btnMore = document.getElementById('btnMore');
+const menuEl = document.getElementById('menu');
+const menuBtn = act => menuEl.querySelector(`[data-act="${act}"]`);
+/* one erase line per page of the open spread that has writing on it */
+const eraseLabel = n => `${!pages[n].t || !hasOthers(n) ? 'Erase' : hasMine(n) ? 'Erase my ink on' : 'Only another hand on'} page ${n + 1}`;
+function openMenu(){
+  closeSpells();
+  const books = menuBtn('books');
+  books.hidden = !sharingOn;
+  books.querySelector('span').textContent = shelf ? shelf.label() : 'My own book';
+  const list = eraseTargets(), one = menuBtn('erase'), two = menuBtn('erase2');
+  [one, two].forEach((b, i)=>{
+    const n = list[i];
+    b.dataset.page = n === undefined ? '' : n;
+    b.textContent = n === undefined ? 'Erase this page' : eraseLabel(n);
+    b.disabled = n === undefined || !hasMine(n);
+  });
+  two.hidden = list.length < 2;
+  menuBtn('restore').disabled = !lastErase || performance.now() - lastErase.at > 60000;
+  menuEl.hidden = false;
+  btnMore.setAttribute('aria-expanded', 'true');
+}
+function closeMenu(){
+  if(menuEl.hidden) return;
+  menuEl.hidden = true;
+  btnMore.setAttribute('aria-expanded', 'false');
+}
+btnMore.addEventListener('click', ()=> menuEl.hidden ? openMenu() : closeMenu());
+menuEl.addEventListener('click', e=>{
+  const b = e.target.closest('button[data-act]');
+  if(!b || b.disabled) return;
+  closeMenu();
+  const page = ()=> erasePages([+b.dataset.page]);
+  ({ erase: page, erase2: page, restore: restoreErased, export: exportFile, exportText, spells: openSpells, books: ()=> shelf && shelf.open() })[b.dataset.act]();
+});
+addEventListener('pointerdown', e=>{
+  if(!menuEl.hidden && !menuEl.contains(e.target) && !btnMore.contains(e.target)) closeMenu();
+}, true);
+[btnPrev, btnNext, btnWrite, btnBook, btnMore, ...menuEl.querySelectorAll('button')].forEach(b=>b.addEventListener('mousedown', e=>e.preventDefault()));
+
+const spreadLabel = c => c === 0 ? '1' : c === N ? `${2*N}` : `${2*c}–${2*c+1}`;
 const btnSound = document.getElementById('btnSound');
 function showSound(){
   btnSound.classList.toggle('muted', sfx.muted);
@@ -3221,30 +4598,30 @@ btnSound.addEventListener('click', toggleSound);
 showSound();
 
 function refreshUI(){
-  btnPrev.hidden = btnNext.hidden = !st.open;
+  pagerEl.hidden = !st.open;
   btnPrev.disabled = st.k === 0;
   btnNext.disabled = st.k === N;
   btnWrite.classList.toggle('on', !!writing);
-  if(writing){
-    hintEl.textContent = `The quill is inked, page ${writing.n+1} · Click off the book or press Esc to set it down · ${MOD}/ Shortcuts`;
-  }else if(st.open){
-    hintEl.textContent = 'Click the book to write · Hold and drag a page by its edge to turn it · Drag the forest to look around · ? Shortcuts';
-  }else{
-    hintEl.textContent = 'Click the book to open it and write · Drag the book to spin it · Drag the forest to look around · ? Shortcuts';
-  }
-  const c = st.k;
-  pageNoEl.textContent = st.open ? (c === 0 ? 'ENDPAPER · 1' : c === N ? `${2*N} · ENDPAPER` : `${2*c} · ${2*c+1}`) : '';
+  document.body.classList.toggle('quill-up', !!writing);
+  btnBook.classList.toggle('open', st.open);
+  const bookAct = st.open ? 'Close the book' : 'Open the book';
+  btnBook.title = `${bookAct} (O)`;
+  btnBook.setAttribute('aria-label', bookAct);
+  if(document.activeElement !== seekIn) seekIn.value = spreadLabel(st.k);
+  btnWrite.title = writing ? 'Set the quill down' : 'Lay the book open and write';
 }
 
 /* keys instead of buttons, read by position so a Cyrillic layout works the
    same; SPELLS lists them */
 function toggleBook(){
-  if(!st.open){ seekSpread(st.k, { flourish: false }); return; }
-  if(!st.flight) setOpen(false);
+  if(!st.open){ seekSpread(homeSpread(), { flourish: false }); return; }
+  if(!st.flight && !st.riffle) setOpen(false);
 }
 document.addEventListener('keydown', e=>{
   if(e.target === quill || e.target === seekIn) return;
+  if(shelf && shelf.isOpen()){ if(e.key === 'Escape'){ e.preventDefault(); shelf.close(); } return; }
   const mod = e.metaKey || e.ctrlKey, code = e.code;
+  if(!menuEl.hidden && e.key === 'Escape'){ e.preventDefault(); closeMenu(); return; }
   if(!spellsEl.hidden){
     if(e.key === 'Escape' || e.key === '?' || code === 'Slash'){ e.preventDefault(); closeSpells(); }
     return;
@@ -3252,7 +4629,7 @@ document.addEventListener('keydown', e=>{
   if(e.key === '?' || (mod && code === 'Slash')){ e.preventDefault(); openSpells(); }
   else if(e.key === 'ArrowRight' || e.key === 'PageDown'){
     e.preventDefault();
-    if(!st.open) seekSpread(st.k, { flourish: false });
+    if(!st.open) seekSpread(homeSpread(), { flourish: false });
     else if(e.shiftKey) seekSpread(st.k + 5);
     else flip(1);
   }
@@ -3262,7 +4639,7 @@ document.addEventListener('keydown', e=>{
   }
   else if(e.key === 'Home'){ e.preventDefault(); seekSpread(0); }
   else if(e.key === 'End'){ e.preventDefault(); seekSpread(N); }
-  else if(e.key === 'Escape'){ if(st.open && !st.flight) setOpen(false); }
+  else if(e.key === 'Escape'){ if(st.open && !st.flight && !st.riffle) setOpen(false); }
   else if(e.key === 'Enter' && !mod){ e.preventDefault(); writePose(); }
   else if(mod && code === 'KeyZ' && !e.shiftKey){ if(restoreErased()) e.preventDefault(); }
   else if(code === 'KeyG' && !e.altKey){ e.preventDefault(); openSeek(); }
@@ -3276,6 +4653,8 @@ document.addEventListener('keydown', e=>{
   }
 });
 addEventListener('beforeunload', ()=>saveNow(true));
+addEventListener('pagehide', ()=>{ saveNow(true); if(shelf) shelf.flush(); });
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ saveNow(true); if(shelf) shelf.flush(); } });
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) saveNow(true); });
 
 /* ============================================================================
@@ -3661,7 +5040,7 @@ const FOREST_CAP = new THREE.Vector3(0, GROUND_Y + 10, 0);      // the capture p
 const FOREST_GAIN = 2.0;                                         // the picture is stored at half its light
 const FOREST_EXPOSURE = 2.2;                                     // and shown a little brighter than it was rendered
 const DEPTH_NEAR = 5, DEPTH_FAR = 4000;                          // its distance range, in tenths of a metre
-async function decodeDepth(url){
+async function decodeDepth(url, smooth){
   const blob = await (await fetch(url)).blob();
   const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   const c = cv(bmp.width, bmp.height), x = c.getContext('2d', { willReadFrequently: true });
@@ -3674,8 +5053,34 @@ async function decodeDepth(url){
     for(let i=0;i<bmp.width;i++){ const k = (src + i)*4; out[dst + i] = THREE.DataUtils.toHalfFloat((d[k]*256 + d[k+1])/65535); }
   }
   const t = new THREE.DataTexture(out, bmp.width, bmp.height, THREE.RedFormat, THREE.HalfFloatType);
-  /* nearest, not filtered: a leaf against the sky must not blend into a surface halfway between */
-  t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.NearestFilter; t.needsUpdate = true;
+  /* the forest's own layer is read nearest, not filtered: a leaf against the sky must not
+     blend into a surface halfway between. The layer behind only fills the strips a near
+     trunk uncovers, and is read filtered, so what shows there is stretched smoothly over
+     its own edges instead of breaking into blocks */
+  t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter; t.needsUpdate = true;
+  if(!smooth) t.userData.soft = softDepth(d, bmp.width, bmp.height, 8);
+  return t;
+}
+/* the canopy overhead seen as one soft surface: thousands of leaves against the sky
+   leap in distance from texel to texel, and stepping aside from the capture point would
+   break them into a mosaic of blocks. Averaged over a few leaves and blurred, the
+   crown only bends a little as one walks round, the way a far crown does */
+function softDepth(d, w, h, k){
+  const W = w/k|0, H = h/k|0, a = new Float32Array(W*H), b = new Float32Array(W*H);
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    let s = 0;
+    for(let j=0;j<k;j++){ const row = ((H - 1 - y)*k + j)*w; for(let i=0;i<k;i++){ const q = (row + x*k + i)*4; s += d[q]*256 + d[q+1]; } }
+    a[y*W + x] = s/(k*k*65535);
+  }
+  const R = 3;
+  for(let pass=0;pass<2;pass++){
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){ let s = 0; for(let i=-R;i<=R;i++) s += a[y*W + ((x + i + W) % W)]; b[y*W + x] = s/(2*R + 1); }
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){ let s = 0; for(let j=-R;j<=R;j++) s += b[Math.min(H - 1, Math.max(0, y + j))*W + x]; a[y*W + x] = s/(2*R + 1); }
+  }
+  const out = new Uint16Array(W*H);
+  for(let i=0;i<W*H;i++) out[i] = THREE.DataUtils.toHalfFloat(a[i]);
+  const t = new THREE.DataTexture(out, W, H, THREE.RedFormat, THREE.HalfFloatType);
+  t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
   return t;
 }
 function makeBackdrop(pano, depth, water, back, backDepth){
@@ -3685,12 +5090,12 @@ function makeBackdrop(pano, depth, water, back, backDepth){
     side: THREE.BackSide, depthWrite: false, depthTest: false,
     uniforms: {
       tPano: { value: tex(pano, true) }, tDepth: { value: depth }, tWater: { value: tex(water, false) },
-      tBack: { value: tex(back, true) }, tBackDepth: { value: backDepth },
+      tBack: { value: tex(back, true) }, tBackDepth: { value: backDepth }, tSoft: { value: depth.userData.soft },
       uCam: { value: new THREE.Vector3() }, uCap: { value: FOREST_CAP }, uYaw: { value: new THREE.Vector2(Math.cos(FOREST_YAW), Math.sin(FOREST_YAW)) }, uTime: { value: 0 }, uGain: { value: FOREST_GAIN*FOREST_EXPOSURE },
       uNear: { value: DEPTH_NEAR }, uFar: { value: DEPTH_FAR }, uSun: { value: SUN_DIR } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position = p.xyww; }',
     fragmentShader: `#define MARCH_STEPS ${HI_RES ? 112 : 60}
-      uniform sampler2D tPano, tDepth, tWater, tBack, tBackDepth; uniform vec2 uYaw;
+      uniform sampler2D tPano, tDepth, tWater, tBack, tBackDepth, tSoft; uniform vec2 uYaw;
       vec3 unyaw(vec3 v){ return vec3(uYaw.x*v.x - uYaw.y*v.z, v.y, uYaw.y*v.x + uYaw.x*v.z); } uniform vec3 uCam, uCap, uSun; uniform float uTime, uGain, uNear, uFar;
       varying vec3 vDir;
       float h21(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
@@ -3698,7 +5103,9 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), u.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), u.x), u.y); }
       vec2 eqUv(vec3 q){ return vec2(atan(q.z, q.x)*0.15915494 + 0.5, asin(clamp(q.y, -1.0, 1.0))*0.31830989 + 0.5); }
       float unpack(float inv){ return 1.0/(inv*(1.0/uNear - 1.0/uFar) + 1.0/uFar); }
-      float distF(vec3 q){ return unpack(textureLod(tDepth, eqUv(q), 0.0).r); }
+      float distF(vec3 q){ vec2 u = eqUv(q); float a = textureLod(tDepth, u, 0.0).r, w = smoothstep(0.14, 0.42, q.y);
+        if(w > 0.0) a = mix(a, textureLod(tSoft, u, 0.0).r, w);
+        return unpack(a); }
       float distB(vec3 q){ return unpack(textureLod(tBackDepth, eqUv(q), 0.0).r); }
       /* march the eye's ray out from the camera until it passes behind one layer's
          surface (as the capture point saw it), then close in on the crossing. Where the
@@ -3748,19 +5155,44 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         vec4 wf = texture(tWater, uv);
         vec3 col;
         if(wf.r > 0.02){
-          /* running water: ripples carried downstream wobble the picture and catch the light */
+          /* running water: ripples of three sizes carried downstream bend what shows
+             through and tilt the surface, which mirrors the canopy more as one looks along
+             it and catches glints of sun on the steeper crests. Each size calms to a mirror
+             only where a pixel spans more than its own wavelength, so far off the stream
+             still moves in its long swells and never boils into glitter up close. Two
+             patterns slide at different speeds in each size, so the surface keeps changing
+             instead of scrolling past like a belt, and slow bands of light drift down it */
           vec3 W = P + uCap;
-          vec2 fl = normalize(wf.gb*2.0 - 1.0 + 1e-4);
-          vec2 p = W.xz;
-          float n1 = vn(p*1.3 - fl*uTime*2.2), n2 = vn(p*2.7 - fl*uTime*3.4 + 7.3);
-          vec3 q2 = normalize(P + vec3(n1 - 0.5, 0.0, n2 - 0.5)*0.45*wf.r);
+          vec2 fl = normalize(wf.gb*2.0 - 1.0 + 1e-4), fr = vec2(-fl.y, fl.x);
+          vec2 p = W.xz, s = vec2(dot(p, fl), dot(p, fr));
+          float fw = min(length(fwidth(p)), 8.0);
+          vec2 gs = vec2(0.0);
+          const float E = 0.15;
+          for(int b=0;b<3;b++){
+            float k = b == 0 ? 0.22 : (b == 1 ? 0.62 : 1.7), A = b == 0 ? 0.42 : (b == 1 ? 0.13 : 0.045);
+            float v = b == 0 ? 2.2 : (b == 1 ? 2.8 : 3.4), c = 1.0/(1.0 + pow(fw*k*1.4, 2.0));
+            for(int l=0;l<2;l++){
+              float vl = l == 0 ? v : v*0.62;
+              vec2 cc = vec2((s.x - uTime*vl)*k*0.6, s.y*k) + float(b*2 + l)*7.31;
+              float h0 = vn(cc);
+              gs += vec2((vn(cc + vec2(E, 0.0)) - h0)*k*0.6, (vn(cc + vec2(0.0, E)) - h0)*k)/E*A*c*0.5;
+            }
+          }
+          vec2 slope = (fl*gs.x + fr*gs.y)*wf.r;
+          vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
+          vec3 q2 = normalize(P + vec3(slope.x, 0.0, slope.y)*4.0);
           col = textureGrad(tPano, eqUv(q2), gx, gy).rgb;
-          float g = pow(vn(p*5.0 - fl*uTime*4.0), 10.0) + pow(vn(p*8.0 - fl*uTime*5.5 + 3.1), 12.0);
-          float lum = dot(col, vec3(0.3, 0.59, 0.11));
-          col += vec3(1.0, 0.9, 0.72)*g*wf.r*smoothstep(0.02, 0.25, lum)*1.4;
+          vec3 R = reflect(d, n); R.y = abs(R.y);
+          vec3 refl = textureLod(tPano, eqUv(R), 2.5).rgb;
+          float F = 0.03 + 0.97*pow(1.0 - max(dot(-d, n), 0.0), 5.0);
+          col = mix(col, max(col, refl), clamp(F, 0.0, 0.6)*wf.r);
+          float band = vn(vec2((s.x - uTime*2.6)*0.07, s.y*0.22) + 3.1)*0.6 + vn(vec2((s.x - uTime*1.7)*0.16, s.y*0.4) + 8.7)*0.4;
+          col *= 1.0 + (band - 0.5)*0.32*wf.r;
+          float sr = max(dot(R, unyaw(uSun)), 0.0), calm = 1.0/(1.0 + 2.0*fw);
+          col += vec3(1.0, 0.94, 0.82)*(pow(sr, 600.0)*3.0*calm + pow(sr, 40.0)*0.06)*wf.r;
         }else{
           col = textureGrad(tPano, uv, gx, gy).rgb;
-          if(wBack > 0.0) col = mix(col, textureGrad(tBack, uvB, gx, gy).rgb, wBack);
+          if(wBack > 0.0) col = mix(col, textureGrad(tBack, uvB, gx*2.0, gy*2.0).rgb, wBack);
         }
         gl_FragColor = vec4(col*uGain, 1.0);
         #include <tonemapping_fragment>
@@ -3773,7 +5205,7 @@ function makeBackdrop(pano, depth, water, back, backDepth){
   march.frustumCulled = false;
   const marchScene = new THREE.Scene();
   marchScene.add(march);
-  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
   const dome = new THREE.Mesh(march.geometry, new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, depthTest: false,
     uniforms: { tLow: { value: rt.texture } },
@@ -3785,6 +5217,7 @@ function makeBackdrop(pano, depth, water, back, backDepth){
   dome.onBeforeRender = (r, sc, cam)=>dome.position.copy(cam.position);
   backdrop = {
     material: m,
+    picture: rt.texture,
     draw(){
       const w = Math.max(1, Math.round(VW*BACKDROP_PR)), h = Math.max(1, Math.round(VH*BACKDROP_PR));
       if(rt.width !== w || rt.height !== h) rt.setSize(w, h);
@@ -3847,6 +5280,19 @@ async function nearField(){
               float h = max(position.y, 0.0);
               float g = sin(uTime*1.3 + w.x*0.35 + w.z*0.27)*0.6 + sin(uTime*2.1 + w.x*0.9)*0.25;
               transformed.xz += vec2(g, g*0.6)*h*h*${(0.08*SWAY[a]).toFixed(3)}; }`);
+          /* thin leaves glow when the sun is behind them, as the floor of the wood does */
+          sh.uniforms.uSunW = { value: SUN_DIR };
+          /* and stand in the same haze as the wood behind them: the farther off, the more
+             they take the colour of what lies beyond, blurred */
+          sh.uniforms.tHaze = { value: backdrop.picture };
+          sh.vertexShader = 'varying vec4 vScr;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvScr = gl_Position;');
+          sh.fragmentShader = 'uniform vec3 uSunW; uniform sampler2D tHaze; varying vec4 vScr;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', `
+            { vec3 sv = normalize((viewMatrix*vec4(uSunW, 0.0)).xyz);
+              float back = pow(clamp(-dot(normalize(vViewPosition), sv), 0.0, 1.0), 3.0);
+              outgoingLight += diffuseColor.rgb*vec3(1.0, 0.96, 0.82)*(0.35 + 1.4*back)*0.55;
+              vec3 haze = textureLod(tHaze, vScr.xy/vScr.w*0.5 + 0.5, 4.0).rgb;
+              outgoingLight = mix(outgoingLight, haze, clamp(1.0 - exp(-max(length(vViewPosition) - 12.0, 0.0)*0.009), 0.0, 0.5)); }
+            #include <opaque_fragment>`);
         };
       }
       const im = new THREE.InstancedMesh(src.geometry, mat, its.length);
@@ -3872,7 +5318,7 @@ async function loadAssets(){
   const imgJobs = ['forest','forestWater','forestBack','granite','moss','leaAlbedo','leaNor','leaRough','maskFront','maskBack']
     .map(k=>loadImage(ASSETS[k]).then(i=>{ imgs[k] = i; }));
   const models = Promise.all([gltfLoader.loadAsync(ASSETS.goldFront), gltfLoader.loadAsync(ASSETS.goldBack), gltfLoader.loadAsync(ASSETS.rock)]);
-  const depth = decodeDepth(ASSETS.forestDepth), backDepth = decodeDepth(ASSETS.forestBackDepth);
+  const depth = decodeDepth(ASSETS.forestDepth), backDepth = decodeDepth(ASSETS.forestBackDepth, true);
   const light = new RGBELoader().loadAsync(ASSETS.forestLight);
   await Promise.all(imgJobs);
   const [gf, gb, rk] = await models;
@@ -3887,6 +5333,7 @@ async function loadAssets(){
   scene.background = null;
   applyLeather(imgs);
   scene.add(makeBackdrop(imgs.forest, await depth, imgs.forestWater, imgs.forestBack, await backDepth));
+  leafHaze.value = backdrop.picture;
   [[gf, frontGoldSlot], [gb, backGoldSlot]].forEach(([gl, slot])=>{
     const m = firstMesh(gl);
     m.material = matGold;
@@ -3920,13 +5367,20 @@ function onResize(){
   renderer.setSize(VW, VH, false);
   composer.setSize(VW, VH);
   camera.aspect = VW/VH;
+  /* a tall screen sees wider rather than standing farther back: the forest is a
+     picture taken from one point, and only holds its shape near it */
+  camera.fov = clamp(2*Math.atan(Math.tan(20*Math.PI/180)*0.8/camera.aspect)*180/Math.PI, 40, 62);
   camera.updateProjectionMatrix();
   sparkMat.uniforms.uScale.value = VH*DPR*0.012;
+  inkSparkMat.uniforms.uScale.value = VH*DPR*0.011;
+  smokeMat.uniforms.uScale.value = VH*DPR*0.011;
   moteMat.uniforms.uScale.value = VH*DPR*0.009;
   auraMat.uniforms.uScale.value = VH*DPR*0.08;
   burstMat.uniforms.uScale.value = VH*DPR*0.015;
   dustMat.uniforms.uScale.value = VH*DPR*0.34;
   flyMat.uniforms.uScale.value = VH*DPR*0.16;
+  fireflyMat.uniforms.uScale.value = VH*DPR*0.16;
+  beamMotes.material.uniforms.uScale.value = VH*DPR*0.05;
 }
 addEventListener('resize', onResize);
 try{ new ResizeObserver(()=>onResize()).observe(document.documentElement); }catch(_){}
@@ -3935,13 +5389,16 @@ let last = performance.now(), clock = 0, bobAmt = 1;
 const _bc = new THREE.Vector3();
 function update(dt){
   clock += dt;
+  stepFrame(dt);
   const theta0 = st.theta;
   if(g && g.mode === 'cover'){
     st.theta = damp(st.theta, g.goal, 18, dt);
   }else if(coverAnim && coverAnim.glide){
     const done = glideStep(coverAnim.glide, dt);
     st.theta = clamp(coverAnim.glide.x, 0, OPEN);
-    if(done){ st.theta = coverAnim.to; coverAnim = null; if(Math.abs(st.thetaVel) > 0.6) sfx.land(); refreshUI(); }
+    if(done){ if(coverAnim.to === 0) releaseFrame(); st.theta = coverAnim.to; coverAnim = null; if(Math.abs(st.thetaVel) > 0.6) sfx.land(); refreshUI(); }
+  }else if(coverAnim && coverAnim.fall){
+    if(stepFall(coverAnim.fall, dt)){ st.theta = 0; coverAnim = null; releaseFrame(); refreshUI(); }
   }else if(coverAnim && coverAnim.path){
     const A = coverAnim;
     A.t += dt;
@@ -3951,7 +5408,11 @@ function update(dt){
       if(sg.end) coverEvent(sg.end);
       A.t -= sg.d; A.from = sg.to; A.i++;
     }
-    if(A.i >= A.path.length){ st.theta = A.to; coverAnim = null; coverLanded(A); refreshUI(); }
+    if(A.i >= A.path.length){
+      st.theta = A.path.length ? A.path[A.path.length - 1].to : A.to;
+      if(A.fallV !== undefined) coverAnim = fallCover(A.fallV);
+      else { coverAnim = null; coverLanded(A); refreshUI(); }
+    }
     else{
       const sg = A.path[A.i], k = A.t/sg.d;
       if(sg.fire && !sg.fired && sg.at !== undefined && k >= sg.at){ sg.fired = true; coverEvent(sg.fire); }
@@ -3959,7 +5420,9 @@ function update(dt){
     }
   }
   st.thetaVel = damp(st.thetaVel, (st.theta - theta0)/Math.max(dt, 1e-3), 14, dt);
+  if(writeOnOpen && !coverAnim && st.open && st.theta >= OPEN - 1e-3){ writeOnOpen = false; writePose(); }
   stepFlight(dt);
+  stepRiffle(dt);
   for(const L of leaves) if(L.flt < 0.75) L.flt += dt;
   if(spinAnim){
     spinAnim.t += dt;
@@ -3983,8 +5446,6 @@ function update(dt){
   if(st.lift < 0.0005) st.lift = 0;
   if(writing){
     blinkPhase += dt;
-    const on = (blinkPhase % 1.06) < 0.62;
-    if(on !== caretOn){ caretOn = on; paintPage(writing.n); }
   }
   /* letters burning in: repaint at ~30 fps while any is still lit */
   if(burning.size){
@@ -3994,34 +5455,45 @@ function update(dt){
       if(!e){ burning.delete(n); return; }
       paintPage(n, now);
       const lastBorn = (pages[n].born || []).reduce((a,b)=>Math.max(a, b||0), 0);
-      if(!(writing && writing.n === n) && (now - lastBorn)/1000 > GLOW_T && !pages[n].fade){ burning.delete(n); paintPage(n, now); }
+      if(!(writing && writing.n === n) && (now - lastBorn)/1000 > GLOW_T && !(pages[n].vapor && pages[n].vapor.length)){ burning.delete(n); paintPage(n, now); }
     });
   }
   stepSparks(dt);
+  stepSmoke(dt);
   stepMotes(dt);
   stepMagic(dt);
   stepWisps(dt);
   stepSeek();
-  /* centre of the tome, so it turns about its own middle */
-  const b = smooth(clamp(st.theta/OPEN,0,1));
+  /* centre of the tome, so it turns about its own middle; while it is being
+     shut the half on the rock stays where it lies */
+  const b = smooth(clamp(frameTheta()/OPEN,0,1));
   bookRoot.position.set(-lerp((XJ_C + CW - 0.13)/2, 0, b), 0, -lerp(0, ZB*0.4, b));
   bobAmt = lerp(bobAmt, st.bob*st.lift, 1 - Math.exp(-dt*2));
   const restY = ROCK_TOP + 0.004 - (ZB - CVR - 0.004 + bookRoot.position.z);
   floatGrp.position.y = restY + st.lift*LIFT_H + st.hover + Math.sin(clock*0.78)*0.10*bobAmt + Math.sin(clock*1.3)*0.025*st.hover/0.3;
-  floatGrp.rotation.z = Math.sin(clock*0.53)*0.012*bobAmt;
+  st.joltV += (-260*st.jolt - 10*st.joltV)*Math.min(dt, 0.05);
+  st.jolt += st.joltV*Math.min(dt, 0.05);
+  floatGrp.position.y += st.jolt;
+  floatGrp.rotation.z = Math.sin(clock*0.53)*0.012*bobAmt + st.jolt*0.25;
   /* camera: high and to the south, following the book up and down; while
      writing it leans in over the page, looking down on it like a reader */
   /* the camera watches the board swing over and leans in only once it is down */
   const opening = coverAnim && coverAnim.to === OPEN && st.theta < OPEN*0.8;
   sdamp(st, 'focus', opening ? 0 : st.focusTo, 0.55, dt);
   const fz = smooth(clamp(st.focus, 0, 1));
-  _bc.set(fz*st.focusSide*(XJ_O + PW*0.5), floatGrp.position.y, fz*0.12);
+  /* writing, the book lies square to the eye: the page under the quill is
+     looked straight down on, centred, whole between the buttons and the pager */
+  if(writing && atHome()){
+    const c = pagePointWorld(writing.n, PAGE_W/2, PAGE_H/2).p;
+    _bc.set(fz*c.x, floatGrp.position.y, fz*c.z);
+  }else _bc.set(fz*st.focusSide*(XJ_O + PW*0.5), floatGrp.position.y, fz*0.12);
   sdamp(camTarget, 'x', _bc.x, 0.4, dt); sdamp(camTarget, 'y', _bc.y, 0.3, dt); sdamp(camTarget, 'z', _bc.z, 0.4, dt);
-  const fitW = 2*Math.tan(camera.fov*Math.PI/360);
-  const pageD = Math.max((PH + 0.7)/fitW, (PW + 0.7)/(fitW*VW/VH));
-  sdamp(st, 'camD', lerp(fitDistance()*st.zoom, pageD, fz), 0.45, dt);
+  const fitW = 2*Math.tan(camera.fov*Math.PI/360), ui = uiInsets();
+  const pageD = Math.max(PH/(fitW*(1 - 2*ui.v/VH)), PW/(fitW*(VW/VH)*(1 - 2*ui.s/VW)));
+  st.zoom = Math.min(st.zoom, Math.max(1, CAM_REACH/fitDistance()));
+  sdamp(st, 'camD', lerp(Math.min(fitDistance()*st.zoom, CAM_REACH), pageD, fz), 0.45, dt);
   if(st.camEl === undefined) st.camEl = camElevation();
-  const el0 = sdamp(st, 'camEl', lerp(camElevation(), 1.22, fz), 0.5, dt);
+  const el0 = sdamp(st, 'camEl', lerp(camElevation(), WRITE_EL, fz), 0.5, dt);
   /* walking round the rock: a flick coasts on, the eye never sinks into the
      ground, and leaning in to write brings it back to the reader's side */
   if(orbit.coast){
@@ -4038,20 +5510,23 @@ function update(dt){
   camera.position.set(camTarget.x + Math.sin(az)*ce, camTarget.y + Math.sin(el)*st.camD, camTarget.z + Math.cos(az)*ce);
   camera.position.y = Math.max(camera.position.y, GROUND_Y + 1.0);
   /* closed, the view is lifted a little above the book, so the forest beyond it shows */
-  const lift = lerp(2.4, 0, smooth(clamp(st.theta/OPEN, 0, 1)))*(1 - fz);
+  const lift = lerp(2.4, 0, smooth(clamp(frameTheta()/OPEN, 0, 1)))*(1 - fz);
   _bc.set(camTarget.x, camTarget.y + lift, camTarget.z);
   camera.lookAt(_bc);
   layout(false);
   floatGrp.updateMatrixWorld(true);
 
-  frontGem.userData.gem.material.envMapIntensity = 2.1 + Math.sin(clock*0.9)*0.5 + st.gemFlare*3 + st.aura*0.8;
   /* the gilt breathes with a faint light of its own */
   matGold.emissiveIntensity = 0.05 + 0.07*Math.pow(0.5 + 0.5*Math.sin(clock*0.7), 2) + st.aura*0.2 + st.gemFlare*0.3;
-  frontGem.userData.gem.material.emissiveIntensity = 0.55 + st.gemFlare*1.4 + st.aura*0.4;
-  frontGem.getWorldPosition(gemLight.position);
-  gemLight.intensity = 0.3 + 0.3*(0.5+0.5*Math.sin(clock*1.1)) + st.gemFlare*1.6 + st.aura*0.4;
+  stepGems();
+  /* held above the stone: from inside the bezel it turned the gold green */
+  gemLight.position.set(0, 0, 0.35); frontGem.localToWorld(gemLight.position);
+  gemLight.intensity = st.gemFlare*0.8 + st.aura*0.35;
   rayGroup.children.forEach(m=>{ m.material.opacity = m.userData.base*(0.7 + 0.35*Math.sin(clock*0.3 + m.userData.ph)); });
   rockTime.value = clock; nearTime.value = clock;
+  beamU.uTime.value = clock;
+  /* leaning in close to write, the reader is inside the light: it thins so the page stays clear */
+  beamU.uK.value = lerp(0.35, 1, smooth(clamp((camera.position.distanceTo(BEAM_AT) - 8)/10, 0, 1)));
   if(backdrop){ backdrop.material.uniforms.uTime.value = clock; backdrop.material.uniforms.uCam.value.copy(camera.position); }
   const p = dust.geometry.attributes.position, sd = dust.userData.seed;
   for(let i=0;i<p.count;i++){
@@ -4085,9 +5560,9 @@ async function boot(){
         ...FONTS.map(f=>document.fonts.load(fontCss(f, 40), 'AaЯяЖж')),
         document.fonts.load('600 40px "Cormorant SC"', 'LIBER ARCANUM'),
         document.fonts.load('700 40px "Cormorant SC"', 'LIBER ARCANUM'),
-        document.fonts.load('40px "UnifrakturMaguntia"', 'Liber Arcanum'),
+        document.fonts.load('40px "UnifrakturMaguntia"', TITLE),
         ...FONTS.map(f=>document.fonts.load(capFont(f, 80), 'HIZЗЖВ')),
-        document.fonts.load('italic 500 40px "Cormorant Garamond"', 'a book of secret writings')
+        document.fonts.load('italic 500 40px "Cormorant Garamond"', MOTTO.join(' '))
       ]),
       new Promise(r=>setTimeout(r, 4000))
     ]);
@@ -4100,6 +5575,15 @@ async function boot(){
     throw e;
   }
   loadAll();
+  shelf = createShelf({
+    N, page: n => pages[n], handsOf, personalHand: BROWSER_HAND, toast, personalPages, applyPage,
+    useBook: (key, hand)=> useBook(key, hand, !booted),
+    usePersonal: ()=> useBook(LS_KEY, BROWSER_HAND, !booted),
+    refresh: ()=> refreshUI(),
+    blurQuill: ()=>{ closeMenu(); if(writing) quill.blur(); },
+    focusQuill: ()=>{ if(writing) quill.focus({ preventScroll: true }); },
+  });
+  shelf.start();
   /* the title page and the blanks were painted before the fonts arrived */
   blankMat[0].map.image = pageBackground(-2); blankMat[0].map.needsUpdate = true;
   blankMat[1].map.image = pageBackground(-1); blankMat[1].map.needsUpdate = true;
@@ -4117,10 +5601,12 @@ async function boot(){
   const l = document.getElementById('loading');
   l.classList.add('gone');
   setTimeout(()=>l.remove(), 1300);
+  booted = true;
   window.__book.bootMs = Math.round(performance.now() - T0);
 }
 document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', ()=>{ pageCache.forEach((e,n)=>paintPage(n)); });
 
 window.__book = { st, orbit, leaves, pages, flip, setOpen, seekSpread, turnToPage, erasePages, restoreErased, quillTo, pour, enterWriting, exitWriting, pickAt, camera, scene, renderer, spinGrp, THREE, glideSpin, homeQuat,
+  shelf: ()=> shelf,
   info(){ return { open:st.open, k:st.k, theta:st.theta, lift:+st.lift.toFixed(3), writing: writing && writing.n, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, cache: pageCache.size }; } };
 boot();

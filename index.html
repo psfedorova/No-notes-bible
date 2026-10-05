@@ -6,7 +6,7 @@
 <title>Liber Arcanum</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Cormorant+SC:wght@500;600;700&family=Fondamento&family=Ponomar&family=Triodion&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Cormorant+SC:wght@500;600;700&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
 <script type="importmap">
 {
   "imports": {
@@ -59,14 +59,6 @@ body.cur-pointer{ cursor:pointer; }
 }
 
 .ui{ position:fixed; z-index:10; }
-.hint{
-  bottom:20px; left:50%; transform:translateX(-50%);
-  width:max-content; max-width:calc(100vw - 32px);
-  font-family:var(--text-font); font-style:italic; font-weight:500;
-  color:var(--gold-dim); font-size:16px; letter-spacing:.4px;
-  text-align:center; pointer-events:none; transition:opacity .8s;
-  text-shadow:0 1px 4px #000, 0 0 18px rgba(0,0,0,.7);
-}
 .bar{ top:18px; right:18px; display:flex; gap:10px; }
 .rune{
   width:44px; height:44px; border-radius:50%;
@@ -88,21 +80,39 @@ body.cur-pointer{ cursor:pointer; }
 #btnSound .ico-off, #btnSound.muted .ico-on{ display:none; }
 #btnSound.muted .ico-off{ display:block; }
 #btnSound.muted{ opacity:.62; }
+#btnBook .ico-close, #btnBook.open .ico-open{ display:none; }
+#btnBook.open .ico-close{ display:block; }
 
-.nav{ top:50%; transform:translateY(-50%); width:50px; height:50px; font-size:22px; }
-.nav.prev{ left:18px; }
-.nav.next{ right:18px; }
-.nav:hover{ transform:translateY(calc(-50% - 2px)); }
-
-.pageno{
-  top:24px; left:50%; transform:translateX(-50%);
-  font-family:var(--ui-font); font-weight:600; color:var(--gold-dim);
-  font-size:15px; letter-spacing:3px; pointer-events:none;
-  text-shadow:0 1px 4px #000; transition:opacity .5s;
+/* pagination: a gilt band along the bottom */
+.pager{
+  bottom:18px; left:50%; transform:translateX(-50%);
+  max-width:calc(100vw - 32px);
+  display:flex; align-items:center; gap:10px; padding:6px;
+  border-radius:32px; border:1px solid var(--gold-line);
+  background:radial-gradient(120% 160% at 50% 0%, rgba(46,50,26,.86), rgba(12,13,8,.9));
+  box-shadow:0 6px 24px rgba(0,0,0,.55), inset 0 0 18px rgba(255,206,110,.08);
+  animation:fadein .4s ease-out;
 }
+.pager[hidden]{ display:none; }
+.pager{ transition:opacity .4s; }
+body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
+.pager .rune{ width:40px; height:40px; font-size:18px; flex-shrink:0; }
+.pageno{
+  flex-shrink:0; display:flex; align-items:baseline; gap:8px; padding:0 6px;
+  font-family:var(--ui-font); font-weight:600; color:var(--gold-dim); white-space:nowrap;
+  font-size:14px; letter-spacing:1.5px; text-shadow:0 1px 4px #000; cursor:text;
+}
+.pageno input{
+  width:6.2ch; height:40px; padding:0 4px; border-radius:12px;
+  border:1px solid var(--gold-line); background:rgba(255,210,120,.06);
+  color:#ffe6ae; font:600 18px var(--ui-font); letter-spacing:.5px; text-align:center;
+  outline:none; caret-color:var(--gold); user-select:text; -webkit-user-select:text;
+}
+.pageno input:focus{ border-color:rgba(240,212,147,.85); box-shadow:0 0 12px rgba(236,192,102,.35); background:rgba(255,210,120,.1); }
+.pageno input::placeholder{ color:rgba(240,214,150,.35); }
 
 .toast{
-  bottom:56px; left:50%; transform:translateX(-50%);
+  bottom:84px; left:50%; transform:translateX(-50%);
   font-family:var(--ui-font); font-weight:600; color:rgba(242,214,146,.95);
   font-size:14px; letter-spacing:3px; opacity:0; pointer-events:none;
   transition:opacity .5s; text-shadow:0 0 10px rgba(255,200,90,.5), 0 1px 3px #000;
@@ -126,27 +136,33 @@ body.cur-pointer{ cursor:pointer; }
   font:12px/1.5 ui-monospace,monospace; white-space:pre-wrap; max-height:40%; overflow:auto;
 }
 
-.pageno{ pointer-events:auto; cursor:pointer; padding:4px 10px; }
-.pageno:hover{ color:var(--gold); }
-.pageno.seeking{ color:#ffe2a6; text-shadow:0 0 12px rgba(255,200,110,.85), 0 1px 4px #000; animation:candle 1.2s ease-in-out infinite; }
+.pageno.seeking input{ color:#ffe2a6; text-shadow:0 0 12px rgba(255,200,110,.85); animation:candle 1.2s ease-in-out infinite; }
 
-/* turn to a page: a small gilt seal under the page number */
-.seek{
-  top:58px; left:50%; transform:translateX(-50%);
-  display:flex; align-items:baseline; gap:12px; padding:10px 22px 12px;
-  border-radius:30px; border:1px solid var(--gold-line);
-  background:radial-gradient(120% 140% at 50% 0%, rgba(58,62,34,.92), rgba(14,15,9,.94));
-  box-shadow:0 6px 24px rgba(0,0,0,.6), inset 0 0 18px rgba(255,206,110,.12), 0 0 26px rgba(236,192,102,.18);
-  font-family:var(--ui-font); font-weight:600; color:var(--gold-dim); letter-spacing:2.5px; font-size:14px;
-  animation:rise .45s ease-out;
+/* the menu behind the three dots: actions that otherwise live on keys */
+.menu{
+  top:72px; right:18px; min-width:230px; padding:6px;
+  display:flex; flex-direction:column; gap:2px;
+  border-radius:16px; border:1px solid var(--gold-line);
+  background:radial-gradient(130% 110% at 50% 0%, rgba(48,52,28,.97), rgba(12,13,8,.97));
+  box-shadow:0 10px 30px rgba(0,0,0,.65), inset 0 0 20px rgba(255,206,110,.08);
+  animation:fadein .2s ease-out;
 }
-.seek[hidden]{ display:none; }
-.seek input{
-  width:3.4ch; background:transparent; border:0; border-bottom:1px solid var(--gold-line);
-  color:#ffe6ae; font:600 24px var(--ui-font); text-align:center; outline:none; caret-color:var(--gold);
-  text-shadow:0 0 12px rgba(255,200,110,.6); user-select:text; -webkit-user-select:text;
+.menu[hidden]{ display:none; }
+.menu button{
+  height:46px; padding:0 16px; border:0; border-radius:11px; background:transparent; text-align:left;
+  color:rgba(240,226,192,.92); font:500 18px var(--text-font); cursor:pointer;
 }
-@keyframes rise{ from{ opacity:0; transform:translate(-50%, -6px); } to{ opacity:1; transform:translate(-50%, 0); } }
+.menu button:hover, .menu button:focus-visible{ background:rgba(255,210,120,.1); color:#ffe6ae; outline:none; }
+.menu button[disabled]{ opacity:.35; pointer-events:none; }
+.menu hr{ margin:4px 10px; border:0; border-top:1px solid var(--gold-line); opacity:.6; }
+.menu .books{ display:flex; flex-direction:column; justify-content:center; gap:1px; height:56px; }
+.menu .books span{ font-style:italic; font-size:14px; color:var(--gold-dim); }
+.menu .books[hidden]{ display:none; }
+.menu-note{ margin:4px 16px 6px; color:rgba(240,226,192,.5); font:italic 500 14px var(--text-font); }
+@media (pointer:coarse){ .menu .fine{ display:none; } }
+#btnMore{ font-size:22px; letter-spacing:1px; padding-bottom:6px; }
+
+@keyframes rise{ from{ opacity:0; transform:translate(-50%, 6px); } to{ opacity:1; transform:translate(-50%, 0); } }
 
 /* the list of spells */
 .spells{
@@ -177,16 +193,48 @@ body.cur-pointer{ cursor:pointer; }
   border:1px solid var(--gold-line); background:transparent; color:var(--gold); font-size:16px; cursor:pointer;
 }
 .spells .close:hover{ box-shadow:0 0 12px rgba(236,192,102,.4); }
+/* the shelf of books: one's own and the shared ones */
+.shelf .card{ width:min(440px, 100%); }
+.shelf .list{ display:flex; flex-direction:column; gap:6px; margin:16px 0 12px; }
+.shelf .book{
+  display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:56px;
+  padding:8px 16px; border-radius:12px; border:1px solid rgba(214,164,74,.18); background:rgba(255,210,120,.04);
+  color:inherit; font:500 18px var(--text-font); text-align:left; cursor:pointer;
+}
+.shelf .book small{ display:block; margin-top:1px; font-style:italic; font-size:14px; color:var(--gold-dim); }
+.shelf .book.on{ border-color:var(--gold-line); background:rgba(255,210,120,.09); }
+.shelf .book:hover, .shelf .book:focus-visible{ background:rgba(255,210,120,.1); outline:none; }
+.shelf .tick{ color:var(--gold); font-size:18px; }
+.shelf .acts{ display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+.shelf .btn{
+  min-height:46px; padding:6px 18px; border-radius:23px; border:1px solid var(--gold-line); background:transparent;
+  color:#ffe6ae; font:600 17px var(--text-font); cursor:pointer;
+}
+.shelf .btn.main{ background:rgba(214,164,74,.22); }
+.shelf .btn:hover, .shelf .btn:focus-visible{ box-shadow:0 0 12px rgba(236,192,102,.35); outline:none; }
+.shelf .btn[disabled]{ opacity:.5; pointer-events:none; }
+.shelf input[type=text]{
+  width:100%; height:48px; margin-top:14px; padding:0 14px; border-radius:12px; border:1px solid var(--gold-line);
+  background:rgba(0,0,0,.25); color:#ffe6ae; font:500 18px var(--text-font); outline:none;
+}
+.shelf input[type=text]:focus{ box-shadow:0 0 12px rgba(236,192,102,.3); }
+.shelf .check{ display:flex; gap:10px; align-items:center; margin:14px 2px 4px; font-size:16px; cursor:pointer; }
+.shelf .check input{ width:18px; height:18px; accent-color:#d6a44a; }
+.shelf .link{
+  margin:14px 0 4px; padding:10px 12px; border-radius:10px; border:1px dashed var(--gold-line);
+  font-size:13px; color:var(--gold-dim); word-break:break-all; user-select:all; -webkit-user-select:all;
+}
+.shelf .who{ margin-top:16px; text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; }
+.shelf .who button{ border:0; background:none; padding:4px; color:var(--gold); font:inherit; text-decoration:underline; cursor:pointer; }
 @keyframes fadein{ from{ opacity:0; } to{ opacity:1; } }
 
 @media (max-width:640px){
   .bar{ top:12px; right:12px; gap:7px; }
   .rune{ width:40px; height:40px; font-size:18px; }
-  .nav{ top:auto; bottom:64px; transform:none; width:44px; height:44px; }
-  .nav:hover{ transform:translateY(-2px); }
-  .nav.prev{ left:16px; } .nav.next{ right:16px; }
-  .pageno{ top:auto; bottom:78px; }
-  .hint{ font-size:14px; bottom:16px; }
+  .pager{ bottom:12px; gap:6px; padding:5px; }
+  .pager .rune{ width:44px; height:44px; }
+  .pageno input{ height:44px; }
+  .menu{ top:62px; right:12px; }
 }
 </style>
 </head>
@@ -195,19 +243,35 @@ body.cur-pointer{ cursor:pointer; }
 <div id="vignette"></div>
 <textarea id="quill" spellcheck="false" autocomplete="off" autocapitalize="sentences" aria-label="Page text"></textarea>
 
-<div class="ui hint" id="hint"></div>
 <div class="ui toast" id="toast"></div>
-<div class="ui pageno" id="pageNo" title="Turn to a page (G)"></div>
-<div class="ui seek" id="seek" hidden><label for="seekIn">TURN TO PAGE</label><input id="seekIn" inputmode="numeric" maxlength="3" autocomplete="off" spellcheck="false" aria-label="Page number"><span>OF 100</span></div>
+<div class="ui spells shelf" id="shelf" hidden><div class="card" role="dialog" aria-label="Books"><button class="close" aria-label="Close">✕</button><div class="body"></div></div></div>
 <div class="ui spells" id="spells" hidden><div class="card" role="dialog" aria-label="Shortcuts"><button class="close" aria-label="Close">✕</button><h2>SPELLS OF THE TOME</h2><p class="sub">keyboard shortcuts</p></div></div>
 
 <div class="ui bar">
-  <button class="rune" id="btnSound" title="Sound on (M)" aria-label="Forest sound" aria-pressed="true"><svg class="ico-on" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.2 9.2a4 4 0 0 1 0 5.6M17.8 6.6a7.6 7.6 0 0 1 0 10.8" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg><svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></button>
+  <button class="rune muted" id="btnSound" title="Sound off (M)" aria-label="Forest sound" aria-pressed="false"><svg class="ico-on" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.2 9.2a4 4 0 0 1 0 5.6M17.8 6.6a7.6 7.6 0 0 1 0 10.8" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg><svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></button>
+  <button class="rune" id="btnBook" title="Open the book (O)" aria-label="Open the book"><svg class="ico-open" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 6.6C9.8 5 6.9 4.5 3.2 5v13.2c3.7-.5 6.6 0 8.8 1.6 2.2-1.6 5.1-2.1 8.8-1.6V5c-3.7-.5-6.6 0-8.8 1.6z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M12 6.6v13.2" stroke="currentColor" stroke-width="1.2"/><path d="M5.6 8.6c1.8-.2 3.4.1 4.6.8M5.6 11.4c1.8-.2 3.4.1 4.6.8M18.4 8.6c-1.8-.2-3.4.1-4.6.8M18.4 11.4c-1.8-.2-3.4.1-4.6.8" stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round" opacity=".75"/></svg><svg class="ico-close" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="5.5" y="3.2" width="13.5" height="17.6" rx="1.6" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M8.3 3.2v17.6" stroke="currentColor" stroke-width="1.2"/><circle cx="13.6" cy="10.4" r="1.7" fill="currentColor"/><path d="M13.6 6.6v1.6M13.6 12.6v1.6M10.6 10.4h1.4M15.6 10.4h1.4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg></button>
   <button class="rune" id="btnWrite" title="Lay the book open and write" aria-label="Lay the book open and write"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M20.5 2.5c-6 1-11 5.5-13.2 12.3l-1.6 4.9 1.4.5 1.2-3.3c3.6-.4 6.6-2.3 8.4-5.3-1.4.3-2.7.2-3.9-.2 2.6-.6 4.6-2.1 5.9-4.3-1 .1-1.9 0-2.8-.3 2-.9 3.6-2.4 4.6-4.3z" fill="currentColor"/><path d="M4.2 21.5c1.8-.4 3.5-.2 5 .4" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg></button>
+  <button class="rune" id="btnMore" title="More" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
 </div>
 
-<button class="ui rune nav prev" id="btnPrev" title="Previous page" aria-label="Previous page">❮</button>
-<button class="ui rune nav next" id="btnNext" title="Next page" aria-label="Next page">❯</button>
+<div class="ui menu" id="menu" role="menu" hidden>
+  <button role="menuitem" data-act="books" class="books" hidden>Books<span>My own book</span></button>
+  <button role="menuitem" data-act="erase">Erase this page</button>
+  <button role="menuitem" data-act="erase2" hidden>Erase this page</button>
+  <button role="menuitem" data-act="restore">Bring the erased ink back</button>
+  <hr>
+  <button role="menuitem" data-act="export">Download the book</button>
+  <button role="menuitem" data-act="exportText">Download as text</button>
+  <hr class="fine">
+  <button role="menuitem" data-act="spells" class="fine">Keyboard shortcuts</button>
+  <p class="menu-note">Everything you write is kept on its own</p>
+</div>
+
+<nav class="ui pager" id="pager" aria-label="Pages" hidden>
+  <button class="rune" id="btnPrev" title="Previous page (←)" aria-label="Previous page">❮</button>
+  <label class="pageno" id="pageNo" title="Type a page number (G)"><input id="pageIn" type="text" inputmode="numeric" enterkeyhint="go" autocomplete="off" spellcheck="false" placeholder="page" aria-label="Page number, type one and press Go"><span>of 100</span></label>
+  <button class="rune" id="btnNext" title="Next page (→)" aria-label="Next page">❯</button>
+</nav>
 
 
 <div id="loading"><div class="sig">✦</div><div>KINDLING THE TOME</div></div>
@@ -225,6 +289,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=47"></script>
+<script type="module" src="./grimoire.js?v=63"></script>
 </body>
 </html>
