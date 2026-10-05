@@ -366,7 +366,7 @@ export function createShelf(api){
     const batch = F.writeBatch(F.db);
     list.forEach(n=>{
       let e = (ink.get(n) || new Map()).get(me);
-      if(e && e.k.join(',').length > e.s.length*24){ rekey(n); e = ink.get(n).get(me); }
+      if(e && e.k.join(',').length > Array.from(e.s).length*24){ rekey(n); e = ink.get(n).get(me); }
       e = e || { s: '', k: [], f: null, c: false };
       batch.set(ref('books', id, 'ink', `${n}_${me}`), { uid: me, dev: DEV, n, s: e.s, k: e.k.join(','), f: e.f || null, c: !!e.c, at: F.serverTimestamp() });
     });
@@ -531,7 +531,8 @@ export function createShelf(api){
       body.appendChild(list);
     }
     /* a guest is offered Google instead of signing out, which would lose their ink */
-    const who = el('p', 'who', `${real() ? myName() : myName() + ' (guest)'} · `);
+    const who = el('p', 'who', real() ? `${myName()} · ` : cur ? `${myName()} (guest) · ` : `${myName()} (guest)`);
+    if(!real() && !cur){ body.appendChild(who); return; }
     const out = el('button', null, real() ? 'Sign out' : 'Sign in with Google');
     out.addEventListener('click', async ()=>{
       if(!real()){ await signIn(); render(); return; }
