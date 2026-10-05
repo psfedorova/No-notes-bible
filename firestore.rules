@@ -1,24 +1,35 @@
 rules_version = '2';
-// Liber Arcanum shared books. Paste into Firebase console > Firestore Database > Rules > Publish.
-// A book is read and written only by its members. One joins with the invite code the owner made.
+// Liber Arcanum shared books. Published in Firebase console > Firestore Database > Rules.
+// A book is read and written only by its members. One joins with the invite code the owner made,
+// signed in with Google or as a guest (an anonymous account kept by the browser).
 // Each member writes only the ink docs named after their own uid, so nobody can erase another's ink.
-// Each person can make at most three books.
+// Only Google accounts make books, at most three each.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function isGuest() { return request.auth.token.firebase.sign_in_provider == 'anonymous'; }
     function bookDoc(book) { return /databases/$(database)/documents/books/$(book); }
     function isMember(book) {
       return signedIn() && exists(/databases/$(database)/documents/books/$(book)/members/$(request.auth.uid));
     }
     function isOwner(book) { return signedIn() && get(bookDoc(book)).data.owner == request.auth.uid; }
     function goodName(d, max) { return d.name is string && d.name.size() >= 1 && d.name.size() <= max; }
+    // a Google member is named by the first word of the account name, a guest by what they typed
+    function accountName() {
+      let w = request.auth.token.get('name', '').split(' ')[0];
+      return w == '' ? 'Friend' : w;
+    }
+    function honestName(d) {
+      return d.guest is bool && goodName(d, 40)
+        && (isGuest() ? d.guest == true : d.guest == false && d.name == accountName());
+    }
     // how many books a person has made; it only ever counts up, to three
     function userDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
     function madeBefore() { return exists(userDoc()) ? get(userDoc()).data.made : 0; }
 
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
-      allow create, update: if signedIn() && request.auth.uid == uid
+      allow create, update: if signedIn() && !isGuest() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['made'])
         && request.resource.data.made is int
         && request.resource.data.made == (resource == null ? 0 : resource.data.made) + 1
@@ -36,7 +47,7 @@ service cloud.firestore {
     match /books/{book} {
       allow read: if isMember(book);
       // a book is made in one batch with the count going up by one, so nobody makes more than three
-      allow create: if signedIn()
+      allow create: if signedIn() && !isGuest()
         && getAfter(userDoc()).data.made == madeBefore() + 1
         && request.resource.data.keys().hasOnly(['name', 'owner', 'at'])
         && request.resource.data.owner == request.auth.uid
@@ -46,9 +57,10 @@ service cloud.firestore {
         && request.resource.data.owner == resource.data.owner
         && goodName(request.resource.data, 60);
 
+      // getAfter: the owner writes the first code in the same batch that makes the book
       match /invite/{doc} {
         allow read: if isMember(book);
-        allow write: if isOwner(book) && doc == 'code'
+        allow write: if signedIn() && getAfter(bookDoc(book)).data.owner == request.auth.uid && doc == 'code'
           && request.resource.data.keys().hasOnly(['code'])
           && request.resource.data.code is string && request.resource.data.code.size() >= 24;
       }
@@ -56,27 +68,31 @@ service cloud.firestore {
       match /members/{uid} {
         allow read: if isMember(book);
         allow create: if signedIn() && uid == request.auth.uid
-          && request.resource.data.keys().hasOnly(['name', 'code', 'at'])
-          && goodName(request.resource.data, 40)
+          && request.resource.data.keys().hasOnly(['name', 'code', 'guest', 'at'])
+          && honestName(request.resource.data)
           && request.resource.data.code is string
-          && (get(bookDoc(book)).data.owner == uid
+          && (getAfter(bookDoc(book)).data.owner == uid
               || request.resource.data.code == get(/databases/$(database)/documents/books/$(book)/invite/code).data.code);
         allow update: if signedIn() && uid == request.auth.uid
-          && request.resource.data.keys().hasOnly(['name', 'code', 'at'])
+          && request.resource.data.keys().hasOnly(['name', 'code', 'guest', 'at'])
           && request.resource.data.code == resource.data.code
-          && goodName(request.resource.data, 40);
+          && honestName(request.resource.data);
         allow delete: if signedIn() && (uid == request.auth.uid || isOwner(book));
       }
 
+      // a book has 100 pages; the keys are one comma-joined string, bounded by the letters they order
       match /ink/{id} {
         allow read: if isMember(book);
         allow create, update: if isMember(book)
           && request.resource.data.keys().hasOnly(['uid', 'dev', 'n', 's', 'k', 'f', 'c', 'at'])
           && request.resource.data.uid == request.auth.uid
-          && request.resource.data.n is int && request.resource.data.n >= 1 && request.resource.data.n < 400
+          && request.resource.data.n is int && request.resource.data.n >= 1 && request.resource.data.n < 100
           && id == string(request.resource.data.n) + '_' + request.auth.uid
-          && request.resource.data.s is string && request.resource.data.s.size() <= 8000
-          && request.resource.data.k is list && request.resource.data.k.size() <= 8000;
+          && request.resource.data.s is string && request.resource.data.s.size() <= 6000
+          && request.resource.data.k is string && request.resource.data.k.size() <= request.resource.data.s.size() * 24 + 24
+          && (request.resource.data.f == null || (request.resource.data.f is string && request.resource.data.f.size() <= 32))
+          && request.resource.data.dev is string && request.resource.data.dev.size() <= 32
+          && request.resource.data.c is bool;
         allow delete: if false;
       }
     }

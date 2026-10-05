@@ -1,0 +1,14 @@
+{
+  "name": "liber-arcanum-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Checks firestore.rules against the Firestore emulator (needs Java)",
+  "scripts": {
+    "test": "firebase --config ../../firebase.json emulators:exec --project demo-liber --only firestore \"node rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.0",
+    "firebase": "^12.0.0",
+    "firebase-tools": "^14.0.0"
+  }
+}

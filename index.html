@@ -215,6 +215,12 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .btn[disabled]{ opacity:.5; pointer-events:none; }
 .shelf .btn.minor{ min-height:36px; border:0; color:var(--gold-dim); font:italic 500 15px var(--text-font); text-decoration:underline; }
 .shelf .btn.minor:hover, .shelf .btn.minor:focus-visible{ box-shadow:none; color:var(--gold); }
+.shelf input[type=text]{
+  width:100%; height:48px; margin-top:14px; padding:0 14px; border-radius:12px; border:1px solid var(--gold-line);
+  background:rgba(0,0,0,.25); color:#ffe6ae; font:500 18px var(--text-font); outline:none;
+}
+.shelf input[type=text]::placeholder{ color:rgba(240,226,192,.4); }
+.shelf input[type=text]:focus{ box-shadow:0 0 12px rgba(236,192,102,.3); }
 .shelf .link{
   margin:14px 0 4px; padding:10px 12px; border-radius:10px; border:1px dashed var(--gold-line);
   font-size:13px; color:var(--gold-dim); word-break:break-all; user-select:all; -webkit-user-select:all;
@@ -283,6 +289,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=69"></script>
+<script type="module" src="./grimoire.js?v=71"></script>
 </body>
 </html>

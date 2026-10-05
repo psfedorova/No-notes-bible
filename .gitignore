@@ -14,3 +14,6 @@ node_modules/
 
 # Blender sources and renders (too large for GitHub, not used by the site)
 blender/
+
+# Firebase emulator logs
+*-debug.log
