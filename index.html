@@ -227,6 +227,25 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 }
 .shelf .who{ margin-top:16px; text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; }
 .shelf .who button{ border:0; background:none; padding:4px; color:var(--gold); font:inherit; text-decoration:underline; cursor:pointer; }
+/* the invitation: the rules, the vow read aloud, the signature */
+.shelf .rules{ list-style:none; margin:18px 0 8px; padding:0; display:flex; flex-direction:column; gap:10px; }
+.shelf .rules li{ display:flex; align-items:baseline; gap:14px; font-size:19px; }
+.shelf .rules b{ flex:0 0 30px; text-align:right; font:600 15px var(--ui-font); letter-spacing:1px; color:var(--gold); }
+.shelf .vow{ margin:16px 0 4px; text-align:center; font:italic 500 19px/1.5 var(--text-font); }
+.shelf .vow p{ color:rgba(240,226,192,.34); transition:color .7s ease, text-shadow .7s ease; }
+.shelf .vow p.said{ color:#ffe6ae; text-shadow:0 0 12px rgba(255,190,90,.45); }
+.shelf .vow p:last-child{ margin-top:8px; font:600 15px var(--ui-font); letter-spacing:4px; }
+.shelf .btn.on{ animation:listen 1.6s ease-in-out infinite; }
+@keyframes listen{ 50%{ box-shadow:0 0 20px rgba(236,192,102,.6); } }
+.shelf .sign{ margin-top:18px; animation:fadein .8s ease-out; }
+.shelf .sign .by{ text-align:center; font-style:italic; color:var(--gold-dim); font-size:16px; }
+.shelf .sign input[type=text], .shelf .sign .name{
+  margin-top:2px; height:auto; padding:2px 0 6px; border:0; border-bottom:1px solid var(--gold-line); border-radius:0;
+  background:transparent; text-align:center; font:italic 500 26px var(--text-font); color:#ffe6ae;
+}
+.shelf .sign input[type=text]:focus{ box-shadow:none; border-bottom-color:var(--gold); }
+.shelf .sign .ps{ margin-top:12px; text-align:right; font-style:italic; color:var(--gold-dim); font-size:15px; }
+@media (prefers-reduced-motion:reduce){ .shelf .btn.on, .shelf .sign{ animation:none; } }
 @keyframes fadein{ from{ opacity:0; } to{ opacity:1; } }
 
 @media (max-width:640px){
@@ -289,6 +308,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=72"></script>
+<script type="module" src="./grimoire.js?v=73"></script>
 </body>
 </html>

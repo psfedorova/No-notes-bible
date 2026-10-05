@@ -4670,6 +4670,16 @@ const loadImage = (src, tries = 3) => new Promise((res, rej)=>{
   };
   i.src = src;
 });
+/* the same for any other load: run it again, a little later each time, before giving up */
+async function retry(load, tries = 3){
+  for(let k = 1; ; k++){
+    try{ return await load(); }
+    catch(e){
+      if(k >= tries) throw e;
+      await new Promise(r=>setTimeout(r, 300*k + Math.random()*200));
+    }
+  }
+}
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/libs/draco/gltf/');
 const gltfLoader = new GLTFLoader();
@@ -5041,7 +5051,9 @@ const FOREST_GAIN = 2.0;                                         // the picture 
 const FOREST_EXPOSURE = 2.2;                                     // and shown a little brighter than it was rendered
 const DEPTH_NEAR = 5, DEPTH_FAR = 4000;                          // its distance range, in tenths of a metre
 async function decodeDepth(url, smooth){
-  const blob = await (await fetch(url)).blob();
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('Could not load ' + url + ' (' + res.status + ')');
+  const blob = await res.blob();
   const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   const c = cv(bmp.width, bmp.height), x = c.getContext('2d', { willReadFrequently: true });
   x.drawImage(bmp, 0, 0);
@@ -5241,7 +5253,7 @@ let backdrop = null;
 const nearTime = { value: 0 };
 async function nearField(){
   let data;
-  try{ data = await (await fetch(ASSETS.forestNear)).json(); }catch(e){ return; }
+  try{ data = await retry(async ()=>{ const r = await fetch(ASSETS.forestNear); if(!r.ok) throw new Error(r.status); return r.json(); }); }catch(e){ return; }
   const list = data.items;
   /* the floor and the stream's surface round the boulder, drawn only into depth, so what
      is buried in the moss or lies under the water stays hidden */
@@ -5262,7 +5274,9 @@ async function nearField(){
   const grp = new THREE.Group();
   const _m = new THREE.Matrix4(), _c = new THREE.Color();
   await Promise.all([...byAsset].map(async ([a, items])=>{
-    const gl = await gltfLoader.loadAsync(`assets/plants/${a}/${a}_1k.gltf`);
+    /* a plant that still will not come is left out rather than losing the whole book */
+    const gl = await retry(()=>gltfLoader.loadAsync(`assets/plants/${a}/${a}_1k.gltf`)).catch(e=>{ console.warn('Plant left out:', a, e); return null; });
+    if(!gl) return;
     const meshes = new Map();
     gl.scene.traverse(o=>{ if(o.isMesh){ const n = (o.parent && o.parent.name && !o.parent.isScene ? o.parent.name : o.name); meshes.set(o.name, o); meshes.set(n, o); } });
     const find = v => meshes.get(v) || meshes.get(v + '_LOD0') || meshes.get(v.replace(/_LOD0$/, '')) || [...meshes.values()][0];
@@ -5317,9 +5331,10 @@ async function loadAssets(){
   const imgs = {};
   const imgJobs = ['forest','forestWater','forestBack','granite','moss','leaAlbedo','leaNor','leaRough','maskFront','maskBack']
     .map(k=>loadImage(ASSETS[k]).then(i=>{ imgs[k] = i; }));
-  const models = Promise.all([gltfLoader.loadAsync(ASSETS.goldFront), gltfLoader.loadAsync(ASSETS.goldBack), gltfLoader.loadAsync(ASSETS.rock)]);
-  const depth = decodeDepth(ASSETS.forestDepth), backDepth = decodeDepth(ASSETS.forestBackDepth, true);
-  const light = new RGBELoader().loadAsync(ASSETS.forestLight);
+  const model = url => retry(()=>gltfLoader.loadAsync(url));
+  const models = Promise.all([model(ASSETS.goldFront), model(ASSETS.goldBack), model(ASSETS.rock)]);
+  const depth = retry(()=>decodeDepth(ASSETS.forestDepth)), backDepth = retry(()=>decodeDepth(ASSETS.forestBackDepth, true));
+  const light = retry(()=>new RGBELoader().loadAsync(ASSETS.forestLight));
   await Promise.all(imgJobs);
   const [gf, gb, rk] = await models;
   /* the boulder and the book are lit by the forest they stand in, the same render */
