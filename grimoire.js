@@ -1981,6 +1981,17 @@ function bandBump(v){
 const _sp = { px:new Float32Array(SP_U+1), pz:new Float32Array(SP_U+1), nx:new Float32Array(SP_U+1), nz:new Float32Array(SP_U+1), w:new Float32Array(SP_U+1), u:new Float32Array(SP_U+1) };
 const SP_UV_EDGE = 0.06;            // canvas margin each side for the laps onto the boards
 let spineArc = 0.81;                // the round of the back, board edge to board edge, as last laid out
+const SP_LAPN = 5;                  // columns of the hide lapped onto each board
+/* head and tail caps: the hide turned in at either end, closing the hollow between the
+   leather and the sewn backs once the back has gone hollow */
+const spineCaps = [-1, 1].map(side=>{
+  const m = ribbon(SP_U - 2*SP_LAPN + 1, 2, matSpine);
+  m.castShadow = true;
+  m.userData.grab = 'spine';
+  m.userData.side = side;
+  return m;
+});
+const _spTight = Array.from({length:SP_U+1}, ()=>[0, 0]);
 /* tight back: the hide runs from the back board, round the sewn backs of the
    leaves (offset outwards by BACK_GAP), to the front board. Closed it is the
    rounded spine; open it arches up under the gutter, as a real one does. */
@@ -1994,7 +2005,7 @@ function updateSpine(C){
     back.push([_H.x + o.x*BACK_GAP, _H.z + o.z*BACK_GAP]);
   }
   const P = [];
-  const LAPN = 5;
+  const LAPN = SP_LAPN;
   for(let i=0;i<LAPN;i++){ const t=i/LAPN; P.push([ax + SP_LAP*(1-t), az, 0]); }
   /* each board edge rounds onto the nearest sewn back: a quadratic whose
      control point runs back along the board, so the hide leaves it tangentially */
@@ -2019,12 +2030,6 @@ function updateSpine(C){
     P.push([u*u*L1[0] + 2*u*t*cBx + t*t*bx, u*u*L1[1] + 2*u*t*cBz + t*t*bz, 1-t]);
   }
   for(let i=1;i<=LAPN;i++){ const t=i/LAPN; P.push([bx + C.dx*SP_LAP*t, bz + C.dz*SP_LAP*t, 0]); }
-  for(let i=0;i<=SP_U;i++){
-    const a = P[Math.max(0,i-1)], b = P[Math.min(SP_U,i+1)];
-    let tx = b[0]-a[0], tz = b[1]-a[1];
-    const l = Math.hypot(tx,tz) || 1; tx/=l; tz/=l;
-    _sp.px[i]=P[i][0]; _sp.pz[i]=P[i][1]; _sp.nx[i]=-tz; _sp.nz[i]=tx; _sp.w[i]=smooth(clamp(P[i][2],0,1));
-  }
   /* the leather's artwork is laid by arc length: the round of the back (board edge to
      board edge) takes the middle of the canvas, the laps onto the boards its margins,
      so lettering keeps its shape and never wraps under the boards */
@@ -2032,6 +2037,27 @@ function updateSpine(C){
   let arc = 0;
   _sp.u[r0] = 0;
   for(let i=r0+1;i<=r1;i++){ arc += Math.hypot(P[i][0]-P[i-1][0], P[i][1]-P[i-1][1]); _sp.u[i] = arc; }
+  /* hollow back: as the boards go down flat the hide lets go of the sewn backs and runs
+     on from one board's outer face to the other's, so the book lies on its spine as on
+     its boards, instead of a strip of leather arching up between them over the moss */
+  const hol = smooth(clamp((C.theta/OPEN - 0.45)/0.55, 0, 1));
+  for(let i=r0;i<=r1;i++){ _spTight[i][0] = P[i][0]; _spTight[i][1] = P[i][1]; }
+  if(hol > 0){
+    const k = Math.hypot(bx - ax, bz - az)/3;
+    const c1x = ax - k, c1z = az, c2x = bx - C.dx*k, c2z = bz - C.dz*k;
+    for(let i=r0+1;i<r1;i++){
+      const t = _sp.u[i]/arc, u = 1 - t;
+      const hx = u*u*u*ax + 3*u*u*t*c1x + 3*u*t*t*c2x + t*t*t*bx;
+      const hz = u*u*u*az + 3*u*u*t*c1z + 3*u*t*t*c2z + t*t*t*bz;
+      P[i][0] = lerp(P[i][0], hx, hol); P[i][1] = lerp(P[i][1], hz, hol);
+    }
+  }
+  for(let i=0;i<=SP_U;i++){
+    const a = P[Math.max(0,i-1)], b = P[Math.min(SP_U,i+1)];
+    let tx = b[0]-a[0], tz = b[1]-a[1];
+    const l = Math.hypot(tx,tz) || 1; tx/=l; tz/=l;
+    _sp.px[i]=P[i][0]; _sp.pz[i]=P[i][1]; _sp.nx[i]=-tz; _sp.nz[i]=tx; _sp.w[i]=smooth(clamp(P[i][2],0,1));
+  }
   for(let i=0;i<=SP_U;i++){
     _sp.u[i] = i < r0 ? SP_UV_EDGE*i/r0 : i > r1 ? 1 - SP_UV_EDGE*(SP_U - i)/LAPN : SP_UV_EDGE + (1 - 2*SP_UV_EDGE)*_sp.u[i]/arc;
   }
@@ -2050,6 +2076,22 @@ function updateSpine(C){
   pos.needsUpdate = true;
   spineGeo.computeVertexNormals();
   spineGeo.computeBoundingSphere();
+  spineCaps.forEach(m=>{
+    const side = m.userData.side, y = side*CH/2, cols = r1 - r0 + 1;
+    const p = m.geometry.attributes.position, uv = m.geometry.attributes.uv;
+    for(let c=0;c<cols;c++){
+      const i = r0 + c;
+      p.setXYZ(c, _sp.px[i] + _sp.nx[i]*0.0035, y, _sp.pz[i] + _sp.nz[i]*0.0035);
+      const a = _spTight[Math.max(r0, i-1)], b = _spTight[Math.min(r1, i+1)];
+      const tl = Math.hypot(b[0]-a[0], b[1]-a[1]) || 1, inset = (BACK_GAP - 0.004)*_sp.w[i];
+      p.setXYZ(cols + c, _spTight[i][0] + (b[1]-a[1])/tl*inset, y, _spTight[i][1] - (b[0]-a[0])/tl*inset);
+      uv.setXY(c, _sp.u[i], side > 0 ? 1 : 0);
+      uv.setXY(cols + c, _sp.u[i], side > 0 ? 0.97 : 0.03);
+    }
+    p.needsUpdate = true; uv.needsUpdate = true;
+    m.geometry.computeVertexNormals();
+    m.visible = hol > 0;
+  });
 }
 
 /* ---------------- block back: lining, headbands, endpaper joints ---------------- */
