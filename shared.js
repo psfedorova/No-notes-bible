@@ -647,9 +647,9 @@ export function createShelf(api){
     if(!u || mode !== 'vow' || !u.sign.isConnected) return;
     const done = vow.said >= VOW.length;
     u.lines.forEach((p, i)=> p.classList.toggle('said', i < vow.said));
-    u.sub.textContent = done ? 'The book heard you. Now sign' : vow.deaf ? 'This book can’t hear you here. Say it aloud anyway' : 'Read it aloud. The book is listening';
+    u.sub.textContent = done ? 'The book heard you. Now sign' : vow.deaf ? 'I take your word for it. But you still have to say it aloud' : 'Read it aloud. The book is listening';
     u.mic.hidden = done;
-    u.mic.textContent = vow.deaf ? 'I said it aloud' : rec ? 'Listening…' : 'Read it aloud';
+    u.mic.textContent = vow.deaf ? 'I swear I said it' : rec ? 'Listening…' : 'Read it aloud';
     u.mic.classList.toggle('on', !!rec);
     u.help.hidden = done || vow.deaf || !vow.slow;
     if(done && u.sign.hidden){
@@ -678,7 +678,7 @@ export function createShelf(api){
     const acts = el('div', 'acts');
     const mic = el('button', 'btn main');
     mic.addEventListener('click', ()=>{ if(vow.deaf) saidAll(); else listen(); });
-    const help = el('button', 'btn minor', 'The book is hard of hearing. I said it');
+    const help = el('button', 'btn minor', 'Can’t hear me? I swear I said it');
     help.addEventListener('click', saidAll);
     acts.appendChild(mic); acts.appendChild(help);
     body.appendChild(acts);
