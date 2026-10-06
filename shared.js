@@ -797,6 +797,12 @@ export function createShelf(api){
   function show(m){ mode = m; view.hidden = false; api.blurQuill(); render(); }
   function close(){ sign = ''; if(asking) asking.done(false); view.hidden = true; mode = 'share'; api.focusQuill(); }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if(cls) e.className = cls; if(text !== undefined) e.textContent = text; return e; };
+  function pill(text, fn, cls){
+    const b = el('button', 'pill' + (cls ? ' ' + cls : ''), text);
+    b.type = 'button';
+    b.addEventListener('click', fn);
+    return b;
+  }
   function btn(text, cls, fn){
     const b = el('button', 'btn' + (cls ? ' ' + cls : ''), text);
     b.addEventListener('click', async ()=>{ b.disabled = true; try{ await fn(); }finally{ b.disabled = false; } });
@@ -868,13 +874,12 @@ export function createShelf(api){
     if(cur && user) renderKeepers();
     if(user && !real()) body.appendChild(el('p', 'sub', 'Your ink is kept by this browser. Sign in with Google to keep it on any device'));
     /* a guest is offered Google instead of signing out, which would lose their ink */
-    const who = el('p', 'who', real() ? `${myName()} · ` : `${myName()} (guest) · `);
-    const link2 = (text, fn) => { const b = el('button', null, text); b.addEventListener('click', fn); return b; };
-    if(real()) who.appendChild(link2('Sign out', async ()=>{ if(unsent()) show('out'); else await signOut(); }));
+    const who = el('div', 'who');
+    who.appendChild(el('span', null, real() ? `Signed in as ${myName()}` : `${myName()}, a guest`));
+    if(real()) who.appendChild(pill('Sign out', async ()=>{ if(unsent()) show('out'); else await signOut(); }));
     else{
-      who.appendChild(link2('Change name', ()=> show('name')));
-      who.appendChild(document.createTextNode(' · '));
-      who.appendChild(link2('Sign in with Google', async ()=>{ await signIn(); render(); }));
+      who.appendChild(pill('Change name', ()=> show('name')));
+      who.appendChild(pill('Sign in with Google', async ()=>{ await signIn(); render(); }));
     }
     body.appendChild(who);
   }
@@ -896,23 +901,29 @@ export function createShelf(api){
       body.appendChild(acts);
       return;
     }
-    const tools = el('div', 'acts');
-    tools.appendChild(btn('Rename this book', 'minor', async ()=> show('rename')));
-    tools.appendChild(btn('Delete this book', 'minor', async ()=> show('del')));
+    const tools = el('div', 'tools');
+    tools.appendChild(pill('Rename the book', ()=> show('rename')));
+    tools.appendChild(pill('Delete the book', ()=> show('del'), 'danger'));
     const rest = [...names.entries()].filter(([u]) => u !== user.uid);
     const shut = [...access.entries()].filter(([u, a]) => a.can === 'none' && !names.has(u));
-    const link3 = (text, fn) => { const b = el('button', null, text); b.addEventListener('click', fn); return b; };
     if(rest.length){
       body.appendChild(el('h3', null, `Keepers · ${rest.length}`));
       const list = el('div', 'keepers');
       rest.forEach(([uid, name])=>{
         const reads = (access.get(uid) || {}).can === 'read';
         const row = el('div', 'row');
-        const who = el('span', 'name', name);
-        who.appendChild(el('small', null, reads ? 'only reads' : 'writes'));
-        row.appendChild(who);
-        row.appendChild(link3(reads ? 'Let write' : 'Only read', ()=> allow(uid, reads ? null : 'read')));
-        row.appendChild(link3('Remove', ()=>{ target = { uid, name }; show('remove'); }));
+        row.appendChild(el('span', 'name', name));
+        const seg = el('div', 'seg');
+        seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', `What ${name} can do`);
+        [['Writes', false], ['Reads', true]].forEach(([text, r])=>{
+          const b = el('button', null, text);
+          b.type = 'button';
+          b.setAttribute('aria-pressed', String(reads === r));
+          b.addEventListener('click', ()=>{ if(reads !== r) allow(uid, r ? 'read' : null); });
+          seg.appendChild(b);
+        });
+        row.appendChild(seg);
+        row.appendChild(pill('Remove', ()=>{ target = { uid, name }; show('remove'); }));
         list.appendChild(row);
       });
       body.appendChild(list);
@@ -923,7 +934,7 @@ export function createShelf(api){
       shut.forEach(([uid, a])=>{
         const row = el('div', 'row');
         row.appendChild(el('span', 'name', a.name || 'Friend'));
-        row.appendChild(link3('Let back in', ()=> allow(uid, null)));
+        row.appendChild(pill('Let back in', ()=> allow(uid, null)));
         list.appendChild(row);
       });
       body.appendChild(list);
@@ -1004,21 +1015,35 @@ export function createShelf(api){
   }
   async function renderLink(acts){
     body.appendChild(el('p', 'sub', 'Send this link to as many friends as you like. They take the vow, sign it and write with you'));
-    const box = el('div', 'link', 'Making a link…');
+    const box = el('div', 'linkbox');
+    const url0 = el('span', 'url', 'Making a link…');
+    box.appendChild(url0);
     body.appendChild(box);
     body.appendChild(acts);
     const id = cur.id, url = await inviteLink(false);
     if(!cur || cur.id !== id) return;
-    if(!url){ box.textContent = 'Only the book’s creator can make a link'; return; }
-    box.textContent = url;
-    if(navigator.share) acts.appendChild(btn('Send', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'You’ve been invited to become a keeper of our bible. No notes', url: link.url }); }catch(e){} }));
-    acts.appendChild(btn('Copy link', navigator.share ? '' : 'main', async ()=>{
-      try{ await navigator.clipboard.writeText(link.url); api.toast('LINK COPIED', 1600); }catch(e){ api.toast('SELECT THE LINK AND COPY IT', 2000); }
-    }));
-    if(user && cur.owner === user.uid) acts.appendChild(btn('Make a new link (the old one stops working)', 'minor', async ()=>{
-      const l = await inviteLink(true);
-      if(l){ box.textContent = l; api.toast('NEW LINK MADE', 1600); }
-    }));
+    if(!url){ url0.textContent = 'Only the book’s creator can make a link'; return; }
+    const shown = u => u.replace(/^https?:\/\//, '');
+    url0.textContent = shown(url); url0.title = url;
+    const copy = el('button', 'copy', 'Copy');
+    copy.type = 'button';
+    copy.addEventListener('click', async ()=>{
+      try{ await navigator.clipboard.writeText(link.url); copy.textContent = 'Copied ✓'; setTimeout(()=>{ copy.textContent = 'Copy'; }, 1600); }
+      catch(e){ api.toast('SELECT THE LINK AND COPY IT', 2000); }
+    });
+    box.appendChild(copy);
+    if(navigator.share) acts.appendChild(btn('Send the link', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'You’ve been invited to become a keeper of our bible. No notes', url: link.url }); }catch(e){} }));
+    if(user && cur.owner === user.uid){
+      const note = el('p', 'hint', 'Anyone with this link can join. Shared it by mistake? ');
+      const again = el('button', 'inline', 'Make a new one');
+      again.type = 'button';
+      again.addEventListener('click', async ()=>{
+        const l = await inviteLink(true);
+        if(l){ url0.textContent = shown(l); url0.title = l; api.toast('NEW LINK MADE. THE OLD ONE NO LONGER WORKS', 2600); }
+      });
+      note.appendChild(again);
+      acts.after(note);
+    }
   }
   /* ---------- the invitation: a card on the book's own paper, the rules, the vow, a signature ---------- */
   const RULES = ['What is written here is gospel*', 'It is not up for discussion', 'If a page bores you, turn it'];

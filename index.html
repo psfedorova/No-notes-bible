@@ -307,19 +307,44 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 }
 .shelf input[type=text]::placeholder{ color:rgba(240,226,192,.4); }
 .shelf input[type=text]:focus{ box-shadow:0 0 12px rgba(236,192,102,.3); }
-.shelf .link{
-  margin:14px 0 4px; padding:10px 12px; border-radius:10px; border:1px dashed var(--gold-line);
-  font-size:13px; color:var(--gold-dim); word-break:break-all; user-select:all; -webkit-user-select:all;
+.shelf .linkbox{
+  display:flex; align-items:center; gap:8px; min-height:46px; margin:14px 0 4px; padding:4px 4px 4px 16px;
+  border-radius:23px; border:1px solid var(--gold-line); background:rgba(0,0,0,.25);
 }
-.shelf .who{ margin-top:16px; text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; }
+.shelf .linkbox .url{
+  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:15px; color:var(--gold-dim); user-select:all; -webkit-user-select:all;
+}
+.shelf .linkbox .copy{
+  flex:none; min-width:76px; height:38px; padding:0 16px; border-radius:19px; border:0;
+  background:rgba(214,164,74,.22); color:#ffe6ae; font:600 16px var(--text-font); cursor:pointer;
+}
+.shelf .linkbox .copy:hover, .shelf .linkbox .copy:focus-visible{ box-shadow:0 0 12px rgba(236,192,102,.35); outline:none; }
+.shelf .hint .inline{ border:0; background:none; padding:0; color:var(--gold); font:inherit; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+/* small buttons for what is done to a keeper, to the book, to the account */
+.shelf .pill{
+  flex:none; min-height:32px; padding:2px 14px; border-radius:16px; border:1px solid rgba(214,164,74,.3);
+  background:transparent; color:var(--gold); font:500 15px var(--text-font); cursor:pointer;
+}
+.shelf .pill:hover, .shelf .pill:focus-visible{ background:rgba(255,210,120,.08); border-color:var(--gold-line); outline:none; }
+.shelf .pill.danger{ color:#eaa48c; border-color:rgba(234,164,140,.35); }
+.shelf .pill.danger:hover, .shelf .pill.danger:focus-visible{ background:rgba(234,164,140,.08); border-color:rgba(234,164,140,.6); }
+.shelf .seg{ flex:none; display:inline-flex; padding:2px; border-radius:16px; border:1px solid rgba(214,164,74,.3); }
+.shelf .seg button{
+  min-height:26px; padding:0 11px; border-radius:13px; border:0; background:none;
+  color:var(--gold-dim); font:500 15px var(--text-font); cursor:pointer;
+}
+.shelf .seg button[aria-pressed=true]{ background:rgba(214,164,74,.22); color:#ffe6ae; cursor:default; }
+.shelf .seg button:focus-visible{ outline:1px solid var(--gold-line); }
 .shelf .keepers{ margin:4px 0 8px; font-size:17px; }
-.shelf .keepers .row{ display:flex; align-items:center; gap:4px; padding:4px 0; border-bottom:1px dashed rgba(214,164,74,.16); }
+.shelf .keepers .row{ display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px dashed rgba(214,164,74,.16); }
 .shelf .keepers .row:last-child{ border-bottom:0; }
 .shelf .keepers .name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.shelf .keepers .name small{ margin-left:8px; font-style:italic; font-size:14px; color:var(--gold-dim); }
-.shelf .keepers button{ flex:none; font-size:15px; }
+.shelf .tools{ display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:14px; padding-top:16px; border-top:1px dashed rgba(214,164,74,.16); }
+.shelf .who{ display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:6px 10px; margin-top:16px; font-style:italic; color:var(--gold-dim); font-size:15px; }
+.shelf .who .pill{ font-style:normal; }
 .shelf .body[data-mode=ask] h2:empty{ display:none; }
-.shelf .who button, .shelf .keepers button{ border:0; background:none; padding:4px; color:var(--gold); font:inherit; text-decoration:underline; cursor:pointer; }
+@media (max-width:420px){ .shelf .keepers .row{ flex-wrap:wrap; } .shelf .keepers .name{ flex-basis:100%; } }
 /* the invitation: a card on a leaf of the book, sealed in wax, written in brown ink */
 .shelf.locked .close{ display:none; }
 .shelf .hint{ margin:6px 0 0; text-align:center; font-style:italic; color:var(--gold-dim); font-size:14px; }
