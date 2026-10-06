@@ -571,7 +571,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   /* the film comes down whole before it plays, so it never waits on the line */
   const fetchCut = async cut=>{
     ctl = new AbortController();
-    const res = await fetch('assets/intro/' + kind + cut + '.mp4?v=3', { signal: ctl.signal });
+    const res = await fetch('assets/intro/' + kind + cut + '.mp4?v=4', { signal: ctl.signal });
     if(!res.ok) throw new Error(res.status);
     filmTotal = +res.headers.get('content-length') || filmTotal;
     filmGot = 0;
@@ -662,6 +662,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=96"></script>
+<script type="module" src="./grimoire.js?v=97"></script>
 </body>
 </html>

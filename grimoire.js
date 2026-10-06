@@ -5403,6 +5403,9 @@ function rockMaterial(img){
     sh.fragmentShader = `uniform sampler2D tGranite, tGraniteN, tMoss, tMossN, tStone, tStoneN; uniform float gScale, mScale, sScale, uTime; uniform vec3 uSunDir;
       varying vec3 vWp; varying vec3 vWn;` + MOSS_GLSL + sh.fragmentShader
       .replace('#include <map_fragment>', `
+        /* the lower half of the boulder is buried: cut at the floor, or it hangs below the
+           forest's ground as a dark skirt that slides over the moss as one walks round */
+        if(vWp.y < ${GROUND_Y.toFixed(2)}) discard;
         vec3 Nw = normalize(vWn), Wt = triW(Nw);
         float mm = mossMask(vWp, Nw);
         /* the scanned stone gives the boulder its lichen, stains and cracks at the scale of
@@ -5453,6 +5456,7 @@ function mossShells(rock, u, count){
         .replace('#include <map_fragment>', `
           vec3 Nw = normalize(vWn), Wt = triW(Nw);
           float mm = mossMask(vWp, Nw);
+          if(vWp.y < ${GROUND_Y.toFixed(2)}) discard;
           vec3 sp = vWp*70.0;
           float strand = vn3(sp) *0.65 + vn3(sp*2.3 + 5.0)*0.35;
           /* cushions: the strands stand tall in clumps and lie low between them */
@@ -5661,19 +5665,19 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         }else{
           col = textureGrad(tPano, uv, gx, gy).rgb;
           if(wBack > 0.0) col = mix(col, textureGrad(tBack, uvB, gx*2.0, gy*2.0).rgb, wBack);
-          /* where the floor rises against the boulder's bulge the render left a crack of
-             black: there the ground is never darker than the moss a step further out,
-             under a soft shade of its own that closes in on the stone */
+          /* the floor under the boulder's foot, black in the render, shows as a crack where
+             the stone's cut meets it: there it takes the moss a step further out, deep in the
+             stone's shade. Outside the foot the render's own shadow and occlusion are kept */
           vec3 Wg = P + uCap;
           float rg = length(Wg.xz);
           if(Wg.y < ${(GROUND_Y + 1.0).toFixed(2)} && rg < 9.0){
             float fa = atan(Wg.z, Wg.x)*${(ROCK_FOOT_N/(2*Math.PI)).toFixed(6)} + ${ROCK_FOOT_N.toFixed(1)};
             int f0 = int(floor(fa)) % ${ROCK_FOOT_N}, f1 = (f0 + 1) % ${ROCK_FOOT_N};
-            float rf = mix(uFoot[f0], uFoot[f1], fract(fa)), edge = rf + 1.6;
-            if(rf > 0.0 && rg < edge){
+            float rf = mix(uFoot[f0], uFoot[f1], fract(fa));
+            if(rf > 0.0 && rg < rf){
               vec3 Po = vec3(Wg.x*(1.0 + 1.6/rg), Wg.y, Wg.z*(1.0 + 1.6/rg)) - uCap;
               vec3 moss = textureGrad(tPano, eqUv(normalize(Po)), gx, gy).rgb;
-              float shade = mix(0.42, 1.0, smoothstep(rf - 0.3, edge, rg));
+              float shade = mix(0.3, 0.5, smoothstep(rf - 1.0, rf, rg));
               col = max(col, moss*shade);
             }
           }
@@ -5854,8 +5858,8 @@ async function loadAssets(){
      earth beneath it */
   rockGrp.traverse(o=>{ if(o.isMesh) o.renderOrder = -6; });
   await nearField();
-  /* the boulder's shadow is in the forest render itself, the shade round its foot is
-     evened out by the backdrop (uFoot) */
+  /* the boulder's shadow is in the forest render itself; the backdrop only fills the
+     floor under its foot (uFoot) */
 }
 
 /* ============================================================================
