@@ -535,7 +535,10 @@ const edgeTone = (()=>{
    hinge into the gutter. One map: u 0..HINGE_U is the hinge, HINGE_U..1 the panel */
 const EP_X0 = 0.14, EP_X1 = CW - 0.07, EP_H = CH - 0.14, EP_HINGE = 0.45, JOINT_H = PH - 0.02;
 const HINGE_U = EP_HINGE/(EP_X1 - EP_X0 + EP_HINGE);
-const matEndpaper = new THREE.MeshStandardMaterial({ color: 0x2a1d14, roughness: 0.7, metalness: 0, side: THREE.DoubleSide });
+/* the pastedown and its joints lie a hair above the board: pulled toward the eye in depth,
+   so the board's own face never shows through them at a grazing angle */
+const matEndpaper = new THREE.MeshStandardMaterial({ color: 0x2a1d14, roughness: 0.7, metalness: 0, side: THREE.DoubleSide,
+  polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
 
 const PINK = a => `rgba(64,38,14,${a})`;
 function spiralPath(ctx, cx, cy, r0, r1, a0, turns, cw){
@@ -2647,14 +2650,15 @@ function updateBack(C){
     }
     P.needsUpdate = true; Nn.needsUpdate = true;
   });
-  /* endpaper joints: board spine edge -> first / last leaf's sewing. The strip lies flat on
-     the board up to its edge and only then bends over to the leaf, leaving the edge along
-     the board's own plane: a single curve from inside the board would lift that part off
-     the leather while the board swings, and show it as a loose flat panel */
+  /* endpaper joints: board spine edge -> first / last leaf's sewing, as a real joint. The
+     strip carries on the pastedown edge to edge, lying on the board at the pastedown's own
+     height up to the board's edge, then leaves the edge along the board's plane and bends
+     softly over to the leaf. One curve from inside the board would lift off the leather
+     while the board swings and show as a loose panel */
   const joint = (mesh, sx, sz, dx, dz, hx, hz)=>{
     const p = mesh.geometry.attributes.position;
     const ax = sx + dx*EP_X0, az = sz + dz*EP_X0;
-    const L = Math.hypot(hx - sx, hz - sz)*0.5, cx = sx - dx*L, cz = sz - dz*L;
+    const L = Math.hypot(hx - sx, hz - sz)*0.25, cx = sx - dx*L, cz = sz - dz*L;
     for(let c=0;c<10;c++){
       let x, z;
       if(c < 3){ const t = c/3; x = lerp(ax, sx, t); z = lerp(az, sz, t); }
@@ -2664,9 +2668,9 @@ function updateBack(C){
     p.needsUpdate = true; mesh.geometry.computeVertexNormals();
   };
   hingeOf(C, 0, _H);
-  joint(jointF, C.ex + C.nx*0.0015, C.ez + C.nz*0.0015, C.dx, C.dz, _H.x, _H.z);
+  joint(jointF, C.ex + C.nx*0.002, C.ez + C.nz*0.002, C.dx, C.dz, _H.x, _H.z);
   hingeOf(C, N-1, _H);
-  joint(jointB, C.xb, ZB + 0.0015, 1, 0, _H.x, _H.z);
+  joint(jointB, C.xb, ZB + 0.002, 1, 0, _H.x, _H.z);
 }
 
 /* which page textures are live, and which leaves cast shadows */
