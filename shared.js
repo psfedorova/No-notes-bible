@@ -30,6 +30,7 @@ const KEEP_PART = 200000;       // letters in one part of the private book's cop
 const KEEP_MS = 15000;
 const SLOW_MS = 6000;
 const wait = ms => new Promise(res => setTimeout(res, ms));
+const MAKE_MS = 20000;
 
 export const sharingOn = !!FIREBASE || EMU;
 
@@ -84,7 +85,7 @@ export function createShelf(api){
   let ink = new Map(), pending = new Set(), merged = new Map(), deferred = new Set();
   let upTm = 0, joinWant = null, dirtyInk = new Set(), link = null;
   let inflight = 0, waitTm = 0, slow = false;
-  let keepTm = 0, clash = null, checked = new Set();
+  let keepTm = 0, clash = null, checked = new Set(), making = false;
   let guestName = typeof lsGet(GUEST_KEY) === 'string' ? lsGet(GUEST_KEY) : '';
 
   /* ---------- firebase, loaded only once it is wanted ---------- */
@@ -752,6 +753,23 @@ export function createShelf(api){
     + `&from=${encodeURIComponent(myName())}&book=${encodeURIComponent(cur ? cur.name : 'Our book')}`;
   /* the link is fetched once per book and kept, so the card can redraw freely */
   async function inviteLink(rotate){
+  /* a new book takes a few seconds (a guest is signed in first): the card says so
+     meanwhile, and lets go if the connection never answers */
+  async function makeBook(guest){
+    if(making) return;
+    making = true;
+    render();
+    try{
+      const job = (async ()=>{
+        if(guest !== undefined && !await beGuest(guest)) return;
+        await createBook(`${myName()}’s book`, true);
+      })();
+      if(await Promise.race([job.then(()=> 'done'), wait(MAKE_MS).then(()=> 'slow')]) === 'slow') api.toast('NO CONNECTION. TRY AGAIN LATER', 2400);
+    }finally{
+      making = false;
+      if(!view.hidden && mode === 'share') render();
+    }
+  }
     await firebase();
     if(!cur) return null;
     const id = cur.id;
@@ -888,9 +906,10 @@ export function createShelf(api){
       body.appendChild(input);
       body.appendChild(el('p', 'hint', 'the name your friend sees by your writing'));
       const go = async ()=>{
+    if(making){ body.appendChild(el('p', 'sub', 'Making the book and its link…')); return; }
         const name = input.value.trim();
         if(!name){ input.focus(); api.toast('WRITE YOUR NAME FIRST', 1600); return; }
-        if(await beGuest(name)) await createBook(`${name}’s book`, true);
+        await makeBook(name);
       };
       input.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); go(); } });
       acts.appendChild(btn('Get a link', 'main', go));
@@ -904,7 +923,7 @@ export function createShelf(api){
       body.appendChild(el('p', 'sub', `You keep ${MAX_BOOKS} shared books, the most there can be. Open one from the list above to share it, or delete one of yours to make room`));
     }else{
       body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. Each of you can erase only your own writing'));
-      acts.appendChild(btn('Get a link', 'main', ()=> createBook(`${myName()}’s book`, true)));
+      acts.appendChild(btn('Get a link', 'main', ()=> makeBook()));
       body.appendChild(acts);
     }
     if(cur && user) renderKeepers();
