@@ -80,7 +80,7 @@ export function createShelf(api){
   let user = null, cur = null;          // cur: { id, name, owner }
   let books = [], offBooks = null, made = 0, offMade = null;
   let offInk = null, offMembers = null, offBook = null, offMine = null, offAccess = null, firstSnap = true;
-  let names = new Map(), plain = new Map(), guests = new Set(), access = new Map(), reading = false;
+  let names = new Map(), plainNames = new Map(), guests = new Set(), access = new Map(), reading = false;
   let ink = new Map(), pending = new Set(), merged = new Map(), deferred = new Set();
   let upTm = 0, joinWant = null, dirtyInk = new Set(), link = null;
   let inflight = 0, waitTm = 0, slow = false;
@@ -183,7 +183,7 @@ export function createShelf(api){
   function leaveBook(){
     flush();
     unlisten();
-    cur = null; ink = new Map(); merged = new Map(); pending = new Set(); deferred = new Set(); names = new Map(); plain = new Map();
+    cur = null; ink = new Map(); merged = new Map(); pending = new Set(); deferred = new Set(); names = new Map(); plainNames = new Map();
     guests = new Set(); access = new Map(); reading = false;
     lsDel(CUR_KEY);
   }
@@ -230,7 +230,7 @@ export function createShelf(api){
     }, e => lost(e));
     offMembers = F.onSnapshot(F.collection(F.db, 'books', id, 'members'), s=>{
       names = keeperNames(s.docs);
-      plain = new Map(s.docs.map(d => [d.id, String(d.data().name || 'Friend').slice(0, 40)]));
+      plainNames = new Map(s.docs.map(d => [d.id, String(d.data().name || 'Friend').slice(0, 40)]));
       guests = new Set(s.docs.filter(d => d.data().guest).map(d => d.id));
       saveInk();
       if(!view.hidden) render();
@@ -485,7 +485,7 @@ export function createShelf(api){
   async function removeKeeper(uid){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
     const id = cur.id, guest = guests.has(uid);
-    const name = plain.get(uid) || 'Friend';
+    const name = plainNames.get(uid) || 'Friend';
     const batch = F.writeBatch(F.db);
     batch.delete(ref('books', id, 'members', uid));
     batch.set(ref('books', id, 'access', uid), { can: 'none', name, guest, at: F.serverTimestamp() });

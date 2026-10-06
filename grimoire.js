@@ -31,7 +31,7 @@ import {
   clamp, lerp, smooth, mulberry32, fbm, upsample, cv, normalFromHeight, tex,
   setMaxAniso, makeSpriteCanvas, makeRayAlpha, crackCanvas, fieldFromCanvas
 } from './textures.js?v=4';
-import { createShelf, sharingOn } from './shared.js?v=17';
+import { createShelf, sharingOn } from './shared.js?v=18';
 
 const T0 = performance.now();
 /* ?film: the opening film is shot from this very scene, one frame at a time (film.js).
@@ -6121,21 +6121,27 @@ function restPages(now){
     e.bg = null; e.inked = null; e.inkKey = null;
   });
 }
-/* left alone, a phone draws every other frame: the water and the fireflies still move,
-   and a GPU kept cool has its full speed when a finger comes down. A touch, a key or
-   any motion of the book brings back every frame for a few seconds */
-let activeAt = 0, skipped = false;
+/* left alone, the book draws at most 30 frames a second, and 60 while it moves, even on a
+   120 Hz screen: the water and the fireflies still move, and a GPU kept cool has its full
+   speed when a finger comes down. A touch, a key or any motion of the book brings back
+   every frame for a few seconds */
+let activeAt = 0, drawnAt = 0;
 ['pointerdown', 'pointermove', 'keydown', 'input'].forEach(t=>addEventListener(t, ()=>{ activeAt = performance.now(); }, { capture:true, passive:true }));
-function resting(){
-  return !HI_RES && performance.now() - activeAt > 2500 && !g && !pinch && !st.flight && !st.riffle
+function still(){
+  return performance.now() - activeAt > 2500 && !g && !pinch && !st.flight && !st.riffle
     && !coverAnim && !spinAnim && !inertia && !orbit.coast && seek.goal === null;
 }
-function rafLoop(){
+function resting(){ return !HI_RES && still(); }
+function rafLoop(now){
   requestAnimationFrame(rafLoop);
-  if(resting() && (skipped = !skipped)) return;
+  const step = still() ? 1000/30 : 1000/60;
+  if(now - drawnAt < step - 1) return;
+  drawnAt = Math.max(drawnAt + step, now - step);
   frame();
 }
-setInterval(()=>{ if(document.hidden && !FILM) frame(); }, 250);
+/* rAF sleeps in a hidden tab: a turn or an opening already under way still plays out
+   (screenshots of a hidden tab stay real), then the book sleeps until it is shown */
+setInterval(()=>{ if(document.hidden && !FILM && !still()) frame(); }, 250);
 
 /* while the veil is still up: the spread the book will open on is painted and sent to the
    GPU, and every shader is built, the hidden ones (glows, sparks) and a written page's
