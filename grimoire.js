@@ -6524,6 +6524,7 @@ async function boot(){
   }catch(e){}
   try{
     await loadAssets();
+    if(intro && intro.stage) intro.stage(.88);
   }catch(e){
     const l = document.getElementById('introNote');
     if(l){ l.textContent = 'THE TOME COULD NOT BE KINDLED'; l.parentNode.classList.add('wait'); }
@@ -6549,6 +6550,7 @@ async function boot(){
   if(FILM) st.open = false;
   await warmUp();
   if(intro){
+    if(intro.stage) intro.stage(.95);
     const poses = await fetch('assets/intro/poses.json').then(r=>r.json()).catch(()=>null);
     window.__book.bootMs = Math.round(performance.now() - T0);
     await new Promise(r=>intro.ready(mode=>{ takeOver(mode, poses); r(); }));
