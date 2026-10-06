@@ -30,7 +30,7 @@ const OPEN_AT = 4.6;                 // the board starts to lift
 const LAND = 7.8;                    // the circle touches the title page
 const TALL = F.camera.aspect < 0.9;
 /* a phone holds on the title page while its lettering comes up, then draws back */
-const END = TALL ? 13.3 : 12.3;
+const END = TALL ? 12.0 : 11.0;
 
 const lerp = (a, b, t) => a + (b - a)*t;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -589,9 +589,9 @@ function at(t, dt){
   if(t >= LAND && !sparked){ sparked = true; F.emitOpenBurst(30); }
   /* it lies on the title page as light, and from it a spark flies to each letter,
      which burns in as the book's own writing does */
-  const START = LAND + 0.75, FLY = 0.42;
+  const START = LAND + 0.5, FLY = 0.42;
   if(t >= LAND && !burnt){
-    if(!sigM){ sigM = sigilOnPage(); plan = F.titleBurnPlan(); plan.forEach((q, i)=>{ q.flies = i % Math.max(1, Math.ceil(plan.length/70)) === 0; }); }
+    if(!sigM){ sigM = sigilOnPage(); plan = F.titleBurnPlan(0.7); plan.forEach((q, i)=>{ q.flies = i % Math.max(1, Math.ceil(plan.length/70)) === 0; }); }
     const last = Math.max(...plan.map(q => q.s));
     F.titleBurn({ M: sigM, t, start: START,
       sig: span(t, LAND - 0.05, LAND + 0.35)*(1 - span(t, START + 0.2, START + last + 0.2)),
@@ -651,7 +651,7 @@ function buildRig(end){
     { t: OPEN_AT + 1.5, ...sph(c0.clone().lerp(E.l, 0.5).add(new THREE.Vector3(0, 1.8, 0)), -0.24, 0.62, 11.0*m[4]) },
     ...(TALL ? [
       { t: LAND, ...sph(E.l.clone().add(new THREE.Vector3(1.6, 0, 0.1)), -0.04, 1.0, 7.6) },
-      { t: LAND + 3.3, ...sph(E.l.clone().add(new THREE.Vector3(1.6, 0, 0.1)), 0, 1.03, 7.0) },
+      { t: LAND + 2.3, ...sph(E.l.clone().add(new THREE.Vector3(1.6, 0, 0.1)), 0, 1.03, 7.0) },
       { t: END - 0.4, p: E.p, l: E.l }
     ] : [
       { t: LAND, ...sph(E.l.clone().add(new THREE.Vector3(0.7, 0, 0)), -0.07, 0.88, 7.6) },

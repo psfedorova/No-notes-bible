@@ -1121,7 +1121,8 @@ export function createShelf(api){
         wantJoin({ id: m[1], code: m[2], from: said('from', 24), book: said('book', 60) });
       }else wantJoin(kept);
       if(m) history.replaceState(null, '', location.pathname + location.search);
-      invite();
+      /* the invitation comes once the opening is over and the book is still */
+      Promise.resolve(api.settled && api.settled()).then(invite);
     }
     else if(lsGet(SIGNED_KEY)) firebase().catch(()=>{});
     const c = lsGet(CUR_KEY);

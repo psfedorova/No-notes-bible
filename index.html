@@ -98,6 +98,9 @@ body.cur-pointer{ cursor:pointer; }
   animation:fadein .4s ease-out;
 }
 .pager[hidden]{ display:none; }
+/* the buttons come once the book has settled after the opening */
+.bar{ transition:opacity .5s; }
+.settling .bar, .settling .pager{ opacity:0; pointer-events:none; }
 .pager{ transition:opacity .4s; }
 body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .pager::before, .pager::after, .pager .fillet{
@@ -481,7 +484,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 
   v.addEventListener('playing', ()=>{ playing = true; lastMove = performance.now(); });
   v.addEventListener('timeupdate', ()=>{ if(v.currentTime !== lastT){ lastT = v.currentTime; lastMove = performance.now(); } });
-  v.addEventListener('ended', ()=>finish('open'));
+  v.addEventListener('ended', ()=>{ try{ sessionStorage.setItem(SEEN, '1'); }catch(e){} finish('open'); });
   v.addEventListener('error', ()=>{ if(!lifting){ noFilm = true; check(); } else finish('closed'); });
   v.addEventListener('loadeddata', check);
   /* a film that stops moving for good hands over to the book */
@@ -492,7 +495,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   /* the film comes down whole before it plays, so it never waits on the line */
   const fetchCut = async cut=>{
     ctl = new AbortController();
-    const res = await fetch('assets/intro/' + kind + cut + '.mp4?v=2', { signal: ctl.signal });
+    const res = await fetch('assets/intro/' + kind + cut + '.mp4?v=3', { signal: ctl.signal });
     if(!res.ok) throw new Error(res.status);
     filmTotal = +res.headers.get('content-length') || filmTotal;
     filmGot = 0;
@@ -508,7 +511,11 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
     }
     return new Blob(parts, { type: 'video/mp4' });
   };
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches || (navigator.connection && navigator.connection.saveData)) noFilm = true;
+  /* back from signing in to an invitation, in the same tab: the film was seen a minute ago */
+  const SEEN = 'liber-arcanum.film-seen';
+  let back = false;
+  try{ back = !!sessionStorage.getItem(SEEN) && !!sessionStorage.getItem('liber-arcanum.join'); }catch(e){}
+  if(back || matchMedia('(prefers-reduced-motion: reduce)').matches || (navigator.connection && navigator.connection.saveData)) noFilm = true;
   else fetchCut('').then(blob=>{
     if(noFilm || I.gone) return;
     I.film = URL.createObjectURL(blob);
@@ -579,6 +586,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=92"></script>
+<script type="module" src="./grimoire.js?v=95"></script>
 </body>
 </html>

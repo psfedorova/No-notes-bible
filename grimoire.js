@@ -31,7 +31,7 @@ import {
   clamp, lerp, smooth, mulberry32, fbm, upsample, cv, normalFromHeight, tex,
   setMaxAniso, makeSpriteCanvas, makeRayAlpha, crackCanvas, fieldFromCanvas
 } from './textures.js?v=4';
-import { createShelf, sharingOn } from './shared.js?v=15';
+import { createShelf, sharingOn } from './shared.js?v=16';
 
 const T0 = performance.now();
 /* ?film: the opening film is shot from this very scene, one frame at a time (film.js).
@@ -39,6 +39,7 @@ const T0 = performance.now();
    and the live book takes over from its last frame */
 const FILM = new URLSearchParams(location.search).has('film');
 const intro = !FILM && window.__intro || null;
+if(intro) document.documentElement.classList.add('settling');
 const easeIO = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
 const easeSine = t => 0.5 - 0.5*Math.cos(Math.PI*t);
 /* a leaf is lifted briskly and comes down slowly on its cushion of air */
@@ -5478,6 +5479,20 @@ const FOREST_CAP = new THREE.Vector3(0, GROUND_Y + 10, 0);      // the capture p
 const FOREST_GAIN = 2.0;                                         // the picture is stored at half its light
 const FOREST_EXPOSURE = 2.2;                                     // and shown a little brighter than it was rendered
 const DEPTH_NEAR = 5, DEPTH_FAR = 4000;                          // its distance range, in tenths of a metre
+/* how far the boulder reaches out over the floor round its foot, by bearing in the
+   panorama's own frame (the rock's, before FOREST_YAW), filled once the rock is in */
+const ROCK_FOOT_N = 64;
+const rockFoot = new Float32Array(ROCK_FOOT_N);
+function measureFoot(rock, grp){
+  grp.updateMatrix();
+  const p = rock.geometry.attributes.position, v = new THREE.Vector3();
+  for(let i=0;i<p.count;i++){
+    v.fromBufferAttribute(p, i).applyMatrix4(grp.matrix);
+    if(v.y < GROUND_Y - 0.4 || v.y > GROUND_Y + 0.8) continue;
+    const k = Math.floor((Math.atan2(v.z, v.x)/(2*Math.PI) + 1)*ROCK_FOOT_N) % ROCK_FOOT_N;
+    rockFoot[k] = Math.max(rockFoot[k], Math.hypot(v.x, v.z));
+  }
+}
 async function decodeDepth(url, smooth){
   const res = await fetch(url);
   if(!res.ok) throw new Error('Could not load ' + url + ' (' + res.status + ')');
@@ -5542,11 +5557,12 @@ function makeBackdrop(pano, depth, water, back, backDepth){
       tPano: { value: tex(pano, true) }, tDepth: { value: depth }, tWater: { value: tex(water, false) },
       tBack: { value: tex(back, true) }, tBackDepth: { value: backDepth }, tSoft: { value: depth.userData.soft },
       uCam: { value: new THREE.Vector3() }, uCap: { value: FOREST_CAP }, uYaw: { value: new THREE.Vector2(Math.cos(FOREST_YAW), Math.sin(FOREST_YAW)) }, uTime: { value: 0 }, uGain: { value: FOREST_GAIN*FOREST_EXPOSURE },
-      uNear: { value: DEPTH_NEAR }, uFar: { value: DEPTH_FAR }, uSun: { value: SUN_DIR } },
+      uNear: { value: DEPTH_NEAR }, uFar: { value: DEPTH_FAR }, uSun: { value: SUN_DIR }, uFoot: { value: rockFoot } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position = p.xyww; }',
     fragmentShader: `#define MARCH_STEPS ${HI_RES ? 112 : 60}
       uniform sampler2D tPano, tDepth, tWater, tBack, tBackDepth, tSoft; uniform vec2 uYaw;
       vec3 unyaw(vec3 v){ return vec3(uYaw.x*v.x - uYaw.y*v.z, v.y, uYaw.y*v.x + uYaw.x*v.z); } uniform vec3 uCam, uCap, uSun; uniform float uTime, uGain, uNear, uFar;
+      uniform float uFoot[${ROCK_FOOT_N}];
       varying vec3 vDir;
       float h21(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
       float vn(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0 - 2.0*f);
@@ -5645,6 +5661,22 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         }else{
           col = textureGrad(tPano, uv, gx, gy).rgb;
           if(wBack > 0.0) col = mix(col, textureGrad(tBack, uvB, gx*2.0, gy*2.0).rgb, wBack);
+          /* where the floor rises against the boulder's bulge the render left a crack of
+             black: there the ground is never darker than the moss a step further out,
+             under a soft shade of its own that closes in on the stone */
+          vec3 Wg = P + uCap;
+          float rg = length(Wg.xz);
+          if(Wg.y < ${(GROUND_Y + 1.0).toFixed(2)} && rg < 9.0){
+            float fa = atan(Wg.z, Wg.x)*${(ROCK_FOOT_N/(2*Math.PI)).toFixed(6)} + ${ROCK_FOOT_N.toFixed(1)};
+            int f0 = int(floor(fa)) % ${ROCK_FOOT_N}, f1 = (f0 + 1) % ${ROCK_FOOT_N};
+            float rf = mix(uFoot[f0], uFoot[f1], fract(fa)), edge = rf + 1.6;
+            if(rf > 0.0 && rg < edge){
+              vec3 Po = vec3(Wg.x*(1.0 + 1.6/rg), Wg.y, Wg.z*(1.0 + 1.6/rg)) - uCap;
+              vec3 moss = textureGrad(tPano, eqUv(normalize(Po)), gx, gy).rgb;
+              float shade = mix(0.42, 1.0, smoothstep(rf - 0.3, edge, rg));
+              col = max(col, moss*shade);
+            }
+          }
         }
         gl_FragColor = vec4(col*uGain, 1.0);
         #include <tonemapping_fragment>
@@ -5816,8 +5848,14 @@ async function loadAssets(){
   rockYaw.add(rockGrp);
   scene.add(rockYaw);
   measureRock(rock);
+  measureFoot(rock, rockGrp);
+  /* drawn before the floor that hides what is buried: that floor is coarser than the
+     render's ground and would otherwise shave the stone's foot off, baring the black
+     earth beneath it */
+  rockGrp.traverse(o=>{ if(o.isMesh) o.renderOrder = -6; });
   await nearField();
-  /* the boulder's shadow and the shade round its foot are in the forest render itself */
+  /* the boulder's shadow is in the forest render itself, the shade round its foot is
+     evened out by the backdrop (uFoot) */
 }
 
 /* ============================================================================
@@ -6253,13 +6291,13 @@ function burnInit(){
 /* when each letter catches, after the first: line after line down the page, each
    from its first letter to its last as a hand would write it, the next line starting
    while the last is still being written; the ornaments go quicker */
-function titleBurnPlan(){
+function titleBurnPlan(pace = 1){
   if(!tb) burnInit();
   const B = tb.bands, H = tb.H;
   return tb.glyphs.map(g=>{
     const b = B[g.band], xs = tb.glyphs.filter(q=>q.band === g.band);
     const bx0 = xs[0].x0, bx1 = xs[xs.length - 1].x1, ornament = (b.y1 - b.y0) < H*0.012 || xs.length < 4;
-    g.s = g.band*0.32 + ((g.x0 + g.x1)/2 - bx0)/Math.max(1, bx1 - bx0)*(ornament ? 0.5 : 1.0);
+    g.s = pace*(g.band*0.32 + ((g.x0 + g.x1)/2 - bx0)/Math.max(1, bx1 - bx0)*(ornament ? 0.5 : 1.0));
     return { px: (g.x0 + g.x1)/2, py: (g.y0 + g.y1)/2, s: g.s };
   });
 }
@@ -6408,8 +6446,16 @@ function pagePuff(px, py){
 /* the live book takes over from the film's last frame: the eye starts where the film's
    camera stood, cropped or letterboxed to this screen as the video was (intro.fit is
    object-fit), holds there while the pictures cross, then eases to this screen's own
-   framing */
+   framing. A touch or a key hurries it, and the buttons and the invitation wait for it */
 let camBlend = null;
+const settled = intro ? (()=>{ let r; const p = new Promise(x=>r=x); return { p, r }; })() : null;
+const BLEND_EVENTS = ['pointerdown', 'wheel', 'keydown'];
+const hurryBlend = ()=>{ if(camBlend) camBlend.rate = 5; };
+const settle = ()=>{
+  document.documentElement.classList.remove('settling');
+  for(const ev of BLEND_EVENTS) removeEventListener(ev, hurryBlend, { capture: true });
+  if(settled) settled.r();
+};
 const _cq = new THREE.Quaternion();
 function startCamBlend(pose, hold){
   if(!pose) return;
@@ -6417,18 +6463,18 @@ function startCamBlend(pose, hold){
   const widthFits = intro.fit === 'contain' ? B < A : B > A;
   const t = Math.tan(pose.fov*Math.PI/360)*(widthFits ? A/B : 1);
   camBlend = { p: new THREE.Vector3().fromArray(pose.pos), q: new THREE.Quaternion().fromArray(pose.quat),
-    fov: Math.atan(t)*360/Math.PI, t: -hold, d: 1.8 };
+    fov: Math.atan(t)*360/Math.PI, t: -hold, d: 1.0, rate: 1 };
 }
 function stepCamBlend(dt){
   const B = camBlend;
-  B.t += dt;
+  B.t += dt*B.rate;
   const k = easeSine(clamp(B.t/B.d, 0, 1));
   _cq.copy(camera.quaternion);
   camera.position.lerpVectors(B.p, camera.position, k);
   camera.quaternion.slerpQuaternions(B.q, _cq, k);
   camera.fov = lerp(B.fov, liveFov(), k);
   camera.updateProjectionMatrix();
-  if(k >= 1) camBlend = null;
+  if(k >= 1){ camBlend = null; settle(); }
 }
 /* 'open': the film ran to its end, so the book lies open on its title page as the
    film left it, and then turns to the page last written on. 'closed': the film never
@@ -6448,13 +6494,15 @@ function takeOver(mode, poses){
   camTarget.set(0, ROCK_TOP + 0.4, 0);
   onResize();
   for(let i=0;i<150;i++) update(1/30);
-  startCamBlend(pose && (mode === 'open' ? pose.end : pose.start), 1);
+  startCamBlend(pose && (mode === 'open' ? pose.end : pose.start), 0.3);
+  if(camBlend) for(const ev of BLEND_EVENTS) addEventListener(ev, hurryBlend, { capture: true, passive: true });
+  else settle();
   refreshUI();
   frame();
   setTimeout(()=>{
     if(mode === 'open'){ if(homeSpread() !== st.k) seekSpread(homeSpread()); }
     else if(!st.open && !coverAnim) seekSpread(homeSpread(), { flourish: false });
-  }, mode === 'open' ? 2600 : 1900);
+  }, mode === 'open' ? 1300 : 1500);
 }
 
 /* ============================================================================
@@ -6486,6 +6534,7 @@ async function boot(){
     N, page: n => pages[n], handsOf, personalHand: BROWSER_HAND, toast, personalPages, applyPage,
     personalData, takePersonal, exportText, saveCopy,
     useBook: (key, hand)=> useBook(key, hand, !booted),
+    settled: ()=> settled ? settled.p : Promise.resolve(),
     usePersonal: ()=> useBook(LS_KEY, BROWSER_HAND, !booted),
     refresh: ()=>{ if(writing && readOnly()) exitWriting(); refreshUI(); if(!menuEl.hidden) menuEl.querySelector('.menu-note').textContent = shelf.status(); },
     blurQuill: ()=>{ closeMenu(); if(writing) quill.blur(); },
