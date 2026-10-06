@@ -19,8 +19,8 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9341;
 /* css size, the encoded size; rendered at 2x and scaled down */
 const CUTS = {
-  wide: { w: 1920, h: 1080, out: [1920, 1080] },
-  tall: { w: 600, h: 1300, out: [720, 1560] }
+  wide: { w: 1920, h: 1080, out: [1920, 1080], lite: [960, 540] },
+  tall: { w: 600, h: 1300, out: [720, 1560], lite: [480, 1040] }
 };
 const only = process.argv.slice(2);
 const cuts = Object.keys(CUTS).filter(k => !only.length || only.includes(k));
@@ -77,7 +77,12 @@ try{
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-framerate', String(fps), '-i', path.join(frames, 'f%04d.jpg'),
       '-vf', `${scale},format=yuv420p`, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '29', '-x264-params', 'aq-mode=3', '-profile:v', 'high', '-level', '4.2',
       '-movflags', '+faststart', '-an', path.join(OUT, `${k}.mp4`)]);
-    execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', path.join(frames, 'f0000.jpg'), '-vf', scale, '-q:v', '4', path.join(OUT, `${k}.jpg`)]);
+    /* a lighter cut for slow connections, and a light first-frame still */
+    const [lw, lh] = C.lite;
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-framerate', String(fps), '-i', path.join(frames, 'f%04d.jpg'),
+      '-vf', `scale=${lw}:${lh}:flags=lanczos,format=yuv420p`, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '30', '-x264-params', 'aq-mode=3', '-profile:v', 'high', '-level', '4.0',
+      '-movflags', '+faststart', '-an', path.join(OUT, `${k}_lite.mp4`)]);
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', path.join(frames, 'f0000.jpg'), '-vf', scale, '-q:v', '7', path.join(OUT, `${k}.jpg`)]);
     fs.rmSync(frames, { recursive: true, force: true });
     console.log(`\r${k}: ${n} frames in ${((Date.now() - t0)/1000).toFixed(0)} s, ${(fs.statSync(path.join(OUT, `${k}.mp4`)).size/1e6).toFixed(1)} MB`);
   }

@@ -164,6 +164,15 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   display:none; animation:candle 3.4s ease-in-out infinite;
 }
 #intro.wait .sig{ display:block; }
+#intro .prog{
+  position:absolute; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); width:120px; height:2px; margin-left:-60px;
+  border-radius:1px; overflow:hidden; background:rgba(232,192,105,.2); opacity:0; transition:opacity .6s ease;
+}
+#intro .prog i{
+  position:absolute; inset:0; background:linear-gradient(90deg, rgba(232,192,105,.4), rgba(255,226,160,.95));
+  box-shadow:0 0 8px rgba(255,200,110,.6); transform:scaleX(.04); transform-origin:0 50%; transition:transform .6s ease;
+}
+#intro.wait .prog{ opacity:1; }
 #introNote{
   position:absolute; left:0; right:0; bottom:calc(70px + env(safe-area-inset-bottom)); text-align:center;
   color:rgba(240,214,150,.85); font:600 14px var(--ui-font); letter-spacing:4px; text-shadow:0 1px 4px #000;
@@ -352,26 +361,36 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   <img alt="">
   <video muted playsinline preload="auto" disablepictureinpicture disableremoteplayback></video>
   <div class="sig">✦</div>
+  <div class="prog"><i></i></div>
   <p id="introNote"></p>
 </div>
 <script>
 /* the opening film: the book on its rock wakes and opens. It starts at once, and the
    live book (grimoire.js) takes over when both the film and the forest are done.
-   A tap or a key once the forest is in skips the rest */
+   A tap or a key once the forest is in skips the rest.
+   On a slow line: the film watches its own download. If it comes in slower than it
+   plays, a lighter cut takes over from the same moment (loaded in a second player, so
+   nothing flickers); if even that cannot keep up, the film fades back to its first frame and
+   leaves the line to the book. A still that takes over 3 s means no film at all: the
+   still stands and the book opens itself when it is in. Whenever there is only a wait
+   to see, a spark and a thread of gold show the book is still coming */
 (()=>{
   const box = document.getElementById('intro');
   if(/[?&]film\b/.test(location.search)){ document.documentElement.classList.add('film'); box.remove(); return; }
-  const v = box.querySelector('video'), still = box.querySelector('img');
+  const still = box.querySelector('img'), bar = box.querySelector('.prog i');
+  let v = box.querySelector('video');
   /* the cuts there are; a tall screen without its own cut sees the wide one whole */
   const CUTS = ['wide', 'tall'], tall = innerWidth/innerHeight < 0.9;
   const kind = tall && CUTS.includes('tall') ? 'tall' : 'wide', fit = tall && kind === 'wide' ? 'contain' : 'cover';
   const src = 'assets/intro/' + kind;
-  const I = window.__intro = { kind, fit, take: null, played: false, failed: false, skip: false, gone: false };
+  const I = window.__intro = { kind, fit, take: null, played: false, failed: false, skip: false, gone: false, cut: null };
   box.classList.add(fit);
   const OPENED = 7.3;
-  still.onload = ()=>box.classList.add('lit');
-  still.src = src + '.jpg';
-  let graceTm = 0, lastT = -1, lastMove = 0;
+  /* what the book itself downloads, roughly, on this kind of device (for the thread of gold) */
+  const EXPECT = matchMedia('(pointer: coarse)').matches ? 35e6 : 54e6;
+  let graceTm = 0, lastT = -1, lastMove = 0, buffering = false, resting = 0;
+  const ended = ()=> v.ended || resting > 0;
+  const at = ()=> v.currentTime;
   const finish = mode=>{
     if(I.gone) return;
     I.gone = true;
@@ -382,25 +401,85 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   };
   const check = ()=>{
     if(I.gone) return;
-    box.classList.toggle('wait', !I.take && (v.ended || I.failed || I.skip));
+    box.classList.toggle('wait', !I.take && (ended() || I.failed || I.skip || buffering));
     if(!I.take) return;
-    if(v.ended || I.skip) return finish(I.played ? 'open' : 'closed');
+    if(ended() || I.skip) return finish(I.played && !resting && (v.ended || at() > OPENED) ? 'open' : 'closed');
     if(I.failed) return finish('closed');
     if(!I.played && !graceTm) graceTm = setTimeout(()=>{ if(!I.played){ v.pause(); finish('closed'); } }, 1500);
   };
   I.ready = take=>{ I.take = take; check(); };
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ I.failed = true; return; }
-  v.addEventListener('playing', ()=>{ I.played = true; box.classList.add('play'); check(); });
-  v.addEventListener('ended', check);
-  v.addEventListener('error', ()=>{ if(I.gone) return; I.failed = true; check(); });
-  v.addEventListener('timeupdate', ()=>{ if(v.currentTime !== lastT){ lastT = v.currentTime; lastMove = performance.now(); } });
+  /* the thread of gold: the book's files that have arrived, against what it needs */
   setInterval(()=>{
-    if(I.take && I.played && !I.gone && !v.ended && performance.now() - lastMove > 3000)
-      finish(v.currentTime > OPENED ? 'open' : 'closed');
+    if(I.gone || !box.classList.contains('wait')) return;
+    let got = 0;
+    for(const e of performance.getEntriesByType('resource')) if(!/assets\/intro\//.test(e.name)) got += e.encodedBodySize || e.transferSize || 0;
+    bar.style.transform = `scaleX(${Math.min(0.96, 0.04 + got/EXPECT)})`;
+  }, 400);
+  const bind = el=>{
+    el.addEventListener('playing', ()=>{ if(el !== v) return; I.played = true; buffering = false; box.classList.add('play'); check(); });
+    el.addEventListener('waiting', ()=>{ if(el !== v) return; buffering = true; setTimeout(check, 700); });
+    el.addEventListener('ended', ()=>{ if(el === v) check(); });
+    el.addEventListener('error', ()=>{ if(el !== v || I.gone) return; I.failed = true; check(); });
+    el.addEventListener('timeupdate', ()=>{ if(el !== v) return; if(v.currentTime !== lastT){ lastT = v.currentTime; lastMove = performance.now(); if(buffering){ buffering = false; check(); } } });
+  };
+  /* how many seconds of film arrive per second of wall clock */
+  let since = 0;
+  let from = 0;
+  const pace = ()=>{ const b = v.buffered, got = b.length ? b.end(b.length - 1) - from : 0; return got/Math.max(0.5, (performance.now() - since)/1000); };
+  const play = el=>{ const p = el.play(); if(p && p.catch) p.catch(()=>{ if(el === v && !I.played){ I.failed = true; check(); } }); };
+  const start = cut=>{
+    I.cut = cut;
+    if(cut === null){ I.failed = true; check(); return; }
+    bind(v);
+    v.src = src + cut + '.mp4';
+    since = performance.now();
+    play(v);
+    const watch = setInterval(()=>{
+      if(I.gone || ended()){ clearInterval(watch); return; }
+      const el = (performance.now() - since)/1000, r = pace(), full = v.buffered.length && v.buffered.end(v.buffered.length - 1) >= v.duration - 0.1;
+      if(full){ clearInterval(watch); return; }
+      if(I.cut === '' && el > 2 && r < 1.4) lighter();
+      else if(I.cut === '_lite' && v.dataset.lite && el > 2.5 && r < 0.9 && !I.take){ rest(); clearInterval(watch); }
+    }, 250);
+  };
+  /* the film fades back to its first frame, the one the book will open from, and
+     stops loading */
+  const rest = ()=>{
+    v.pause();
+    resting = Math.max(0.01, v.currentTime);
+    box.classList.remove('play');
+    const el = v;
+    setTimeout(()=>{ el.removeAttribute('src'); el.load(); }, 900);
+    check();
+  };
+  /* the lighter cut in a second player, shown once it plays from where the first one is */
+  const lighter = ()=>{
+    I.cut = '_lite';
+    const old = v, nv = old.cloneNode();
+    nv.removeAttribute('src');
+    nv.style.opacity = '0';
+    box.insertBefore(nv, old.nextSibling);
+    bind(nv);
+    nv.src = src + '_lite.mp4';
+    nv.addEventListener('loadedmetadata', ()=>{ nv.currentTime = Math.min(nv.duration - 0.1, old.currentTime + 0.4); play(nv); }, { once: true });
+    nv.addEventListener('playing', ()=>{
+      if(v !== old) return;
+      v = nv; nv.dataset.lite = '1'; since = performance.now(); from = nv.currentTime;
+      nv.style.opacity = '';
+      old.pause(); old.removeAttribute('src'); old.load(); old.remove();
+    }, { once: true });
+  };
+  let decided = false;
+  const decide = slow=>{ if(decided) return; decided = true; start(slow || matchMedia('(prefers-reduced-motion: reduce)').matches || (navigator.connection && navigator.connection.saveData) ? null : ''); };
+  still.onload = ()=>{ box.classList.add('lit'); decide(false); };
+  still.onerror = ()=>decide(true);
+  /* a still that takes this long is a connection too slow for any film */
+  setTimeout(()=>decide(true), 3000);
+  still.src = src + '.jpg';
+  setInterval(()=>{
+    if(I.take && I.played && !I.gone && !ended() && performance.now() - lastMove > 3000)
+      finish(at() > OPENED ? 'open' : 'closed');
   }, 500);
-  v.src = src + '.mp4';
-  const p = v.play();
-  if(p && p.catch) p.catch(()=>{ I.failed = true; check(); });
   const skip = ()=>{
     if(I.gone) return;
     if(I.take){ I.skip = true; check(); }
@@ -467,6 +546,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=90"></script>
+<script type="module" src="./grimoire.js?v=92"></script>
 </body>
 </html>

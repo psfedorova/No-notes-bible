@@ -6096,7 +6096,9 @@ setInterval(()=>{ if(document.hidden && !FILM) frame(); }, 250);
 async function warmUp(){
   const c = st.open ? st.k : homeSpread();
   const near = new Set();
-  for(const s of intro ? [0, c] : [c]) for(let i=Math.max(0, s - (HI_RES ? 2 : 1));i<=Math.min(N - 1, s + 1);i++) near.add(i);
+  for(let i=Math.max(0, c - (HI_RES ? 2 : 1));i<=Math.min(N - 1, c + 1);i++) near.add(i);
+  /* the film leaves the book open on its title page: that spread too, alone on a phone */
+  if(intro) for(let i=0;i<=(HI_RES ? 1 : 0);i++) near.add(i);
   for(const i of near) for(const n of [2*i, 2*i + 1]){
     const e = pageEntry(n);
     renderer.initTexture(e.tex); renderer.initTexture(e.glowTex);
