@@ -11,7 +11,7 @@
    so it comes back on a new device or after the browser forgets it.
    ==========================================================================*/
 import { FIREBASE } from './book-config.js';
-import { vanish, burnIn, calm } from './invite-magic.js?v=5';
+import { vanish, burnIn, calm } from './invite-magic.js?v=6';
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/';
 const EMU = /[?&]emu\b/.test(location.search);
@@ -821,7 +821,7 @@ export function createShelf(api){
         if(shut && shut.exists() && shut.data().can === 'none'){ show('shut'); return; }
       }
       if(!back) await F.setDoc(ref('books', want.id, 'members', me), { name: myName(), code: want.code, guest: user.isAnonymous, at: F.serverTimestamp() });
-      else if(mine.data().guest !== user.isAnonymous) F.updateDoc(ref('books', want.id, 'members', me), { name: myName(), guest: user.isAnonymous }).catch(()=>{});
+      else if(mine.data().guest !== user.isAnonymous || mine.data().name !== myName()) F.updateDoc(ref('books', want.id, 'members', me), { name: myName(), guest: user.isAnonymous }).catch(()=>{});
       const b = await F.getDoc(ref('books', want.id));
       const name = b.exists() ? b.data().name : 'Our book';
       await F.setDoc(ref('users', me, 'books', want.id), { name, at: F.serverTimestamp() });
@@ -978,6 +978,15 @@ export function createShelf(api){
         opts.appendChild(b);
       });
       d.appendChild(opts);
+      /* the card clips what spills past its edge: near the bottom the menu opens upward,
+         and where neither way has room the card scrolls it into view */
+      d.addEventListener('toggle', ()=>{
+        if(!d.open) return;
+        opts.classList.remove('up');
+        const c = view.querySelector('.card').getBoundingClientRect(), r = d.getBoundingClientRect();
+        if(opts.offsetHeight > c.bottom - r.bottom - 8 && r.top - c.top > c.bottom - r.bottom) opts.classList.add('up');
+        opts.scrollIntoView({ block: 'nearest' });
+      });
       return d;
     };
     const person = (name, note, items) => {
@@ -1142,7 +1151,7 @@ export function createShelf(api){
     const copy = el('button', 'copy', 'Copy');
     copy.type = 'button';
     copy.addEventListener('click', async ()=>{
-      try{ await navigator.clipboard.writeText(link.url); copy.textContent = 'Copied ✓'; setTimeout(()=>{ copy.textContent = 'Copy'; }, 1600); }
+      try{ await navigator.clipboard.writeText(link.url); copy.textContent = 'Copied ✓'; copy.classList.add('done'); setTimeout(()=>{ copy.textContent = 'Copy'; copy.classList.remove('done'); copy.blur(); }, 1600); }
       catch(e){ api.toast('SELECT THE LINK AND COPY IT', 2000); }
     });
     box.appendChild(copy);
@@ -1190,13 +1199,15 @@ export function createShelf(api){
     const sig = el('div', 'sign');
     const acts = el('div', 'acts');
     const seal = async open => { wantJoin({ ...joinWant, vowed: true }); await open(); };
-    if(user){
+    /* a Google account signs with its own name; a guest, even one this browser has
+       been before, writes a name afresh, since a new invitation starts from nothing */
+    if(user && !user.isAnonymous){
       sig.appendChild(el('p', 'name', myName()));
       sig.appendChild(el('p', 'cap', 'your name'));
       body.appendChild(sig);
       acts.appendChild(btn('I swear', 'main', ()=> seal(join)));
     }else{
-      const name = el('input'); name.type = 'text'; name.maxLength = 24; name.value = sign || guestName; name.placeholder = 'Your name'; name.setAttribute('aria-label', 'Your name');
+      const name = el('input'); name.type = 'text'; name.maxLength = 24; name.value = sign; name.placeholder = 'Your name'; name.setAttribute('aria-label', 'Your name');
       name.autocomplete = 'given-name';
       name.addEventListener('input', ()=>{ sign = name.value; });
       sig.appendChild(name);
@@ -1294,7 +1305,7 @@ export function createShelf(api){
     shared: ()=> !!cur,
     readOnly: ()=> !!cur && reading,
     ...(EMU ? { test: {
-      firebase, createBook, inviteLink, openBook, goPersonal, upload, keysBetween, leaveShared, removeKeeper, allow,
+      firebase, createBook, inviteLink, openBook, goPersonal, upload, keysBetween, leaveShared, removeKeeper, forgetKeeper, allow,
       deleteBook, renameBook, renameGuest, keepNow, get clash(){ return clash; },
       get user(){ return user; }, get cur(){ return cur; }, get books(){ return books; }, ink: ()=> ink, pending: ()=> pending,
       async signInAs(uid, name){
@@ -1304,7 +1315,7 @@ export function createShelf(api){
         onUser(F.au.currentUser);
       },
       async joinLink(url){
-        const m = /#join=([A-Za-z0-9]+)\.([a-z0-9]+)$/.exec(url);
+        const m = /#join=([A-Za-z0-9]+)\.([a-z0-9]+)/.exec(url);
         wantJoin({ id: m[1], code: m[2] });
         await join();
       },

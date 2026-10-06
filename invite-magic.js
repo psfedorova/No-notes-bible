@@ -144,7 +144,8 @@ function motes(){
   };
 }
 
-/* the words lift off the card */
+/* the words lift off the card; done as soon as they are gone, while their last
+   motes still rise over whatever the card shows next */
 export function vanish(card, root, onStart){
   if(!noise) noise = fbm(256, 256, 12, 12, 3, 4242);
   const L = layers(card), G = glyphs(root, card, L), F = field(G, L, 0);
@@ -155,12 +156,14 @@ export function vanish(card, root, onStart){
   const pd = new Uint32Array(paint.data.buffer), gd = new Uint32Array(glow.data.buffer);
   const M = motes(), out = new Set();
   const last = (G.lines.length - 1)*LINE_STEP + VAPOR_T;
-  let prev = 0;
+  let prev = 0, gone;
+  const words = new Promise(r => gone = r);
   if(onStart) onStart();
-  return run(t=>{
+  run(t=>{
     pd.fill(0); gd.fill(0);
     const nk = 1/S, drift = t*40;
-    for(let j=0;j<P.length;j++){
+    if(t >= last) gone();
+    else for(let j=0;j<P.length;j++){
       const i = P[j], p = i*4, a = d[p+3];
       if(a < 3) continue;
       const y = (i / w) | 0, x = i - y*w, ln = lineOf[y], tau = t - ln*LINE_STEP;
@@ -187,7 +190,8 @@ export function vanish(card, root, onStart){
     const live = M.draw(gx, t - prev, S, a => `rgba(255,224,150,${a})`);
     prev = t;
     return t < last || live;
-  }, ()=>{ L.paint.remove(); L.glow.remove(); });
+  }, ()=>{ gone(); L.paint.remove(); L.glow.remove(); });
+  return words;
 }
 
 /* the vow is burned into the card, line after line along the pen's slant */
