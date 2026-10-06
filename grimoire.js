@@ -2647,13 +2647,18 @@ function updateBack(C){
     }
     P.needsUpdate = true; Nn.needsUpdate = true;
   });
-  /* endpaper joints: board spine edge -> first / last leaf's sewing */
+  /* endpaper joints: board spine edge -> first / last leaf's sewing. The strip lies flat on
+     the board up to its edge and only then bends over to the leaf, leaving the edge along
+     the board's own plane: a single curve from inside the board would lift that part off
+     the leather while the board swings, and show it as a loose flat panel */
   const joint = (mesh, sx, sz, dx, dz, hx, hz)=>{
     const p = mesh.geometry.attributes.position;
     const ax = sx + dx*EP_X0, az = sz + dz*EP_X0;
+    const L = Math.hypot(hx - sx, hz - sz)*0.5, cx = sx - dx*L, cz = sz - dz*L;
     for(let c=0;c<10;c++){
-      const t = c/9, u = 1-t;
-      const x = u*u*ax + 2*u*t*sx + t*t*hx, z = u*u*az + 2*u*t*sz + t*t*hz;
+      let x, z;
+      if(c < 3){ const t = c/3; x = lerp(ax, sx, t); z = lerp(az, sz, t); }
+      else{ const t = (c - 3)/6, u = 1 - t; x = u*u*sx + 2*u*t*cx + t*t*hx; z = u*u*sz + 2*u*t*cz + t*t*hz; }
       p.setXYZ(c, x, -JOINT_H/2, z); p.setXYZ(10+c, x, JOINT_H/2, z);
     }
     p.needsUpdate = true; mesh.geometry.computeVertexNormals();
