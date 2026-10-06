@@ -990,14 +990,17 @@ export function createShelf(api){
         opts.appendChild(b);
       });
       d.appendChild(opts);
-      /* the card clips what spills past its edge: near the bottom the menu opens upward,
-         and where neither way has room the card scrolls it into view */
+      /* the card clips what spills past its edge. The menu opens downward, upward only when
+         it does not fit below, and it stays unseen until its side is chosen, so it never
+         shows on one side and jumps to the other; the card scrolls only if neither side fits */
       d.addEventListener('toggle', ()=>{
+        opts.classList.remove('up', 'placed');
         if(!d.open) return;
-        opts.classList.remove('up');
-        const c = view.querySelector('.card').getBoundingClientRect(), r = d.getBoundingClientRect();
-        if(opts.offsetHeight > c.bottom - r.bottom - 8 && r.top - c.top > c.bottom - r.bottom) opts.classList.add('up');
-        opts.scrollIntoView({ block: 'nearest' });
+        const c = view.querySelector('.card').getBoundingClientRect(), r = d.getBoundingClientRect(), h = opts.offsetHeight;
+        const below = c.bottom - r.bottom - 8, above = r.top - c.top - 8;
+        if(h > below && above > below) opts.classList.add('up');
+        opts.classList.add('placed');
+        if(h > Math.max(below, above)) opts.scrollIntoView({ block: 'nearest' });
       });
       return d;
     };

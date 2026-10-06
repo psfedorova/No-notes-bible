@@ -366,6 +366,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .menu-p[open] > summary{ background:rgba(255,210,120,.08); border-color:var(--gold-line); }
 .shelf .opts{ position:absolute; right:0; top:calc(100% - 2px); z-index:3; min-width:220px; display:grid; padding:6px; border-radius:12px; border:1px solid var(--gold-line); background:#23261a; box-shadow:0 8px 24px rgba(0,0,0,.5); }
 .shelf .opts.up{ top:auto; bottom:calc(100% - 2px); }
+.shelf .menu-p .opts:not(.placed){ visibility:hidden; }
 .shelf .opts button{ padding:9px 12px; border:0; border-radius:8px; background:none; color:#ffe6ae; font:500 16px var(--text-font); text-align:left; cursor:pointer; }
 .shelf .opts button:hover, .shelf .opts button:focus-visible{ background:rgba(255,210,120,.08); outline:none; }
 .shelf .opts button.on{ color:var(--gold-dim); cursor:default; }
@@ -719,6 +720,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=110"></script>
+<script type="module" src="./grimoire.js?v=111"></script>
 </body>
 </html>
