@@ -558,9 +558,9 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
     check();
   }, 300);
 
-  v.addEventListener('playing', ()=>{ playing = true; lastMove = performance.now(); });
+  v.addEventListener('playing', ()=>{ playing = true; lastMove = performance.now(); try{ localStorage.setItem(SEEN, '1'); }catch(e){} });
   v.addEventListener('timeupdate', ()=>{ if(v.currentTime !== lastT){ lastT = v.currentTime; lastMove = performance.now(); } });
-  v.addEventListener('ended', ()=>{ try{ sessionStorage.setItem(SEEN, '1'); }catch(e){} finish('open'); });
+  v.addEventListener('ended', ()=>finish('open'));
   v.addEventListener('error', ()=>{ if(!lifting){ noFilm = true; check(); } else finish('closed'); });
   v.addEventListener('loadeddata', check);
   /* a film that stops moving for good hands over to the book */
@@ -587,11 +587,17 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
     }
     return new Blob(parts, { type: 'video/mp4' });
   };
-  /* back from signing in to an invitation, in the same tab: the film was seen a minute ago */
+  /* the film plays on the first visit only; ?intro shows it again */
   const SEEN = 'liber-arcanum.film-seen';
-  let back = false;
-  try{ back = !!sessionStorage.getItem(SEEN) && !!sessionStorage.getItem('liber-arcanum.join'); }catch(e){}
-  if(back || matchMedia('(prefers-reduced-motion: reduce)').matches || (navigator.connection && navigator.connection.saveData)) noFilm = true;
+  let seen = false;
+  try{ seen = !!localStorage.getItem(SEEN); }catch(e){}
+  if(/[?&]intro\b/.test(location.search)){
+    seen = false;
+    const u = new URL(location.href);
+    u.searchParams.delete('intro');
+    history.replaceState(null, '', u);
+  }
+  if(seen || matchMedia('(prefers-reduced-motion: reduce)').matches || (navigator.connection && navigator.connection.saveData)) noFilm = true;
   else fetchCut('').then(blob=>{
     if(noFilm || I.gone) return;
     I.film = URL.createObjectURL(blob);
@@ -628,6 +634,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
     <button role="menuitem" data-act="erase2" hidden>Erase this page</button>
     <button role="menuitem" data-act="restore" hidden>Undo erase</button>
     <button role="menuitem" data-act="files" class="two more">Files<span>Download or restore the book</span></button>
+    <button role="menuitem" data-act="replay">Intro</button>
     <button role="menuitem" data-act="spells" class="fine">Shortcuts</button>
   </div>
   <div class="view" data-view="files" hidden>
@@ -662,6 +669,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=97"></script>
+<script type="module" src="./grimoire.js?v=98"></script>
 </body>
 </html>

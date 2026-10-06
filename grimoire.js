@@ -4958,6 +4958,11 @@ function openMenu(){
   menuEl.hidden = false;
   btnMore.setAttribute('aria-expanded', 'true');
 }
+function replayOpening(){
+  const u = new URL(location.href);
+  u.searchParams.set('intro', '');
+  location.href = u;
+}
 function closeMenu(){
   if(menuEl.hidden) return;
   menuEl.hidden = true;
@@ -4974,7 +4979,7 @@ menuEl.addEventListener('click', e=>{
   }
   closeMenu();
   const page = ()=> erasePages([+b.dataset.page]);
-  ({ erase: page, erase2: page, restore: restoreErased, exportText, saveCopy: ()=> saveCopy(false), openCopy: ()=> copyPicker.click(), spells: openSpells, share: ()=> shelf && shelf.open() })[b.dataset.act]();
+  ({ erase: page, erase2: page, restore: restoreErased, exportText, saveCopy: ()=> saveCopy(false), openCopy: ()=> copyPicker.click(), replay: replayOpening, spells: openSpells, share: ()=> shelf && shelf.open() })[b.dataset.act]();
 });
 addEventListener('pointerdown', e=>{
   if(!menuEl.hidden && !menuEl.contains(e.target) && !btnMore.contains(e.target)) closeMenu();
