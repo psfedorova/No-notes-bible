@@ -6,7 +6,7 @@
 <title>Liber Arcanum</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Cormorant+SC:wght@500;600;700&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Cormorant+SC:wght@500;600;700&family=Great+Vibes&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
 <script type="importmap">
 {
   "imports": {
@@ -23,6 +23,10 @@
   --night:#080a07;
   --ui-font:'Cormorant SC','Cormorant Garamond',serif;
   --text-font:'Cormorant Garamond',serif;
+  --gilt:linear-gradient(180deg, #f3d995, #a8782f 55%, #e2bd72);
+  --gilt-gap:#14160d;
+  --gilt-fillet:rgba(236,196,110,.7);
+  --face:radial-gradient(120% 140% at 50% 0%, #2f3419, #11130b 70%);
 }
 *{ margin:0; padding:0; box-sizing:border-box; }
 html,body{ height:100%; overflow:hidden; background:var(--night); }
@@ -62,19 +66,21 @@ body.cur-pointer{ cursor:pointer; }
 .bar{ top:18px; right:18px; display:flex; gap:10px; }
 .rune{
   width:44px; height:44px; border-radius:50%;
-  border:1px solid var(--gold-line);
-  background:radial-gradient(circle at 35% 30%, rgba(92,98,50,.55), rgba(16,16,10,.9));
-  color:var(--gold); font-size:20px; line-height:1;
+  border:1.5px solid transparent;
+  background:var(--face) padding-box, var(--gilt) border-box;
+  color:#e6c47a; font-size:20px; line-height:1;
   display:flex; align-items:center; justify-content:center;
   cursor:pointer; font-family:var(--ui-font);
-  box-shadow: 0 2px 10px rgba(0,0,0,.7), inset 0 0 12px rgba(255,206,110,.14);
-  transition:transform .25s, box-shadow .25s, opacity .25s;
+  box-shadow:inset 0 0 0 2.5px var(--gilt-gap), inset 0 0 0 3.5px var(--gilt-fillet), 0 4px 12px rgba(0,0,0,.6);
+  transition:color .25s, box-shadow .25s, opacity .25s;
 }
-.rune:hover, .rune:focus-visible{
-  box-shadow: 0 2px 14px rgba(0,0,0,.8), inset 0 0 16px rgba(255,206,110,.34), 0 0 18px rgba(236,192,102,.42);
-  transform:translateY(-2px); outline:none;
+.rune svg{ transition:filter .25s; }
+.rune:hover, .rune:focus-visible{ color:#ffe6ae; outline:none; }
+.rune:hover svg, .rune:focus-visible svg{ filter:drop-shadow(0 0 6px rgba(255,200,110,.8)); }
+.rune.on{
+  color:#ffe6ae;
+  box-shadow:inset 0 0 0 2.5px var(--gilt-gap), inset 0 0 0 3.5px var(--gilt-fillet), inset 0 0 16px rgba(255,206,110,.4), 0 0 16px rgba(236,192,102,.5), 0 4px 12px rgba(0,0,0,.6);
 }
-.rune.on{ box-shadow: 0 0 0 1px rgba(240,212,147,.7), inset 0 0 18px rgba(255,206,110,.45), 0 0 18px rgba(236,192,102,.45); }
 .rune[disabled]{ opacity:.35; pointer-events:none; }
 .rune[hidden]{ display:none; }
 #btnSound .ico-off, #btnSound.muted .ico-on{ display:none; }
@@ -83,33 +89,51 @@ body.cur-pointer{ cursor:pointer; }
 #btnBook .ico-close, #btnBook.open .ico-open{ display:none; }
 #btnBook.open .ico-close{ display:block; }
 
-/* pagination: a gilt band along the bottom */
+/* pagination: a gilt label like the ones on an old spine, rounded ends and a double fillet */
 .pager{
   bottom:18px; left:50%; transform:translateX(-50%);
-  max-width:calc(100vw - 32px);
-  display:flex; align-items:center; gap:10px; padding:6px;
-  border-radius:32px; border:1px solid var(--gold-line);
-  background:radial-gradient(120% 160% at 50% 0%, rgba(46,50,26,.86), rgba(12,13,8,.9));
-  box-shadow:0 6px 24px rgba(0,0,0,.55), inset 0 0 18px rgba(255,206,110,.08);
+  height:58px; padding:0 6px;
+  display:flex; align-items:center;
+  filter:drop-shadow(0 6px 14px rgba(0,0,0,.6));
   animation:fadein .4s ease-out;
 }
 .pager[hidden]{ display:none; }
 .pager{ transition:opacity .4s; }
 body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
-.pager .rune{ width:40px; height:40px; font-size:18px; flex-shrink:0; }
+.pager::before, .pager::after, .pager .fillet{
+  content:''; position:absolute; z-index:0; pointer-events:none; border-radius:999px;
+}
+.pager::before{ inset:0; background:var(--gilt); }
+.pager .fillet.under{ inset:1.5px; background:linear-gradient(180deg, #262a17, #0f110a); }
+.pager .fillet.line{ inset:4px; background:linear-gradient(180deg, rgba(236,196,110,.75), rgba(170,120,50,.6)); }
+.pager::after{ inset:5px; background:var(--face); }
+.pager > button, .pageno{ position:relative; z-index:1; }
+.pager > button{
+  width:48px; height:48px; flex-shrink:0; padding:0; border:0; background:transparent;
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+  color:#e6c47a; transition:color .25s, opacity .25s;
+}
+.pager > button svg{ width:24px; height:24px; fill:currentColor; transition:transform .25s, filter .25s; }
+.pager > button:hover, .pager > button:focus-visible{ color:#ffe6ae; outline:none; }
+.pager > button:hover svg, .pager > button:focus-visible svg{ filter:drop-shadow(0 0 6px rgba(255,200,110,.8)); }
+#btnPrev:hover svg, #btnPrev:focus-visible svg{ transform:translateX(-2px); }
+#btnNext:hover svg, #btnNext:focus-visible svg{ transform:translateX(2px); }
+.pager > button[disabled]{ opacity:.3; pointer-events:none; }
 .pageno{
-  flex-shrink:0; display:flex; align-items:baseline; gap:8px; padding:0 6px;
-  font-family:var(--ui-font); font-weight:600; color:var(--gold-dim); white-space:nowrap;
-  font-size:14px; letter-spacing:1.5px; text-shadow:0 1px 4px #000; cursor:text;
+  min-width:120px; display:flex; flex-direction:column; align-items:center; gap:1px;
+  font:600 10px var(--ui-font); letter-spacing:3px; color:var(--gold-dim); white-space:nowrap;
+  text-shadow:0 1px 3px #000; cursor:text;
 }
 .pageno input{
-  width:6.2ch; height:40px; padding:0 4px; border-radius:12px;
-  border:1px solid var(--gold-line); background:rgba(255,210,120,.06);
-  color:#ffe6ae; font:600 18px var(--ui-font); letter-spacing:.5px; text-align:center;
+  width:5ch; height:26px; padding:0; border:0; border-bottom:1px solid transparent; border-radius:0; background:transparent;
+  color:#ffe6ae; font:italic 600 24px/1 var(--text-font); letter-spacing:0; text-align:center;
+  text-shadow:0 0 10px rgba(255,200,110,.3), 0 1px 3px #000;
   outline:none; caret-color:var(--gold); user-select:text; -webkit-user-select:text;
+  transition:border-color .25s, text-shadow .25s;
 }
-.pageno input:focus{ border-color:rgba(240,212,147,.85); box-shadow:0 0 12px rgba(236,192,102,.35); background:rgba(255,210,120,.1); }
-.pageno input::placeholder{ color:rgba(240,214,150,.35); }
+.pageno:hover input{ text-shadow:0 0 14px rgba(255,200,110,.6), 0 1px 3px #000; }
+.pageno input:focus{ border-bottom-color:rgba(240,212,147,.7); text-shadow:0 0 14px rgba(255,200,110,.6), 0 1px 3px #000; }
+.pageno input::placeholder{ color:rgba(240,214,150,.35); font-size:18px; }
 
 .toast{
   bottom:84px; left:50%; transform:translateX(-50%);
@@ -120,16 +144,32 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 }
 .toast.show{ opacity:1; }
 
-#loading{
-  position:fixed; inset:0; z-index:20; display:flex;
-  align-items:center; justify-content:center; flex-direction:column; gap:14px;
-  background:radial-gradient(120% 100% at 50% 40%, #1d2417, #070a06 75%);
-  color:rgba(240,214,150,.8); font-family:var(--ui-font); font-weight:600;
-  letter-spacing:4px; font-size:15px;
-  transition:opacity 1.1s ease; pointer-events:none;
+/* the opening film plays over the page while the forest loads; the live book takes
+   over from its last frame (grimoire.js takeOver). Its first frame stands in at once */
+#intro{
+  position:fixed; inset:0; z-index:35; background:var(--night);
+  transition:opacity .9s ease; cursor:default;
 }
-#loading.gone{ opacity:0; }
-#loading .sig{ font-size:30px; color:rgba(232,192,105,.9); text-shadow:0 0 22px rgba(255,190,90,.5); animation:candle 3.4s ease-in-out infinite; }
+#intro.gone{ opacity:0; pointer-events:none; }
+#intro img, #intro video{
+  position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  opacity:0; transition:opacity .8s ease;
+}
+#intro.lit img, #intro.play video{ opacity:1; }
+#intro.contain{ background:radial-gradient(120% 60% at 50% 50%, #18200f, var(--night) 70%); }
+#intro.contain img, #intro.contain video{ object-fit:contain; }
+#intro .sig{
+  position:absolute; left:50%; bottom:calc(30px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  font-size:24px; color:rgba(232,192,105,.9); text-shadow:0 0 22px rgba(255,190,90,.55);
+  display:none; animation:candle 3.4s ease-in-out infinite;
+}
+#intro.wait .sig{ display:block; }
+#introNote{
+  position:absolute; left:0; right:0; bottom:calc(70px + env(safe-area-inset-bottom)); text-align:center;
+  color:rgba(240,214,150,.85); font:600 14px var(--ui-font); letter-spacing:4px; text-shadow:0 1px 4px #000;
+}
+.film .ui, .film #intro{ display:none !important; }
+.film #vignette{ animation:none; opacity:.94; }
 #err{
   position:fixed; left:0; right:0; bottom:0; z-index:40; display:none;
   padding:10px 14px; background:rgba(60,10,10,.9); color:#ffd9c9;
@@ -140,11 +180,11 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 
 /* the menu behind the three dots: actions that otherwise live on keys */
 .menu{
-  top:72px; right:18px; min-width:230px; padding:6px;
+  top:72px; right:18px; min-width:230px; padding:8px;
   display:flex; flex-direction:column; gap:2px;
-  border-radius:16px; border:1px solid var(--gold-line);
-  background:radial-gradient(130% 110% at 50% 0%, rgba(48,52,28,.97), rgba(12,13,8,.97));
-  box-shadow:0 10px 30px rgba(0,0,0,.65), inset 0 0 20px rgba(255,206,110,.08);
+  border-radius:18px; border:1.5px solid transparent;
+  background:var(--face) padding-box, var(--gilt) border-box;
+  box-shadow:inset 0 0 0 2.5px var(--gilt-gap), inset 0 0 0 3.5px var(--gilt-fillet), 0 10px 30px rgba(0,0,0,.65);
   animation:fadein .2s ease-out;
 }
 .menu[hidden]{ display:none; }
@@ -155,10 +195,19 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .menu button:hover, .menu button:focus-visible{ background:rgba(255,210,120,.1); color:#ffe6ae; outline:none; }
 .menu button[disabled]{ opacity:.35; pointer-events:none; }
 .menu hr{ margin:4px 10px; border:0; border-top:1px solid var(--gold-line); opacity:.6; }
-.menu .books{ display:flex; flex-direction:column; justify-content:center; gap:1px; height:56px; }
-.menu .books span{ max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-style:italic; font-size:14px; color:var(--gold-dim); }
-.menu .books[hidden]{ display:none; }
-.menu-note{ margin:4px 16px 6px; color:rgba(240,226,192,.5); font:italic 500 14px var(--text-font); }
+.menu .view{ display:flex; flex-direction:column; gap:2px; }
+.menu .two{ display:flex; flex-direction:column; justify-content:center; gap:1px; height:56px; }
+.menu .two span{ max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-style:italic; font-size:14px; color:var(--gold-dim); }
+.menu .more{ position:relative; padding-right:36px; }
+.menu .more::after, .menu .back::before{
+  content:''; position:absolute; top:50%; width:7px; height:7px; margin-top:-4px;
+  border:solid currentColor; border-width:1.5px 1.5px 0 0; opacity:.6;
+}
+.menu .more::after{ right:18px; transform:rotate(45deg); }
+.menu .back{ position:relative; padding-left:38px; color:var(--gold-dim); font-style:italic; }
+.menu .back::before{ left:18px; transform:rotate(-135deg); }
+.menu [hidden]{ display:none; }
+.menu-note{ max-width:240px; margin:4px 16px 6px; color:var(--gold-dim); font:italic 500 14px var(--text-font); }
 @media (pointer:coarse){ .menu .fine{ display:none; } }
 
 @keyframes rise{ from{ opacity:0; transform:translate(-50%, 6px); } to{ opacity:1; transform:translate(-50%, 0); } }
@@ -172,9 +221,9 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .spells[hidden]{ display:none; }
 .spells .card{
   position:relative; width:min(560px, 100%); max-height:calc(100vh - 32px); overflow:auto;
-  padding:24px 28px 20px; border-radius:16px; border:1px solid var(--gold-line);
-  background:radial-gradient(130% 110% at 50% 0%, rgba(48,52,28,.96), rgba(12,13,8,.97));
-  box-shadow:0 10px 40px rgba(0,0,0,.7), inset 0 0 30px rgba(255,206,110,.08);
+  padding:24px 28px 20px; border-radius:18px; border:1.5px solid transparent;
+  background:var(--face) padding-box, var(--gilt) border-box;
+  box-shadow:inset 0 0 0 2.5px var(--gilt-gap), inset 0 0 0 3.5px var(--gilt-fillet), 0 10px 40px rgba(0,0,0,.7);
   color:rgba(240,226,192,.92); font-size:17px;
 }
 .spells h2{ font-family:var(--ui-font); font-weight:700; letter-spacing:5px; color:var(--gold); font-size:17px; text-align:center; text-shadow:0 0 14px rgba(255,190,90,.35); }
@@ -189,9 +238,10 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .spells .foot{ margin-top:14px; text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; }
 .spells .close{
   position:absolute; top:12px; right:12px; width:30px; height:30px; border-radius:50%;
-  border:1px solid var(--gold-line); background:transparent; color:var(--gold); font-size:16px; cursor:pointer;
+  border:1px solid var(--gold-line); background:transparent; color:#e6c47a; font-size:16px; cursor:pointer;
+  transition:color .25s, box-shadow .25s;
 }
-.spells .close:hover{ box-shadow:0 0 12px rgba(236,192,102,.4); }
+.spells .close:hover{ color:#ffe6ae; box-shadow:0 0 12px rgba(236,192,102,.4); }
 /* the shelf of books: one's own and the shared ones */
 .shelf .card{ width:min(440px, 100%); }
 .shelf h2{ padding:0 34px; }
@@ -226,45 +276,141 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   font-size:13px; color:var(--gold-dim); word-break:break-all; user-select:all; -webkit-user-select:all;
 }
 .shelf .who{ margin-top:16px; text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; }
-.shelf .who button{ border:0; background:none; padding:4px; color:var(--gold); font:inherit; text-decoration:underline; cursor:pointer; }
-/* the invitation: the rules, the vow read aloud, the signature */
-.shelf .body[data-mode=join] h2::after, .shelf .body[data-mode=vow] h2::after{
-  content:''; display:block; width:140px; height:10px; margin:8px auto 2px;
-  background:radial-gradient(circle, var(--gold) 0 2px, transparent 2.5px) center/10px 10px no-repeat,
-    linear-gradient(90deg, transparent, var(--gold-line) 30%, transparent 45%, transparent 55%, var(--gold-line) 70%, transparent) center/100% 1px no-repeat;
+.shelf .keepers{ margin:4px 0 8px; font-size:17px; }
+.shelf .keepers .row{ display:flex; align-items:center; gap:4px; padding:4px 0; border-bottom:1px dashed rgba(214,164,74,.16); }
+.shelf .keepers .row:last-child{ border-bottom:0; }
+.shelf .keepers .name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shelf .keepers .name small{ margin-left:8px; font-style:italic; font-size:14px; color:var(--gold-dim); }
+.shelf .keepers button{ flex:none; font-size:15px; }
+.shelf .body[data-mode=ask] h2:empty{ display:none; }
+.shelf .who button, .shelf .keepers button{ border:0; background:none; padding:4px; color:var(--gold); font:inherit; text-decoration:underline; cursor:pointer; }
+/* the invitation: a card on a leaf of the book, sealed in wax, written in brown ink */
+.shelf.locked .close{ display:none; }
+.shelf .hint{ margin:6px 0 0; text-align:center; font-style:italic; color:var(--gold-dim); font-size:14px; }
+.shelf.invite{ --ink:#3b2612; --ink-soft:#6b4b2a; --ink-rule:rgba(59,38,18,.5); }
+.shelf.invite .card{
+  width:min(470px, 100%); padding:30px 58px 64px; border:0; border-radius:2px;
+  background:#e6d2a6 center/100% 100% no-repeat; color:var(--ink);
+  box-shadow:0 26px 70px rgba(0,0,0,.7), 0 3px 8px rgba(0,0,0,.45);
+  animation:invite .8s cubic-bezier(.2,.7,.2,1);
 }
-.shelf .rules{ list-style:none; margin:18px 0 8px; padding:0; display:flex; flex-direction:column; gap:10px; }
-.shelf .rules li{ display:flex; align-items:baseline; gap:14px; font-size:19px; }
-.shelf .rules b{ flex:0 0 30px; text-align:right; font:600 15px var(--ui-font); letter-spacing:1px; color:var(--gold); }
-.shelf .vow{ margin:16px 0 4px; text-align:center; font:italic 500 19px/1.5 var(--text-font); }
-.shelf .vow p{ color:rgba(240,226,192,.34); transition:color .7s ease, text-shadow .7s ease; }
-.shelf .vow p.said{ color:#ffe6ae; text-shadow:0 0 12px rgba(255,190,90,.45); }
-.shelf .vow p:last-child{ margin-top:8px; font:600 15px var(--ui-font); letter-spacing:4px; }
-.shelf .btn.on{ animation:listen 1.6s ease-in-out infinite; }
-@keyframes listen{ 50%{ box-shadow:0 0 20px rgba(236,192,102,.6); } }
-.shelf .sign{ margin-top:18px; animation:fadein .8s ease-out; }
-.shelf .sign .by{ text-align:center; font-style:italic; color:var(--gold-dim); font-size:16px; }
-.shelf .sign input[type=text], .shelf .sign .name{
-  display:block; width:72%; margin:2px auto 0; height:auto; padding:2px 0 6px; border:0; border-bottom:1px solid var(--gold-line); border-radius:0;
-  background:transparent; text-align:center; font:italic 500 26px var(--text-font); color:#ffe6ae;
+@keyframes invite{ from{ opacity:0; transform:translateY(18px) rotate(-1.2deg) scale(.97); } to{ opacity:1; transform:none; } }
+.shelf.invite .seal{ width:74px; height:74px; margin:0 auto 6px; filter:drop-shadow(0 3px 3px rgba(40,10,4,.45)); }
+.shelf.invite .seal svg{ display:block; width:100%; height:100%; }
+.shelf.invite .body[data-mode=vow]{ padding-top:24px; }
+.shelf.invite h2{ padding:0; color:var(--ink-soft); font-size:14px; letter-spacing:6px; text-shadow:none; }
+.shelf.invite h2::after{
+  content:''; display:block; width:150px; height:10px; margin:8px auto 0;
+  background:radial-gradient(circle, var(--ink-soft) 0 2px, transparent 2.5px) center/10px 10px no-repeat,
+    linear-gradient(90deg, transparent, var(--ink-rule) 30%, transparent 45%, transparent 55%, var(--ink-rule) 70%, transparent) center/100% 1px no-repeat;
 }
-.shelf .sign input[type=text]:focus{ box-shadow:none; border-bottom-color:var(--gold); }
-.shelf .sign .ps{ margin-top:12px; text-align:right; font-style:italic; color:var(--gold-dim); font-size:15px; }
-@media (prefers-reduced-motion:reduce){ .shelf .btn.on, .shelf .sign{ animation:none; } }
+.shelf.invite .script{ margin:14px 0 2px; text-align:center; font:400 46px/1.15 'Great Vibes', cursive; color:var(--ink); }
+.shelf.invite .line{ text-align:center; font-style:italic; font-size:18px; color:var(--ink-soft); }
+.shelf.invite .title{ margin:4px 0 6px; text-align:center; font:700 23px/1.2 var(--ui-font); letter-spacing:2px; color:var(--ink); }
+.shelf.invite .orn{ width:120px; height:14px; margin:16px auto 14px; background:
+  radial-gradient(circle, var(--ink-soft) 0 1.6px, transparent 2px) 0 50%/40px 14px repeat-x; opacity:.75; }
+.shelf.invite .rules{ list-style:none; display:flex; flex-direction:column; gap:7px; width:max-content; max-width:100%; margin:0 auto; padding:0; }
+.shelf.invite .rules li{ display:flex; align-items:baseline; gap:12px; font-size:19px; }
+.shelf.invite .rules b{ flex:0 0 26px; text-align:right; font:600 15px var(--ui-font); letter-spacing:1px; color:var(--ink-soft); }
+.shelf.invite .note{ margin:10px 0 0; text-align:center; font-style:italic; font-size:15px; color:var(--ink-soft); }
+.shelf.invite .vow{ margin:16px 0 0; text-align:center; font:italic 500 20px/1.5 var(--text-font); color:var(--ink); }
+.shelf.invite .vow .amen{ margin-top:10px; font:700 15px var(--ui-font); letter-spacing:6px; color:var(--ink-soft); }
+.shelf.invite .sign{ margin-top:22px; text-align:center; }
+.shelf.invite .sign input[type=text], .shelf.invite .sign .name{
+  display:block; width:80%; height:auto; margin:0 auto; padding:0 0 2px; border:0; border-bottom:1px solid var(--ink-rule); border-radius:0;
+  background:transparent; box-shadow:none; text-align:center; font:400 40px/1.25 'Great Vibes', cursive; color:#2a1808; caret-color:var(--ink);
+}
+.shelf.invite .sign input[type=text]:focus{ border-bottom-color:var(--ink); }
+.shelf.invite .sign input[type=text]::placeholder{ color:rgba(59,38,18,.3); }
+.shelf.invite .sign .cap{ margin-top:6px; font:600 11px var(--ui-font); letter-spacing:2.5px; text-transform:uppercase; color:var(--ink-soft); }
+.shelf.invite .acts{ margin-top:22px; align-items:center; }
+.shelf.invite .btn.main{ min-width:min(240px, 100%); padding:0 30px; }
+.shelf.invite .btn.main{ border:1px solid #2a180a; background:#4b2d15; color:#f4e4bf; font-size:18px; letter-spacing:1px; box-shadow:inset 0 1px 0 rgba(255,224,170,.18); }
+.shelf.invite .btn.main:hover, .shelf.invite .btn.main:focus-visible{ background:#5c3819; box-shadow:0 4px 14px rgba(59,38,18,.35); }
+.shelf.invite .btn.minor{ color:var(--ink-soft); }
+.shelf.invite .btn.minor:hover, .shelf.invite .btn.minor:focus-visible{ color:var(--ink); }
+@media (prefers-reduced-motion:reduce){ .shelf.invite .card{ animation:none; } }
+@media (max-width:420px){
+  .shelf.invite .card{ padding:24px 34px 48px; }
+  .shelf.invite .script{ font-size:38px; }
+  .shelf.invite .vow{ font-size:17px; }
+  .shelf.invite .rules li{ font-size:17px; }
+}
 @media (max-width:420px){ .shelf h2{ padding:0 24px; letter-spacing:2px; font-size:16px; } .shelf .card{ padding:22px 20px 18px; } }
 @keyframes fadein{ from{ opacity:0; } to{ opacity:1; } }
 
 @media (max-width:640px){
   .bar{ top:12px; right:12px; gap:7px; }
   .rune{ width:40px; height:40px; font-size:18px; }
-  .pager{ bottom:12px; gap:6px; padding:5px; }
-  .pager .rune{ width:44px; height:44px; }
-  .pageno input{ height:44px; }
+  .pager{ bottom:12px; }
   .menu{ top:62px; right:12px; }
 }
 </style>
 </head>
 <body>
+<div id="intro" aria-hidden="true">
+  <img alt="">
+  <video muted playsinline preload="auto" disablepictureinpicture disableremoteplayback></video>
+  <div class="sig">✦</div>
+  <p id="introNote"></p>
+</div>
+<script>
+/* the opening film: the book on its rock wakes and opens. It starts at once, and the
+   live book (grimoire.js) takes over when both the film and the forest are done.
+   A tap or a key once the forest is in skips the rest */
+(()=>{
+  const box = document.getElementById('intro');
+  if(/[?&]film\b/.test(location.search)){ document.documentElement.classList.add('film'); box.remove(); return; }
+  const v = box.querySelector('video'), still = box.querySelector('img');
+  /* the cuts there are; a tall screen without its own cut sees the wide one whole */
+  const CUTS = ['wide', 'tall'], tall = innerWidth/innerHeight < 0.9;
+  const kind = tall && CUTS.includes('tall') ? 'tall' : 'wide', fit = tall && kind === 'wide' ? 'contain' : 'cover';
+  const src = 'assets/intro/' + kind;
+  const I = window.__intro = { kind, fit, take: null, played: false, failed: false, skip: false, gone: false };
+  box.classList.add(fit);
+  const OPENED = 7.3;
+  still.onload = ()=>box.classList.add('lit');
+  still.src = src + '.jpg';
+  let graceTm = 0, lastT = -1, lastMove = 0;
+  const finish = mode=>{
+    if(I.gone) return;
+    I.gone = true;
+    clearTimeout(graceTm);
+    I.take(mode);
+    box.classList.add('gone');
+    setTimeout(()=>{ v.removeAttribute('src'); v.load(); box.remove(); }, 1000);
+  };
+  const check = ()=>{
+    if(I.gone) return;
+    box.classList.toggle('wait', !I.take && (v.ended || I.failed || I.skip));
+    if(!I.take) return;
+    if(v.ended || I.skip) return finish(I.played ? 'open' : 'closed');
+    if(I.failed) return finish('closed');
+    if(!I.played && !graceTm) graceTm = setTimeout(()=>{ if(!I.played){ v.pause(); finish('closed'); } }, 1500);
+  };
+  I.ready = take=>{ I.take = take; check(); };
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ I.failed = true; return; }
+  v.addEventListener('playing', ()=>{ I.played = true; box.classList.add('play'); check(); });
+  v.addEventListener('ended', check);
+  v.addEventListener('error', ()=>{ if(I.gone) return; I.failed = true; check(); });
+  v.addEventListener('timeupdate', ()=>{ if(v.currentTime !== lastT){ lastT = v.currentTime; lastMove = performance.now(); } });
+  setInterval(()=>{
+    if(I.take && I.played && !I.gone && !v.ended && performance.now() - lastMove > 3000)
+      finish(v.currentTime > OPENED ? 'open' : 'closed');
+  }, 500);
+  v.src = src + '.mp4';
+  const p = v.play();
+  if(p && p.catch) p.catch(()=>{ I.failed = true; check(); });
+  const skip = ()=>{
+    if(I.gone) return;
+    if(I.take){ I.skip = true; check(); }
+    else if(I.played && v.duration){ v.currentTime = Math.max(0, v.duration - 0.05); }
+  };
+  box.addEventListener('pointerdown', skip);
+  addEventListener('keydown', e=>{ if(!I.gone && !e.metaKey && !e.ctrlKey){ e.stopPropagation(); skip(); } }, true);
+})();
+</script>
+
 <canvas id="gl"></canvas>
 <div id="vignette"></div>
 <textarea id="quill" spellcheck="false" autocomplete="off" autocapitalize="sentences" aria-label="Page text"></textarea>
@@ -281,25 +427,32 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 </div>
 
 <div class="ui menu" id="menu" role="menu" hidden>
-  <button role="menuitem" data-act="share" class="books" hidden>Share<span>Send the book to a friend</span></button>
-  <button role="menuitem" data-act="erase">Erase this page</button>
-  <button role="menuitem" data-act="erase2" hidden>Erase this page</button>
-  <button role="menuitem" data-act="restore">Undo erase</button>
+  <div class="view" data-view="main">
+    <button role="menuitem" data-act="share" class="two" hidden>Share<span>Send the book to a friend</span></button>
+    <button role="menuitem" data-act="erase" hidden>Erase this page</button>
+    <button role="menuitem" data-act="erase2" hidden>Erase this page</button>
+    <button role="menuitem" data-act="restore" hidden>Undo erase</button>
+    <button role="menuitem" data-act="files" class="two more">Files<span>Download or restore the book</span></button>
+    <button role="menuitem" data-act="spells" class="fine">Shortcuts</button>
+  </div>
+  <div class="view" data-view="files" hidden>
+    <button role="menuitem" data-act="main" class="back">Files</button>
+    <button role="menuitem" data-act="exportText" class="two">Download as text<span>To read or print anywhere</span></button>
+    <button role="menuitem" data-act="saveCopy" class="two">Download a backup<span>Everything, to restore later</span></button>
+    <button role="menuitem" data-act="openCopy" class="two">Restore a backup<span>Replaces your private book</span></button>
+  </div>
   <hr>
-  <button role="menuitem" data-act="exportText">Download</button>
-  <hr class="fine">
-  <button role="menuitem" data-act="spells" class="fine">Shortcuts</button>
   <p class="menu-note">Saves automatically</p>
 </div>
 
 <nav class="ui pager" id="pager" aria-label="Pages" hidden>
-  <button class="rune" id="btnPrev" title="Previous page (←)" aria-label="Previous page">❮</button>
+  <i class="fillet under"></i><i class="fillet line"></i>
+  <button id="btnPrev" title="Previous page (←)" aria-label="Previous page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 4C12.6 7.8 10 10.4 7 12c3 1.6 5.6 4.2 8.5 8-1.6-3.6-3-6.1-4.6-8 1.6-1.9 3-4.4 4.6-8z"/></svg></button>
   <label class="pageno" id="pageNo" title="Type a page number (G)"><input id="pageIn" type="text" inputmode="numeric" enterkeyhint="go" autocomplete="off" spellcheck="false" placeholder="page" aria-label="Page number, type one and press Go"><span>of 100</span></label>
-  <button class="rune" id="btnNext" title="Next page (→)" aria-label="Next page">❯</button>
+  <button id="btnNext" title="Next page (→)" aria-label="Next page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 4c2.9 3.8 5.5 6.4 8.5 8-3 1.6-5.6 4.2-8.5 8 1.6-3.6 3-6.1 4.6-8-1.6-1.9-3-4.4-4.6-8z"/></svg></button>
 </nav>
 
 
-<div id="loading"><div class="sig">✦</div><div>KINDLING THE TOME</div></div>
 <pre id="err"></pre>
 
 <script>
@@ -314,6 +467,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=78"></script>
+<script type="module" src="./grimoire.js?v=90"></script>
 </body>
 </html>

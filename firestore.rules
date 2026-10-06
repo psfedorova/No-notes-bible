@@ -3,7 +3,10 @@ rules_version = '2';
 // A book is read and written only by its members. One joins with the invite code the owner made,
 // signed in with Google or as a guest (an anonymous account kept by the browser).
 // Each member writes only the ink docs named after their own uid, so nobody can erase another's ink.
-// Only Google accounts make books, at most three each.
+// Any number of people join with one link. The owner can let a keeper only read, or send them away
+// for good: books/{book}/access/{uid} says so, and only the owner writes it.
+// Anyone signed in makes books, a guest too, at most three at a time; deleting one frees its place.
+// A Google account also keeps a copy of its private book, in parts, under users/{uid}/keep.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -13,6 +16,10 @@ service cloud.firestore {
       return signedIn() && exists(/databases/$(database)/documents/books/$(book)/members/$(request.auth.uid));
     }
     function isOwner(book) { return signedIn() && get(bookDoc(book)).data.owner == request.auth.uid; }
+    function accessDoc(book) { return /databases/$(database)/documents/books/$(book)/access/$(request.auth.uid); }
+    // a keeper with any word from the owner in access writes nothing; 'none' also keeps them out
+    function canWrite(book) { return isMember(book) && !exists(accessDoc(book)); }
+    function shutOut(book) { return exists(accessDoc(book)) && get(accessDoc(book)).data.can == 'none'; }
     function goodName(d, max) { return d.name is string && d.name.size() >= 1 && d.name.size() <= max; }
     // a Google member is named by the first word of the account name, a guest by what they typed
     function accountName() {
@@ -23,17 +30,41 @@ service cloud.firestore {
       return d.guest is bool && goodName(d, 40)
         && (isGuest() ? d.guest == true : d.guest == false && d.name == accountName());
     }
-    // how many books a person has made; it only ever counts up, to three
+    // how many books a person has now: it counts up by one with each book made, to three,
+    // and down by one only in the batch that deletes one of their books, named in 'gone'
     function userDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
     function madeBefore() { return exists(userDoc()) ? get(userDoc()).data.made : 0; }
+    function madeNow() { return resource == null ? 0 : resource.data.made; }
+    function deletesOwnBook(uid, d) {
+      return d.gone is string
+        && exists(bookDoc(d.gone)) && get(bookDoc(d.gone)).data.owner == uid
+        && !existsAfter(bookDoc(d.gone));
+    }
 
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
-      allow create, update: if signedIn() && !isGuest() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['made'])
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['made', 'gone'])
         && request.resource.data.made is int
-        && request.resource.data.made == (resource == null ? 0 : resource.data.made) + 1
-        && request.resource.data.made <= 3;
+        && (
+          (request.resource.data.made == madeNow() + 1 && request.resource.data.made <= 3)
+          || (request.resource.data.made == madeNow() - 1 && request.resource.data.made >= 0
+              && deletesOwnBook(uid, request.resource.data))
+        );
+    }
+
+    // the private book's copy: a few parts of one text, all written together under one mark 'v'
+    match /users/{uid}/keep/{part} {
+      allow read, delete: if signedIn() && !isGuest() && request.auth.uid == uid;
+      allow create, update: if signedIn() && !isGuest() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['d', 'v', 'i', 'n', 'p', 'at'])
+        && request.resource.data.d is string && request.resource.data.d.size() <= 250000
+        && request.resource.data.v is string && request.resource.data.v.size() <= 40
+        && request.resource.data.i is int && request.resource.data.n is int
+        && request.resource.data.i >= 0 && request.resource.data.i < request.resource.data.n
+        && request.resource.data.n <= 20
+        && part == string(request.resource.data.i)
+        && request.resource.data.p is int;
     }
 
     // each person's own list of the books they belong to
@@ -47,7 +78,7 @@ service cloud.firestore {
     match /books/{book} {
       allow read: if isMember(book);
       // a book is made in one batch with the count going up by one, so nobody makes more than three
-      allow create: if signedIn() && !isGuest()
+      allow create: if signedIn()
         && getAfter(userDoc()).data.made == madeBefore() + 1
         && request.resource.data.keys().hasOnly(['name', 'owner', 'at'])
         && request.resource.data.owner == request.auth.uid
@@ -56,6 +87,9 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'owner', 'at'])
         && request.resource.data.owner == resource.data.owner
         && goodName(request.resource.data, 60);
+      // the owner deletes the book last, after its ink and keepers, with the count going down
+      allow delete: if isOwner(book)
+        && getAfter(userDoc()).data.made == madeBefore() - 1;
 
       // getAfter: the owner writes the first code in the same batch that makes the book
       match /invite/{doc} {
@@ -63,6 +97,7 @@ service cloud.firestore {
         allow write: if signedIn() && getAfter(bookDoc(book)).data.owner == request.auth.uid && doc == 'code'
           && request.resource.data.keys().hasOnly(['code'])
           && request.resource.data.code is string && request.resource.data.code.size() >= 24;
+        allow delete: if isOwner(book);
       }
 
       match /members/{uid} {
@@ -71,6 +106,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['name', 'code', 'guest', 'at'])
           && honestName(request.resource.data)
           && request.resource.data.code is string
+          && !shutOut(book)
           && (getAfter(bookDoc(book)).data.owner == uid
               || request.resource.data.code == get(/databases/$(database)/documents/books/$(book)/invite/code).data.code);
         allow update: if signedIn() && uid == request.auth.uid
@@ -80,10 +116,23 @@ service cloud.firestore {
         allow delete: if signedIn() && (uid == request.auth.uid || isOwner(book));
       }
 
+      // what the owner allows a keeper: 'read' (reads, writes nothing) or 'none' (sent away, cannot
+      // come back with any link). 'none' goes in the same batch that takes their place in the book
+      match /access/{uid} {
+        allow read: if isOwner(book) || (signedIn() && request.auth.uid == uid);
+        allow create, update: if isOwner(book) && uid != request.auth.uid
+          && request.resource.data.keys().hasOnly(['can', 'name', 'at'])
+          && request.resource.data.can in ['read', 'none']
+          && goodName(request.resource.data, 60)
+          && (request.resource.data.can == 'read'
+              || !existsAfter(/databases/$(database)/documents/books/$(book)/members/$(uid)));
+        allow delete: if isOwner(book);
+      }
+
       // a book has 100 pages; the keys are one comma-joined string, bounded by the letters they order
       match /ink/{id} {
         allow read: if isMember(book);
-        allow create, update: if isMember(book)
+        allow create, update: if canWrite(book)
           && request.resource.data.keys().hasOnly(['uid', 'dev', 'n', 's', 'k', 'f', 'c', 'at'])
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.n is int && request.resource.data.n >= 1 && request.resource.data.n < 100
@@ -93,7 +142,8 @@ service cloud.firestore {
           && (request.resource.data.f == null || (request.resource.data.f is string && request.resource.data.f.size() <= 32))
           && request.resource.data.dev is string && request.resource.data.dev.size() <= 32
           && request.resource.data.c is bool;
-        allow delete: if false;
+        // a hand empties its own ink rather than deleting it; only deleting the whole book removes ink
+        allow delete: if isOwner(book);
       }
     }
   }
