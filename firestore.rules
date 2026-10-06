@@ -4,7 +4,7 @@ rules_version = '2';
 // signed in with Google or as a guest (an anonymous account kept by the browser).
 // Each member writes only the ink docs named after their own uid, so nobody can erase another's ink.
 // Any number of people join with one link. The owner can let a keeper only read, or send them away
-// for good: books/{book}/access/{uid} says so, and only the owner writes it.
+// for good: books/{book}/access/{uid} says so, and only the owner writes it. She can let them back in.
 // Anyone signed in makes books, a guest too, at most three at a time; deleting one frees its place.
 // A Google account also keeps a copy of its private book, in parts, under users/{uid}/keep.
 service cloud.firestore {
@@ -109,6 +109,15 @@ service cloud.firestore {
           && !shutOut(book)
           && (getAfter(bookDoc(book)).data.owner == uid
               || request.resource.data.code == get(/databases/$(database)/documents/books/$(book)/invite/code).data.code);
+        // the owner lets a keeper she sent away back in: their place returns as it was, in the
+        // same batch that clears the 'none', so they come in again with any link to the book
+        allow create: if isOwner(book) && uid != request.auth.uid
+          && request.resource.data.keys().hasOnly(['name', 'code', 'guest', 'at'])
+          && request.resource.data.code == '' && request.resource.data.guest is bool
+          && goodName(request.resource.data, 40)
+          && exists(/databases/$(database)/documents/books/$(book)/access/$(uid))
+          && get(/databases/$(database)/documents/books/$(book)/access/$(uid)).data.can == 'none'
+          && !existsAfter(/databases/$(database)/documents/books/$(book)/access/$(uid));
         allow update: if signedIn() && uid == request.auth.uid
           && request.resource.data.keys().hasOnly(['name', 'code', 'guest', 'at'])
           && request.resource.data.code == resource.data.code
@@ -121,8 +130,9 @@ service cloud.firestore {
       match /access/{uid} {
         allow read: if isOwner(book) || (signedIn() && request.auth.uid == uid);
         allow create, update: if isOwner(book) && uid != request.auth.uid
-          && request.resource.data.keys().hasOnly(['can', 'name', 'at'])
+          && request.resource.data.keys().hasOnly(['can', 'name', 'guest', 'at'])
           && request.resource.data.can in ['read', 'none']
+          && request.resource.data.get('guest', false) is bool
           && goodName(request.resource.data, 60)
           && (request.resource.data.can == 'read'
               || !existsAfter(/databases/$(database)/documents/books/$(book)/members/$(uid)));

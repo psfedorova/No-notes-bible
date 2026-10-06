@@ -80,7 +80,7 @@ export function createShelf(api){
   let user = null, cur = null;          // cur: { id, name, owner }
   let books = [], offBooks = null, made = 0, offMade = null;
   let offInk = null, offMembers = null, offBook = null, offMine = null, offAccess = null, firstSnap = true;
-  let names = new Map(), guests = new Set(), access = new Map(), reading = false;
+  let names = new Map(), plain = new Map(), guests = new Set(), access = new Map(), reading = false;
   let ink = new Map(), pending = new Set(), merged = new Map(), deferred = new Set();
   let upTm = 0, joinWant = null, dirtyInk = new Set(), link = null;
   let inflight = 0, waitTm = 0, slow = false;
@@ -183,7 +183,7 @@ export function createShelf(api){
   function leaveBook(){
     flush();
     unlisten();
-    cur = null; ink = new Map(); merged = new Map(); pending = new Set(); deferred = new Set(); names = new Map();
+    cur = null; ink = new Map(); merged = new Map(); pending = new Set(); deferred = new Set(); names = new Map(); plain = new Map();
     guests = new Set(); access = new Map(); reading = false;
     lsDel(CUR_KEY);
   }
@@ -230,6 +230,7 @@ export function createShelf(api){
     }, e => lost(e));
     offMembers = F.onSnapshot(F.collection(F.db, 'books', id, 'members'), s=>{
       names = keeperNames(s.docs);
+      plain = new Map(s.docs.map(d => [d.id, String(d.data().name || 'Friend').slice(0, 40)]));
       guests = new Set(s.docs.filter(d => d.data().guest).map(d => d.id));
       saveInk();
       if(!view.hidden) render();
@@ -484,10 +485,10 @@ export function createShelf(api){
   async function removeKeeper(uid){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
     const id = cur.id, guest = guests.has(uid);
-    const name = (names.get(uid) || 'Friend').replace(/ \(guest\)$/, '').slice(0, 60);
+    const name = plain.get(uid) || 'Friend';
     const batch = F.writeBatch(F.db);
     batch.delete(ref('books', id, 'members', uid));
-    batch.set(ref('books', id, 'access', uid), { can: 'none', name, at: F.serverTimestamp() });
+    batch.set(ref('books', id, 'access', uid), { can: 'none', name, guest, at: F.serverTimestamp() });
     if(guest){
       const code = randomId(32);
       batch.set(ref('books', id, 'invite', 'code'), { code });
@@ -508,7 +509,19 @@ export function createShelf(api){
     try{ await batch.commit(); link = { id, url: joinUrl(id, code) }; }
     catch(e){ console.warn('forget keeper', e); api.toast(`COULD NOT FORGET THEM. ${refused(e)}`, 3200); }
   }
-  /* the creator lets a keeper only read, or write again, or come back */
+  /* the creator lets a keeper she sent away back in: their place returns as it was,
+     so any link to the book lets them in again, the one they already have too */
+  async function letBack(uid){
+    if(!cur || !user || cur.owner !== user.uid) return false;
+    const a = access.get(uid);
+    if(!a || a.can !== 'none') return false;
+    const batch = F.writeBatch(F.db);
+    batch.set(ref('books', cur.id, 'members', uid), { name: String(a.name || 'Friend').slice(0, 40), code: '', guest: a.guest === true, at: F.serverTimestamp() });
+    batch.delete(ref('books', cur.id, 'access', uid));
+    try{ await batch.commit(); return true; }
+    catch(e){ console.warn('let back', e); api.toast(`COULD NOT LET THEM BACK. ${refused(e)}`, 3200); return false; }
+  }
+  /* the creator lets a keeper only read, or write again */
   function allow(uid, can){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
     const r = ref('books', cur.id, 'access', uid);
@@ -784,6 +797,7 @@ export function createShelf(api){
         if(shut && shut.exists() && shut.data().can === 'none'){ show('shut'); return; }
       }
       if(!back) await F.setDoc(ref('books', want.id, 'members', me), { name: myName(), code: want.code, guest: user.isAnonymous, at: F.serverTimestamp() });
+      else if(mine.data().guest !== user.isAnonymous) F.updateDoc(ref('books', want.id, 'members', me), { name: myName(), guest: user.isAnonymous }).catch(()=>{});
       const b = await F.getDoc(ref('books', want.id));
       const name = b.exists() ? b.data().name : 'Our book';
       await F.setDoc(ref('users', me, 'books', want.id), { name, at: F.serverTimestamp() });
@@ -828,10 +842,10 @@ export function createShelf(api){
     if(!n.length) return 'waiting for a friend';
     return n.length > 4 ? `with ${n.slice(0, 3).join(', ')} and ${n.length - 3} more` : `with ${n.join(', ')}`;
   }
-  const TITLES = { share: 'SHARE THE BOOK', join: 'AN INVITATION', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', remove: 'REMOVE A KEEPER', forget: 'FORGET A KEEPER', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '' };
+  const TITLES = { share: 'SHARE THE BOOK', join: 'AN INVITATION', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', remove: 'REMOVE A KEEPER', back: 'LET BACK IN', backIn: 'LET BACK IN', forget: 'FORGET A KEEPER', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '' };
   function render(){
     body.textContent = '';
-    if(['leave', 'remove', 'forget', 'del', 'rename'].includes(mode) && !cur) mode = 'share';
+    if(['leave', 'remove', 'back', 'backIn', 'forget', 'del', 'rename'].includes(mode) && !cur) mode = 'share';
     body.dataset.mode = mode;
     view.classList.toggle('locked', locked());
     view.classList.toggle('invite', locked());
@@ -840,7 +854,7 @@ export function createShelf(api){
     body.appendChild(el('h2', null, TITLES[mode]));
     if(mode === 'ask'){ body.firstChild.textContent = asking.title; renderAsk(); return; }
     if(!F && mode !== 'join' && mode !== 'vow'){ body.appendChild(el('p', 'sub', 'Loading…')); firebase().then(()=>{ if(!view.hidden) render(); }).catch(()=>{ body.lastChild.textContent = 'No connection. Try again later'; }); return; }
-    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, shut: renderShut, leave: renderLeave, remove: renderRemove, forget: renderForget, del: renderDelete, rename: renderRename, name: renderName, out: renderOut })[mode]();
+    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, shut: renderShut, leave: renderLeave, remove: renderRemove, back: renderBack, backIn: renderBackIn, forget: renderForget, del: renderDelete, rename: renderRename, name: renderName, out: renderOut })[mode]();
   }
   function bookRow(title, sub, on, fn){
     const b = el('button', 'book' + (on ? ' on' : ''));
@@ -966,7 +980,7 @@ export function createShelf(api){
       shut.forEach(([uid, a])=>{
         const name = a.name || 'Friend';
         sec.appendChild(person(name, 'cannot open the book', [
-          { text: 'Let back in', fn: ()=> allow(uid, null) },
+          { text: 'Let back in', fn: ()=>{ target = { uid, name }; show('back'); } },
           null,
           { text: 'Forget for good', danger: true, fn: ()=>{ target = { uid, name }; show('forget'); } }
         ]));
@@ -1060,6 +1074,24 @@ export function createShelf(api){
     acts.appendChild(btn('Keep them', 'minor', async ()=>{ target = null; show('share'); }));
     body.appendChild(acts);
   }
+  function renderBack(){
+    if(!target){ mode = 'share'; renderShare(); return; }
+    const t = target;
+    body.appendChild(el('p', 'sub', `${t.name} comes back into ${cur.name} and can write in it again. What they wrote is all still there`));
+    const acts = el('div', 'acts');
+    acts.appendChild(btn(`Let ${t.name} back in`, 'main', async ()=>{ if(await letBack(t.uid)) show('backIn'); }));
+    acts.appendChild(btn('Keep them out', 'minor', async ()=>{ target = null; show('share'); }));
+    body.appendChild(acts);
+  }
+  /* they are in again; the link brings their book back to them, and a change of heart is one tap */
+  function renderBackIn(){
+    if(!target){ mode = 'share'; renderShare(); return; }
+    const t = target;
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Done', '', async ()=>{ target = null; show('share'); }));
+    acts.appendChild(btn('I changed my mind', 'minor', async ()=> show('remove')));
+    renderLink(acts, `${t.name} is back in ${cur.name}. Send them the link to open it again, or they can use the one they already have`);
+  }
   function renderForget(){
     if(!target){ mode = 'share'; renderShare(); return; }
     const t = target;
@@ -1069,8 +1101,8 @@ export function createShelf(api){
     acts.appendChild(btn('Keep them on the list', 'minor', async ()=>{ target = null; show('share'); }));
     body.appendChild(acts);
   }
-  async function renderLink(acts){
-    body.appendChild(el('p', 'sub', 'Friends with this link take the vow and write in this book with you'));
+  async function renderLink(acts, sub){
+    body.appendChild(el('p', 'sub', sub || 'Friends with this link take the vow and write in this book with you'));
     const box = el('div', 'linkbox');
     const url0 = el('span', 'url', 'Making a link…');
     box.appendChild(url0);
@@ -1088,7 +1120,7 @@ export function createShelf(api){
       catch(e){ api.toast('SELECT THE LINK AND COPY IT', 2000); }
     });
     box.appendChild(copy);
-    if(navigator.share) acts.appendChild(btn('Send the link', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'You’ve been invited to become a keeper of our bible. No notes', url: link.url }); }catch(e){} }));
+    if(navigator.share) acts.prepend(btn('Send the link', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'You’ve been invited to become a keeper of our bible. No notes', url: link.url }); }catch(e){} }));
   }
   /* ---------- the invitation: a card on the book's own paper, the rules, the vow, a signature ---------- */
   const RULES = ['What is written here is gospel*', 'It is not up for discussion', 'If a page bores you, turn it'];

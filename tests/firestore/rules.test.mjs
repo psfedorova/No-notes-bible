@@ -135,6 +135,43 @@ await t('k2 cannot come back with the link', assertFails(setDoc(doc(K2, 'books',
 await t('k2 sees why', assertSucceeds(getDoc(doc(K2, 'books', B, 'access', 'k2'))));
 await t('alice lets k2 back', assertSucceeds(deleteDoc(doc(A, 'books', B, 'access', 'k2'))));
 await t('k2 comes back with the link', assertSucceeds(setDoc(doc(K2, 'books', B, 'members', 'k2'), member('Guest', CODE2, true))));
+// sent away, then let back in by the owner: her place returns, so any link lets her in again
+await t('k3 is in the book', assertSucceeds(getDocs(collection(K3, 'books', B, 'ink'))));
+await t('alice sends k3 away, saying she is a guest', assertSucceeds((async ()=>{
+  const b = writeBatch(A);
+  b.delete(doc(A, 'books', B, 'members', 'k3'));
+  b.set(doc(A, 'books', B, 'access', 'k3'), { ...access('none', 'Kate'), guest: true });
+  await b.commit();
+})()));
+await t('access says guest only as true or false', assertFails(setDoc(doc(A, 'books', B, 'access', 'k4'), { ...access('read'), guest: 'yes' })));
+const back = (name = 'Kate', extra = {}) => ({ name, code: '', guest: true, at: serverTimestamp(), ...extra });
+await t('alice cannot put k3 back and leave her shut out', assertFails(setDoc(doc(A, 'books', B, 'members', 'k3'), back())));
+await t('a keeper cannot let k3 back in', assertFails((async ()=>{
+  const b = writeBatch(K1);
+  b.set(doc(K1, 'books', B, 'members', 'k3'), back());
+  b.delete(doc(K1, 'books', B, 'access', 'k3'));
+  await b.commit();
+})()));
+await t('alice cannot let back in with a code', assertFails((async ()=>{
+  const b = writeBatch(A);
+  b.set(doc(A, 'books', B, 'members', 'k3'), back('Kate', { code: CODE2 }));
+  b.delete(doc(A, 'books', B, 'access', 'k3'));
+  await b.commit();
+})()));
+await t('alice lets k3 back in', assertSucceeds((async ()=>{
+  const b = writeBatch(A);
+  b.set(doc(A, 'books', B, 'members', 'k3'), back());
+  b.delete(doc(A, 'books', B, 'access', 'k3'));
+  await b.commit();
+})()));
+await t('k3 reads the book again', assertSucceeds(getDocs(collection(K3, 'books', B, 'ink'))));
+await t('k3 writes again', assertSucceeds(setDoc(doc(K3, 'books', B, 'ink', '1_k3'), ink('k3', 1, 'back'))));
+await t('k3 still changes her name', assertSucceeds(updateDoc(doc(K3, 'books', B, 'members', 'k3'), { name: 'Kat' })));
+await t('alice cannot make a member of someone never sent away', assertFails((async ()=>{
+  const b = writeBatch(A);
+  b.set(doc(A, 'books', B, 'members', 'stranger'), back('Stranger'));
+  await b.commit();
+})()));
 await t('alice lets k1 write again', assertSucceeds(deleteDoc(doc(A, 'books', B, 'access', 'k1'))));
 await t('k1 writes again', assertSucceeds(setDoc(doc(K1, 'books', B, 'ink', '1_k1'), ink('k1', 1, 'x'))));
 
