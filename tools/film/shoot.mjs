@@ -80,7 +80,7 @@ try{
     /* the film's own music (ElevenLabs) goes in with the pictures */
     const score = path.join(OUT, `score_${k}.m4a`);
     const sound = fs.existsSync(score);
-    const audioIn = sound ? ['-i', score] : [], audio = sound ? ['-map', '0:v', '-map', '1:a', '-c:a', 'copy', '-shortest'] : ['-an'];
+    const audioIn = sound ? ['-i', score] : [], audio = sound ? ['-map', '0:v', '-map', '1:a', '-af', 'apad', '-c:a', 'aac', '-b:a', '128k', '-shortest'] : ['-an'];
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-framerate', String(fps), '-i', path.join(frames, 'f%04d.jpg'), ...audioIn,
       '-vf', scale + yuv, ...tag, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '29', '-x264-params', 'aq-mode=3', '-profile:v', 'high', '-level', '4.2',
       '-movflags', '+faststart', ...audio, path.join(OUT, `${k}.mp4`)]);

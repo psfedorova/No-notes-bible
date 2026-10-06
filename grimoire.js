@@ -31,7 +31,7 @@ import {
   clamp, lerp, smooth, mulberry32, fbm, upsample, cv, normalFromHeight, tex,
   setMaxAniso, makeSpriteCanvas, makeRayAlpha, crackCanvas, fieldFromCanvas
 } from './textures.js?v=4';
-import { createShelf, sharingOn } from './shared.js?v=24';
+import { createShelf, sharingOn } from './shared.js?v=26';
 
 const T0 = performance.now();
 /* ?film: the opening film is shot from this very scene, one frame at a time (film.js).
@@ -3470,6 +3470,7 @@ const sfx = (()=>{
       if(!m){ ready(); ambience(); }
     },
     ambience,
+    wake(){ ready(); },
     page(){
       if(!ready()) return;
       const t = ac.currentTime;
@@ -4047,7 +4048,9 @@ let pinch = null;
 
 canvasEl.addEventListener('contextmenu', e=>e.preventDefault());
 canvasEl.addEventListener('mousedown', e=>{ if(writing) e.preventDefault(); });
-['pointerdown', 'keydown'].forEach(t=>addEventListener(t, ()=>sfx.ambience(), { once:true, capture:true }));
+/* the first touch wakes the audio; the forest itself waits until the opening film is over,
+   so it never plays under the film's own music */
+['pointerdown', 'keydown'].forEach(t=>addEventListener(t, ()=>{ sfx.wake(); Promise.resolve(settled && settled.p).then(()=> sfx.ambience()); }, { once:true, capture:true }));
 canvasEl.addEventListener('pointerdown', e=>{
   try{ canvasEl.setPointerCapture(e.pointerId); }catch(_){}
   pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });

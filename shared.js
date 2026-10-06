@@ -222,7 +222,7 @@ export function createShelf(api){
       cur.name = s.data().name; cur.owner = s.data().owner;
       lsSet(CUR_KEY, { id, uid: cur.uid, name: cur.name, owner: cur.owner });
       if(cur.owner === user.uid && !offAccess) offAccess = F.onSnapshot(F.collection(F.db, 'books', id, 'access'), a=>{
-        access = new Map(a.docs.map(d => [d.id, { can: d.data().can, name: d.data().name }]));
+        access = new Map(a.docs.map(d => [d.id, { can: d.data().can, name: d.data().name, guest: d.data().guest === true }]));
         if(!view.hidden) render();
       }, ()=>{});
       const mine = books.find(b => b.id === id);
@@ -498,7 +498,7 @@ export function createShelf(api){
       batch.set(ref('books', id, 'invite', 'code'), { code });
       link = { id, url: joinUrl(id, code) };
     }
-    batch.commit().then(()=> api.toast(`${name.toUpperCase()} CAN NO LONGER OPEN THE BOOK`, 2600))
+    batch.commit().then(()=> api.toast(`${name.toUpperCase()} CAN NO LONGER OPEN THE BOOK${guest ? '. YOUR LINK IS NEW' : ''}`, 2600))
       .catch(e=>{ console.warn('remove keeper', e); if(guest) link = null; api.toast(`COULD NOT REMOVE. ${refused(e)}`, 3200); });
   }
   /* the server's rules turning a change down read differently from a lost connection */
@@ -524,7 +524,7 @@ export function createShelf(api){
     const batch = F.writeBatch(F.db);
     batch.set(ref('books', cur.id, 'members', uid), { name: String(a.name || 'Friend').slice(0, 40), code: '', guest: a.guest === true, at: F.serverTimestamp() });
     batch.delete(ref('books', cur.id, 'access', uid));
-    try{ await batch.commit(); return true; }
+    try{ await batch.commit(); api.toast(`${String(a.name || 'Friend').toUpperCase()} IS BACK IN THE BOOK`, 2600); return true; }
     catch(e){ console.warn('let back', e); api.toast(`COULD NOT LET THEM BACK. ${refused(e)}`, 3200); return false; }
   }
   /* the creator lets a keeper only read, or write again */
@@ -806,9 +806,15 @@ export function createShelf(api){
     return true;
   }
   async function joinAsGuest(name){
-    if(await beGuest(name) && joinWant) await join();
+    if(await beGuest(name)) await join();
   }
-  async function join(){
+  /* one join at a time: a second call (a sign-in and a tap together) waits for the first */
+  let joining = null;
+  function join(){
+    if(!joining) joining = joinNow().finally(()=>{ joining = null; });
+    return joining;
+  }
+  async function joinNow(){
     const want = joinWant;
     if(!want || !user) return;
     wantJoin(null);
@@ -829,7 +835,8 @@ export function createShelf(api){
       openCached({ id: want.id, uid: me, name, owner: b.exists() ? b.data().owner : null });
       openLive();
       close();
-      api.toast(back ? `BACK IN ${name.toUpperCase()}` : 'AMEN. NO NOTES', 2600);
+      /* said once the opening film is over and the book is still, or it plays unseen under the film */
+      Promise.resolve(api.settled && api.settled()).then(()=> api.toast(back ? `BACK IN ${name.toUpperCase()}` : 'AMEN. NO NOTES', 2600));
     }catch(e){
       show('badInvite');
     }
@@ -866,10 +873,10 @@ export function createShelf(api){
     if(!n.length) return 'waiting for a friend';
     return n.length > 4 ? `with ${n.slice(0, 3).join(', ')} and ${n.length - 3} more` : `with ${n.join(', ')}`;
   }
-  const TITLES = { share: 'SHARE THE BOOK', join: '', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', remove: 'REMOVE A KEEPER', back: 'LET BACK IN', backIn: 'LET BACK IN', forget: 'FORGET A KEEPER', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '' };
+  const TITLES = { share: 'SHARE THE BOOK', join: '', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '' };
   function render(){
     body.textContent = '';
-    if(['leave', 'remove', 'back', 'backIn', 'forget', 'del', 'rename'].includes(mode) && !cur) mode = 'share';
+    if(['leave', 'del', 'rename'].includes(mode) && !cur) mode = 'share';
     body.dataset.mode = mode;
     view.classList.toggle('locked', locked());
     view.classList.toggle('invite', locked());
@@ -879,27 +886,33 @@ export function createShelf(api){
     body.appendChild(el('h2', null, TITLES[mode]));
     if(mode === 'ask'){ body.firstChild.textContent = asking.title; renderAsk(); return; }
     if(!F && mode !== 'join' && mode !== 'vow'){ body.appendChild(el('p', 'sub', 'Loading…')); firebase().then(()=>{ if(!view.hidden) render(); }).catch(()=>{ body.lastChild.textContent = 'No connection. Try again later'; }); return; }
-    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, shut: renderShut, leave: renderLeave, remove: renderRemove, back: renderBack, backIn: renderBackIn, forget: renderForget, del: renderDelete, rename: renderRename, name: renderName, out: renderOut })[mode]();
+    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, shut: renderShut, leave: renderLeave, del: renderDelete, rename: renderRename, name: renderName, out: renderOut })[mode]();
   }
-  function bookRow(title, sub, on, fn){
-    const b = el('button', 'book' + (on ? ' on' : ''));
+  function bookRow(title, sub, on, fn, add){
+    const b = el('button', 'book' + (on ? ' on' : '') + (add ? ' add' : ''));
     const t = el('span'); t.appendChild(el('span', null, title)); t.appendChild(el('small', null, sub));
+    if(add) t.firstChild.prepend(el('i', 'plus'));
     b.appendChild(t);
     if(on) b.appendChild(el('span', 'tick', '✓'));
     b.addEventListener('click', async ()=>{ await fn(); render(); });
     return b;
+  }
+  function chev(){
+    const i = el('i', 'chev');
+    i.innerHTML = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 3.25 5 6.75 8.5 3.25"/></svg>';
+    return i;
   }
   /* the title is the open book; a tap on it lists the others and a new one */
   function bookPicker(){
     const pick = el('details', 'pick');
     const sum = el('summary');
     sum.appendChild(el('h2', null, cur ? cur.name : 'Private book'));
-    sum.appendChild(el('i', 'chev'));
+    sum.appendChild(chev());
     pick.appendChild(sum);
     const list = el('div', 'list');
     list.appendChild(bookRow('Private book', copied() ? 'only you · a copy is in your Google account' : 'only you', !cur, async ()=> goPersonal()));
     books.forEach(b => list.appendChild(bookRow(b.name, cur && cur.id === b.id ? others() : 'shared', cur && cur.id === b.id, ()=> openBook(b.id))));
-    if(cur) list.appendChild(bookRow('+ New shared book', 'a fresh book and its own link', false, ()=> createBook(`${myName()}’s book`, true)));
+    if(cur) list.appendChild(bookRow('New shared book', 'a fresh book and its own link', false, ()=> createBook(`${myName()}’s book`, true), true));
     pick.appendChild(list);
     body.querySelector('h2').replaceWith(pick);
   }
@@ -952,8 +965,7 @@ export function createShelf(api){
     render();
   }
   /* the creator sees who keeps the book: each can be let only read, or removed,
-     and whoever was removed can be let back. A keeper can leave */
-  let target = null;
+     and whoever was removed is let back or forgotten right in the list. A keeper can leave */
   function renderKeepers(){
     if(!cur.owner) return;
     if(cur.owner !== user.uid){
@@ -989,13 +1001,31 @@ export function createShelf(api){
       });
       return d;
     };
-    const person = (name, note, items) => {
+    const person = (name, note, ...acts) => {
       const row = el('div', 'row');
       const who = el('span', 'name', name);
       who.appendChild(el('small', null, note));
       row.appendChild(who);
-      row.appendChild(menu(items));
+      acts.forEach(a => row.appendChild(a));
       return row;
+    };
+    /* forgetting changes the link for everyone, so the first tap only asks */
+    const forget = uid => {
+      const b = pill('Forget', async ()=>{
+        if(!sure(true)) return;
+        b.disabled = true;
+        await forgetKeeper(uid);
+        b.disabled = false; sure(false);
+      }, 'danger');
+      const sure = on => {
+        if(b.classList.contains('sure') === on) return on;
+        b.classList.toggle('sure', on);
+        b.textContent = on ? 'Forget for good' : 'Forget';
+        b.closest('.row').querySelector('small').textContent = on ? 'your link changes too' : 'cannot open the book';
+        return false;
+      };
+      b.addEventListener('blur', ()=>{ if(!b.disabled) sure(false); });
+      return b;
     };
     if(rest.length || shut.length){
       const sec = el('div', 'people');
@@ -1004,28 +1034,26 @@ export function createShelf(api){
         const reads = (access.get(uid) || {}).can === 'read';
         const plain = name.replace(/ \(guest\)$/, '');
         const note = `${guests.has(uid) ? 'guest, ' : ''}${reads ? 'only reads' : 'writes'}`;
-        sec.appendChild(person(plain, note, [
+        sec.appendChild(person(plain, note, menu([
           { text: 'Can write', on: !reads, fn: ()=> allow(uid, null) },
           { text: 'Can only read', on: reads, fn: ()=> allow(uid, 'read') },
           null,
-          { text: 'Remove from the book', danger: true, fn: ()=>{ target = { uid, name: plain }; show('remove'); } }
-        ]));
+          { text: 'Remove from the book', danger: true, fn: ()=> removeKeeper(uid) }
+        ])));
       });
       if(shut.length) sec.appendChild(el('h3', null, 'Removed'));
       shut.forEach(([uid, a])=>{
         const name = a.name || 'Friend';
-        sec.appendChild(person(name, 'cannot open the book', [
-          { text: 'Let back in', fn: ()=>{ target = { uid, name }; show('back'); } },
-          null,
-          { text: 'Forget for good', danger: true, fn: ()=>{ target = { uid, name }; show('forget'); } }
-        ]));
+        sec.appendChild(person(name, 'cannot open the book',
+          pill('Let back in', async e=>{ const b = e.currentTarget; b.disabled = true; await letBack(uid); b.disabled = false; }),
+          forget(uid)));
       });
       body.appendChild(sec);
     }
     const more = el('details', 'more');
     const sum = el('summary');
     sum.appendChild(document.createTextNode('Book settings'));
-    sum.appendChild(el('i', 'chev'));
+    sum.appendChild(chev());
     more.appendChild(sum);
     const tools = el('div', 'tools');
     tools.appendChild(pill('Rename', ()=> show('rename')));
@@ -1098,44 +1126,6 @@ export function createShelf(api){
     acts.appendChild(btn('Stay', 'minor', async ()=> show('share')));
     body.appendChild(acts);
   }
-  function renderRemove(){
-    if(!target){ mode = 'share'; renderShare(); return; }
-    const t = target;
-    const guest = guests.has(t.uid);
-    body.appendChild(el('p', 'sub', `${t.name} will no longer be able to open ${cur.name}, and the link will not let them back in. What they wrote stays. You can let them back later`
-      + (guest ? '. They are a guest, so your link changes too: the old one stops working' : '')));
-    const acts = el('div', 'acts');
-    acts.appendChild(btn(`Remove ${t.name}`, 'main', async ()=>{ target = null; await removeKeeper(t.uid); show('share'); }));
-    acts.appendChild(btn('Keep them', 'minor', async ()=>{ target = null; show('share'); }));
-    body.appendChild(acts);
-  }
-  function renderBack(){
-    if(!target){ mode = 'share'; renderShare(); return; }
-    const t = target;
-    body.appendChild(el('p', 'sub', `${t.name} comes back into ${cur.name} and can write in it again. What they wrote is all still there`));
-    const acts = el('div', 'acts');
-    acts.appendChild(btn(`Let ${t.name} back in`, 'main', async ()=>{ if(await letBack(t.uid)) show('backIn'); }));
-    acts.appendChild(btn('Keep them out', 'minor', async ()=>{ target = null; show('share'); }));
-    body.appendChild(acts);
-  }
-  /* they are in again; the link brings their book back to them, and a change of heart is one tap */
-  function renderBackIn(){
-    if(!target){ mode = 'share'; renderShare(); return; }
-    const t = target;
-    const acts = el('div', 'acts');
-    acts.appendChild(btn('Done', '', async ()=>{ target = null; show('share'); }));
-    acts.appendChild(btn('I changed my mind', 'minor', async ()=> show('remove')));
-    renderLink(acts, `${t.name} is back in ${cur.name}. Send them the link to open it again, or they can use the one they already have`);
-  }
-  function renderForget(){
-    if(!target){ mode = 'share'; renderShare(); return; }
-    const t = target;
-    body.appendChild(el('p', 'sub', `${t.name} leaves this list for good. Your link changes now, so they can come back only with a new link you send them`));
-    const acts = el('div', 'acts');
-    acts.appendChild(btn(`Forget ${t.name}`, 'main', async ()=>{ target = null; await forgetKeeper(t.uid); show('share'); }));
-    acts.appendChild(btn('Keep them on the list', 'minor', async ()=>{ target = null; show('share'); }));
-    body.appendChild(acts);
-  }
   async function renderLink(acts, sub){
     body.appendChild(el('p', 'sub', sub || 'Friends with this link take the vow and write in this book with you'));
     const box = el('div', 'linkbox');
@@ -1167,7 +1157,7 @@ export function createShelf(api){
     'I swear by cake, I swear by wine:',
     'your word is law, and so is mine.',
   ];
-  let sign = '';
+  let sign = '', swearing = false;
   function renderJoin(){
     body.appendChild(el('p', 'script', 'You have been chosen'));
     body.appendChild(el('p', 'line', 'to become a keeper of'));
@@ -1183,13 +1173,24 @@ export function createShelf(api){
   }
   /* taking the invitation works the book's own magic on the card: its words lift off
      like erased letters, and the vow burns in line by line like fresh writing */
+  let accepting = false;
   async function accept(){
-    const card = view.querySelector('.card');
-    if(calm()) return show('vow');
-    await vanish(card, body, ()=> api.sfx && api.sfx('vanish', true));
-    body.classList.replace('leaving', 'arriving');
-    show('vow');
-    await burnIn(card, body, ()=> api.sfx && api.sfx('burn'));
+    if(accepting || mode !== 'join') return;
+    accepting = true;
+    try{
+      const card = view.querySelector('.card');
+      if(calm()) return show('vow');
+      await vanish(card, body, ()=> api.sfx && api.sfx('vanish', true));
+      body.classList.replace('leaving', 'arriving');
+      show('vow');
+      await burnIn(card, body, ()=> api.sfx && api.sfx('burn'));
+      const name = body.querySelector('.sign input');
+      if(name && !name.value) name.focus();
+    }catch(e){
+      body.classList.remove('ghost', 'leaving', 'arriving');
+      view.querySelectorAll('canvas.magic').forEach(c => c.remove());
+      show('vow');
+    }finally{ accepting = false; }
   }
   function renderVow(){
     const box = el('div', 'vow');
@@ -1198,7 +1199,14 @@ export function createShelf(api){
     body.appendChild(box);
     const sig = el('div', 'sign');
     const acts = el('div', 'acts');
-    const seal = async open => { wantJoin({ ...joinWant, vowed: true }); await open(); };
+    /* the vow is sealed once at a time, and a failure says so instead of leaving the card mute */
+    const seal = async open => {
+      if(swearing || !joinWant) return;
+      swearing = true;
+      try{ wantJoin({ ...joinWant, vowed: true }); await open(); }
+      catch(e){ api.toast('NO CONNECTION. TRY AGAIN LATER', 2400); }
+      finally{ swearing = false; }
+    };
     /* a Google account signs with its own name; a guest, even one this browser has
        been before, writes a name afresh, since a new invitation starts from nothing */
     if(user && !user.isAnonymous){
@@ -1216,7 +1224,7 @@ export function createShelf(api){
       name.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); open(); } });
       acts.appendChild(btn('I swear', 'main', open));
       acts.appendChild(btn('Sign with Google instead', 'minor', ()=> seal(signIn)));
-      if(!name.value) setTimeout(()=> name.focus(), 60);
+      if(!name.value && !body.classList.contains('arriving')) setTimeout(()=> name.focus(), 60);
     }
     body.appendChild(acts);
   }
@@ -1241,8 +1249,11 @@ export function createShelf(api){
   async function invite(){
     if(lsGet(SIGNED_KEY) && !joinWant.vowed){
       try{
-        await firebase();
-        const mine = user && await F.getDoc(ref('books', joinWant.id, 'members', user.uid));
+        /* a slow line does not keep a keeper at the circle: after a few seconds the card shows */
+        const mine = await Promise.race([
+          firebase().then(()=> user && F.getDoc(ref('books', joinWant.id, 'members', user.uid))),
+          wait(4000).then(()=> null),
+        ]);
         if(mine && mine.exists()){ wantJoin({ ...joinWant, vowed: true }); await join(); if(view.hidden) release(); return; }
       }catch(e){}
     }
