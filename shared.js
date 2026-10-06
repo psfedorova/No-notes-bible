@@ -493,15 +493,17 @@ export function createShelf(api){
       batch.set(ref('books', id, 'invite', 'code'), { code });
       link = { id, url: joinUrl(id, code) };
     }
-    batch.commit().catch(()=>{ if(guest) link = null; api.toast('COULD NOT REMOVE. TRY AGAIN LATER', 2600); });
+    batch.commit().catch(e=>{ console.warn('remove keeper', e); if(guest) link = null; api.toast(`COULD NOT REMOVE. ${refused(e)}`, 3200); });
   }
+  /* the server's rules turning a change down read differently from a lost connection */
+  const refused = e => e && e.code === 'permission-denied' ? 'THE BOOK’S RULES DO NOT ALLOW IT' : 'TRY AGAIN LATER';
   /* the creator lets a keeper only read, or write again, or come back */
   function allow(uid, can){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
     const r = ref('books', cur.id, 'access', uid);
     const name = (names.get(uid) || 'Friend').replace(/ \(guest\)$/, '').slice(0, 60);
     (can ? F.setDoc(r, { can, name, at: F.serverTimestamp() }) : F.deleteDoc(r))
-      .catch(()=> api.toast('COULD NOT CHANGE IT. TRY AGAIN LATER', 2600));
+      .catch(e=>{ console.warn('keeper access', e); api.toast(`COULD NOT CHANGE IT. ${refused(e)}`, 3200); });
   }
 
   /* ---------- letters: local pages <-> ink docs ---------- */
