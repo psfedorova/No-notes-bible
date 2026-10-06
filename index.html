@@ -320,7 +320,6 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   background:rgba(214,164,74,.22); color:#ffe6ae; font:600 16px var(--text-font); cursor:pointer;
 }
 .shelf .linkbox .copy:hover, .shelf .linkbox .copy:focus-visible{ box-shadow:0 0 12px rgba(236,192,102,.35); outline:none; }
-.shelf .hint .inline{ border:0; background:none; padding:0; color:var(--gold); font:inherit; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
 /* small buttons for what is done to a keeper, to the book, to the account */
 .shelf .pill{
   flex:none; min-height:32px; padding:2px 14px; border-radius:16px; border:1px solid rgba(214,164,74,.3);
@@ -329,22 +328,38 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .pill:hover, .shelf .pill:focus-visible{ background:rgba(255,210,120,.08); border-color:var(--gold-line); outline:none; }
 .shelf .pill.danger{ color:#eaa48c; border-color:rgba(234,164,140,.35); }
 .shelf .pill.danger:hover, .shelf .pill.danger:focus-visible{ background:rgba(234,164,140,.08); border-color:rgba(234,164,140,.6); }
-.shelf .seg{ flex:none; display:inline-flex; padding:2px; border-radius:16px; border:1px solid rgba(214,164,74,.3); }
-.shelf .seg button{
-  min-height:26px; padding:0 11px; border-radius:13px; border:0; background:none;
-  color:var(--gold-dim); font:500 15px var(--text-font); cursor:pointer;
-}
-.shelf .seg button[aria-pressed=true]{ background:rgba(214,164,74,.22); color:#ffe6ae; cursor:default; }
-.shelf .seg button:focus-visible{ outline:1px solid var(--gold-line); }
-.shelf .keepers{ margin:4px 0 8px; font-size:17px; }
-.shelf .keepers .row{ display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px dashed rgba(214,164,74,.16); }
-.shelf .keepers .row:last-child{ border-bottom:0; }
-.shelf .keepers .name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.shelf .tools{ display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:14px; padding-top:16px; border-top:1px dashed rgba(214,164,74,.16); }
+/* the open book's name is the title; a tap on it lists the other books */
+.shelf .pick{ text-align:center; }
+.shelf .pick > summary{ list-style:none; display:inline-flex; align-items:center; gap:10px; cursor:pointer; }
+.shelf .pick > summary::-webkit-details-marker, .shelf .more > summary::-webkit-details-marker, .shelf .menu-p > summary::-webkit-details-marker{ display:none; }
+.shelf .pick > summary h2{ padding:0; text-transform:uppercase; }
+.shelf .pick .list{ text-align:left; margin:14px 0 8px; }
+.shelf .chev{ display:inline-block; width:8px; height:8px; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:translateY(-2px) rotate(45deg); color:var(--gold-dim); transition:transform .2s; }
+.shelf details[open] > summary .chev{ transform:translateY(2px) rotate(225deg); }
+/* people: one Change button each, its choices open under the row */
+.shelf .people{ margin-top:8px; }
+.shelf .people .row{ position:relative; display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px dashed rgba(214,164,74,.16); }
+.shelf .people .row:last-child{ border-bottom:0; }
+.shelf .people .name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:17px; }
+.shelf .people .name small{ display:block; font-style:italic; font-size:14px; color:var(--gold-dim); }
+.shelf .menu-p{ flex:none; }
+.shelf .menu-p > summary{ list-style:none; display:inline-flex; align-items:center; }
+.shelf .menu-p[open] > summary{ background:rgba(255,210,120,.08); border-color:var(--gold-line); }
+.shelf .opts{ position:absolute; right:0; top:calc(100% - 2px); z-index:3; min-width:220px; display:grid; padding:6px; border-radius:12px; border:1px solid var(--gold-line); background:#23261a; box-shadow:0 8px 24px rgba(0,0,0,.5); }
+.shelf .opts button{ padding:9px 12px; border:0; border-radius:8px; background:none; color:#ffe6ae; font:500 16px var(--text-font); text-align:left; cursor:pointer; }
+.shelf .opts button:hover, .shelf .opts button:focus-visible{ background:rgba(255,210,120,.08); outline:none; }
+.shelf .opts button.on{ color:var(--gold-dim); cursor:default; }
+.shelf .opts button.on::after{ content:' ✓'; color:var(--gold); }
+.shelf .opts button.danger{ color:#eaa48c; }
+.shelf .opts hr{ margin:4px 8px; border:0; border-top:1px solid rgba(214,164,74,.2); }
+/* the book's own tools fold away under Book settings */
+.shelf .more{ margin-top:14px; padding-top:12px; border-top:1px dashed rgba(214,164,74,.16); }
+.shelf .more > summary{ list-style:none; display:flex; justify-content:center; align-items:center; gap:8px; min-height:32px; cursor:pointer; font-style:italic; font-size:15px; color:var(--gold-dim); }
+.shelf .tools{ display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:10px; }
 .shelf .who{ display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:6px 10px; margin-top:16px; font-style:italic; color:var(--gold-dim); font-size:15px; }
 .shelf .who .pill{ font-style:normal; }
 .shelf .body[data-mode=ask] h2:empty{ display:none; }
-@media (max-width:420px){ .shelf .keepers .row{ flex-wrap:wrap; } .shelf .keepers .name{ flex-basis:100%; } }
+
 /* the invitation: a card on a leaf of the book, sealed in wax, written in brown ink */
 .shelf.locked .close{ display:none; }
 .shelf .hint{ margin:6px 0 0; text-align:center; font-style:italic; color:var(--gold-dim); font-size:14px; }

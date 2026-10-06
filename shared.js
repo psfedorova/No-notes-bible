@@ -497,6 +497,17 @@ export function createShelf(api){
   }
   /* the server's rules turning a change down read differently from a lost connection */
   const refused = e => e && e.code === 'permission-denied' ? 'THE BOOK’S RULES DO NOT ALLOW IT' : 'TRY AGAIN LATER';
+  /* the creator forgets a removed keeper: they leave the Removed list, and the
+     link changes in the same batch, so only a new link brings them back */
+  async function forgetKeeper(uid){
+    if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
+    const id = cur.id, code = randomId(32);
+    const batch = F.writeBatch(F.db);
+    batch.delete(ref('books', id, 'access', uid));
+    batch.set(ref('books', id, 'invite', 'code'), { code });
+    try{ await batch.commit(); link = { id, url: joinUrl(id, code) }; }
+    catch(e){ console.warn('forget keeper', e); api.toast(`COULD NOT FORGET THEM. ${refused(e)}`, 3200); }
+  }
   /* the creator lets a keeper only read, or write again, or come back */
   function allow(uid, can){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
@@ -795,6 +806,7 @@ export function createShelf(api){
   const dismiss = ()=>{ if(!locked()) close(); };
   view.addEventListener('pointerdown', e=>{ if(e.target === view) dismiss(); });
   view.querySelector('.close').addEventListener('click', dismiss);
+  view.addEventListener('click', e => view.querySelectorAll('details.menu-p[open]').forEach(d => { if(!d.contains(e.target)) d.open = false; }));
   view.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key === 'Escape'){ e.preventDefault(); dismiss(); } });
   function show(m){ mode = m; view.hidden = false; api.blurQuill(); render(); }
   function close(){ sign = ''; if(asking) asking.done(false); view.hidden = true; mode = 'share'; api.focusQuill(); }
@@ -816,10 +828,10 @@ export function createShelf(api){
     if(!n.length) return 'waiting for a friend';
     return n.length > 4 ? `with ${n.slice(0, 3).join(', ')} and ${n.length - 3} more` : `with ${n.join(', ')}`;
   }
-  const TITLES = { share: 'SHARE THE BOOK', join: 'AN INVITATION', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', remove: 'REMOVE A KEEPER', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '' };
+  const TITLES = { share: 'SHARE THE BOOK', join: 'AN INVITATION', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', remove: 'REMOVE A KEEPER', forget: 'FORGET A KEEPER', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '' };
   function render(){
     body.textContent = '';
-    if(['leave', 'remove', 'del', 'rename'].includes(mode) && !cur) mode = 'share';
+    if(['leave', 'remove', 'forget', 'del', 'rename'].includes(mode) && !cur) mode = 'share';
     body.dataset.mode = mode;
     view.classList.toggle('locked', locked());
     view.classList.toggle('invite', locked());
@@ -828,7 +840,7 @@ export function createShelf(api){
     body.appendChild(el('h2', null, TITLES[mode]));
     if(mode === 'ask'){ body.firstChild.textContent = asking.title; renderAsk(); return; }
     if(!F && mode !== 'join' && mode !== 'vow'){ body.appendChild(el('p', 'sub', 'Loading…')); firebase().then(()=>{ if(!view.hidden) render(); }).catch(()=>{ body.lastChild.textContent = 'No connection. Try again later'; }); return; }
-    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, shut: renderShut, leave: renderLeave, remove: renderRemove, del: renderDelete, rename: renderRename, name: renderName, out: renderOut })[mode]();
+    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, shut: renderShut, leave: renderLeave, remove: renderRemove, forget: renderForget, del: renderDelete, rename: renderRename, name: renderName, out: renderOut })[mode]();
   }
   function bookRow(title, sub, on, fn){
     const b = el('button', 'book' + (on ? ' on' : ''));
@@ -837,6 +849,20 @@ export function createShelf(api){
     if(on) b.appendChild(el('span', 'tick', '✓'));
     b.addEventListener('click', async ()=>{ await fn(); render(); });
     return b;
+  }
+  /* the title is the open book; a tap on it lists the others and a new one */
+  function bookPicker(){
+    const pick = el('details', 'pick');
+    const sum = el('summary');
+    sum.appendChild(el('h2', null, cur ? cur.name : 'Private book'));
+    sum.appendChild(el('i', 'chev'));
+    pick.appendChild(sum);
+    const list = el('div', 'list');
+    list.appendChild(bookRow('Private book', copied() ? 'only you · a copy is in your Google account' : 'only you', !cur, async ()=> goPersonal()));
+    books.forEach(b => list.appendChild(bookRow(b.name, cur && cur.id === b.id ? others() : 'shared', cur && cur.id === b.id, ()=> openBook(b.id))));
+    if(cur) list.appendChild(bookRow('+ New shared book', 'a fresh book and its own link', false, ()=> createBook(`${myName()}’s book`, true)));
+    pick.appendChild(list);
+    body.querySelector('h2').replaceWith(pick);
   }
   /* the private book is shared by making a shared copy of it, which opens */
   function renderShare(){
@@ -858,20 +884,14 @@ export function createShelf(api){
       body.appendChild(acts);
       return;
     }
+    if(cur || books.length) bookPicker();
     if(cur) renderLink(acts);
     else if(made >= MAX_BOOKS){
-      body.appendChild(el('p', 'sub', `You keep ${MAX_BOOKS} shared books, the most there can be. Open one below to share it, or delete one of yours to make room`));
+      body.appendChild(el('p', 'sub', `You keep ${MAX_BOOKS} shared books, the most there can be. Open one from the list above to share it, or delete one of yours to make room`));
     }else{
       body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. Each of you can erase only your own writing'));
       acts.appendChild(btn('Get a link', 'main', ()=> createBook(`${myName()}’s book`, true)));
       body.appendChild(acts);
-    }
-    if(books.length){
-      body.appendChild(el('h3', null, 'Your books'));
-      const list = el('div', 'list');
-      list.appendChild(bookRow('Private book', copied() ? 'only you · a copy is in your Google account' : 'only you', !cur, async ()=> goPersonal()));
-      books.forEach(b => list.appendChild(bookRow(b.name, cur && cur.id === b.id ? others() : 'shared', cur && cur.id === b.id, ()=> openBook(b.id))));
-      body.appendChild(list);
     }
     if(cur && user) renderKeepers();
     if(user && !real()) body.appendChild(el('p', 'sub', 'Your ink is kept by this browser. Sign in with Google to keep it on any device'));
@@ -898,50 +918,75 @@ export function createShelf(api){
     if(!cur.owner) return;
     if(cur.owner !== user.uid){
       if(reading) body.appendChild(el('p', 'sub', 'You can read this book. Its creator has not let you write in it'));
-      const acts = el('div', 'acts');
-      acts.appendChild(btn('Leave this book', 'minor', async ()=> show('leave')));
-      body.appendChild(acts);
+      const tools = el('div', 'tools');
+      tools.appendChild(pill('Leave this book', ()=> show('leave')));
+      body.appendChild(tools);
       return;
     }
-    const tools = el('div', 'tools');
-    tools.appendChild(pill('Rename the book', ()=> show('rename')));
-    tools.appendChild(pill('Delete the book', ()=> show('del'), 'danger'));
     const rest = [...names.entries()].filter(([u]) => u !== user.uid);
     const shut = [...access.entries()].filter(([u, a]) => a.can === 'none' && !names.has(u));
-    if(rest.length){
-      body.appendChild(el('h3', null, `Keepers · ${rest.length}`));
-      const list = el('div', 'keepers');
+    const menu = items => {
+      const d = el('details', 'menu-p');
+      const sum = el('summary', 'pill', 'Change');
+      d.appendChild(sum);
+      const opts = el('div', 'opts');
+      items.forEach(it => {
+        if(!it){ opts.appendChild(el('hr')); return; }
+        const b = el('button', (it.on ? 'on' : '') + (it.danger ? ' danger' : ''), it.text);
+        b.type = 'button';
+        b.addEventListener('click', ()=>{ d.open = false; if(!it.on) it.fn(); });
+        opts.appendChild(b);
+      });
+      d.appendChild(opts);
+      return d;
+    };
+    const person = (name, note, items) => {
+      const row = el('div', 'row');
+      const who = el('span', 'name', name);
+      who.appendChild(el('small', null, note));
+      row.appendChild(who);
+      row.appendChild(menu(items));
+      return row;
+    };
+    if(rest.length || shut.length){
+      const sec = el('div', 'people');
+      if(rest.length) sec.appendChild(el('h3', null, `People · ${rest.length}`));
       rest.forEach(([uid, name])=>{
         const reads = (access.get(uid) || {}).can === 'read';
-        const row = el('div', 'row');
-        row.appendChild(el('span', 'name', name));
-        const seg = el('div', 'seg');
-        seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', `What ${name} can do`);
-        [['Writes', false], ['Reads', true]].forEach(([text, r])=>{
-          const b = el('button', null, text);
-          b.type = 'button';
-          b.setAttribute('aria-pressed', String(reads === r));
-          b.addEventListener('click', ()=>{ if(reads !== r) allow(uid, r ? 'read' : null); });
-          seg.appendChild(b);
-        });
-        row.appendChild(seg);
-        row.appendChild(pill('Remove', ()=>{ target = { uid, name }; show('remove'); }));
-        list.appendChild(row);
+        const plain = name.replace(/ \(guest\)$/, '');
+        const note = `${guests.has(uid) ? 'guest, ' : ''}${reads ? 'only reads' : 'writes'}`;
+        sec.appendChild(person(plain, note, [
+          { text: 'Can write', on: !reads, fn: ()=> allow(uid, null) },
+          { text: 'Can only read', on: reads, fn: ()=> allow(uid, 'read') },
+          null,
+          { text: 'Remove from the book', danger: true, fn: ()=>{ target = { uid, name: plain }; show('remove'); } }
+        ]));
       });
-      body.appendChild(list);
-    }
-    if(shut.length){
-      body.appendChild(el('h3', null, 'Removed'));
-      const list = el('div', 'keepers');
+      if(shut.length) sec.appendChild(el('h3', null, 'Removed'));
       shut.forEach(([uid, a])=>{
-        const row = el('div', 'row');
-        row.appendChild(el('span', 'name', a.name || 'Friend'));
-        row.appendChild(pill('Let back in', ()=> allow(uid, null)));
-        list.appendChild(row);
+        const name = a.name || 'Friend';
+        sec.appendChild(person(name, 'cannot open the book', [
+          { text: 'Let back in', fn: ()=> allow(uid, null) },
+          null,
+          { text: 'Forget for good', danger: true, fn: ()=>{ target = { uid, name }; show('forget'); } }
+        ]));
       });
-      body.appendChild(list);
+      body.appendChild(sec);
     }
-    body.appendChild(tools);
+    const more = el('details', 'more');
+    const sum = el('summary');
+    sum.appendChild(document.createTextNode('Book settings'));
+    sum.appendChild(el('i', 'chev'));
+    more.appendChild(sum);
+    const tools = el('div', 'tools');
+    tools.appendChild(pill('Rename', ()=> show('rename')));
+    tools.appendChild(pill('New invite link', async ()=>{
+      const l = await inviteLink(true);
+      if(l){ api.toast('NEW LINK MADE. THE OLD ONE NO LONGER WORKS', 2600); render(); }
+    }));
+    tools.appendChild(pill('Delete the book', ()=> show('del'), 'danger'));
+    more.appendChild(tools);
+    body.appendChild(more);
   }
   function renderDelete(){
     body.appendChild(el('p', 'sub', `Everything written in ${cur.name}, by you and by everyone else, disappears for good. Download it first if you want to keep it`));
@@ -1015,8 +1060,17 @@ export function createShelf(api){
     acts.appendChild(btn('Keep them', 'minor', async ()=>{ target = null; show('share'); }));
     body.appendChild(acts);
   }
+  function renderForget(){
+    if(!target){ mode = 'share'; renderShare(); return; }
+    const t = target;
+    body.appendChild(el('p', 'sub', `${t.name} leaves this list for good. Your link changes now, so they can come back only with a new link you send them`));
+    const acts = el('div', 'acts');
+    acts.appendChild(btn(`Forget ${t.name}`, 'main', async ()=>{ target = null; await forgetKeeper(t.uid); show('share'); }));
+    acts.appendChild(btn('Keep them on the list', 'minor', async ()=>{ target = null; show('share'); }));
+    body.appendChild(acts);
+  }
   async function renderLink(acts){
-    body.appendChild(el('p', 'sub', 'Send this link to as many friends as you like. They take the vow, sign it and write with you'));
+    body.appendChild(el('p', 'sub', 'Friends with this link take the vow and write in this book with you'));
     const box = el('div', 'linkbox');
     const url0 = el('span', 'url', 'Making a link…');
     box.appendChild(url0);
@@ -1035,17 +1089,6 @@ export function createShelf(api){
     });
     box.appendChild(copy);
     if(navigator.share) acts.appendChild(btn('Send the link', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'You’ve been invited to become a keeper of our bible. No notes', url: link.url }); }catch(e){} }));
-    if(user && cur.owner === user.uid){
-      const note = el('p', 'hint', 'Anyone with this link can join. Shared it by mistake? ');
-      const again = el('button', 'inline', 'Make a new one');
-      again.type = 'button';
-      again.addEventListener('click', async ()=>{
-        const l = await inviteLink(true);
-        if(l){ url0.textContent = shown(l); url0.title = l; api.toast('NEW LINK MADE. THE OLD ONE NO LONGER WORKS', 2600); }
-      });
-      note.appendChild(again);
-      acts.after(note);
-    }
   }
   /* ---------- the invitation: a card on the book's own paper, the rules, the vow, a signature ---------- */
   const RULES = ['What is written here is gospel*', 'It is not up for discussion', 'If a page bores you, turn it'];
