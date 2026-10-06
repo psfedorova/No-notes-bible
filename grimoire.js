@@ -31,7 +31,7 @@ import {
   clamp, lerp, smooth, mulberry32, fbm, upsample, cv, normalFromHeight, tex,
   setMaxAniso, makeSpriteCanvas, makeRayAlpha, crackCanvas, fieldFromCanvas
 } from './textures.js?v=4';
-import { createShelf, sharingOn } from './shared.js?v=18';
+import { createShelf, sharingOn } from './shared.js?v=23';
 
 const T0 = performance.now();
 /* ?film: the opening film is shot from this very scene, one frame at a time (film.js).
@@ -3384,8 +3384,8 @@ function stepSparks(dt){
 const MUTE_KEY = 'liber-arcanum.muted';
 const sfx = (()=>{
   let ac = null, out = null, noise = null;
-  let muted = true, ambStarted = false;
-  try{ muted = localStorage.getItem(MUTE_KEY) !== '0'; }catch(e){}
+  let muted = false, ambStarted = false;
+  try{ muted = localStorage.getItem(MUTE_KEY) === '1'; }catch(e){}
   function ready(){
     if(muted) return null;
     if(!ac){
@@ -6556,6 +6556,7 @@ async function boot(){
     blurQuill: ()=>{ closeMenu(); if(writing) quill.blur(); },
     focusQuill: ()=>{ if(writing) quill.focus({ preventScroll: true }); },
     paper: invitePaper,
+    sfx: (k, arg)=>{ if(sfx[k]) sfx[k](arg); },
   });
   shelf.start();
   /* the title page and the blanks were painted before the fonts arrived */

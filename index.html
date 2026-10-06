@@ -24,9 +24,11 @@
   --ui-font:'Cormorant SC','Cormorant Garamond',serif;
   --text-font:'Cormorant Garamond',serif;
   --gilt:linear-gradient(180deg, #f3d995, #a8782f 55%, #e2bd72);
-  --gilt-gap:#14160d;
-  --gilt-fillet:rgba(236,196,110,.7);
   --face:radial-gradient(120% 140% at 50% 0%, #2f3419, #11130b 70%);
+  /* the controls: one gilt hairline over a dark face the scene shows faintly through */
+  --face-lite:radial-gradient(120% 140% at 50% 0%, rgba(30,34,18,.66), rgba(9,11,6,.6) 70%);
+  --hairline:rgba(226,189,114,.78);
+  --lift:0 6px 18px rgba(0,0,0,.45);
 }
 *{ margin:0; padding:0; box-sizing:border-box; }
 html,body{ height:100%; overflow:hidden; background:var(--night); }
@@ -66,20 +68,21 @@ body.cur-pointer{ cursor:pointer; }
 .bar{ top:18px; right:18px; display:flex; gap:10px; }
 .rune{
   width:44px; height:44px; border-radius:50%;
-  border:1.5px solid transparent;
-  background:var(--face) padding-box, var(--gilt) border-box;
+  border:1px solid var(--hairline);
+  background:var(--face-lite);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
   color:#e6c47a; font-size:20px; line-height:1;
   display:flex; align-items:center; justify-content:center;
   cursor:pointer; font-family:var(--ui-font);
-  box-shadow:inset 0 0 0 2.5px var(--gilt-gap), inset 0 0 0 3.5px var(--gilt-fillet), 0 4px 12px rgba(0,0,0,.6);
+  box-shadow:var(--lift);
   transition:color .25s, box-shadow .25s, opacity .25s;
 }
 .rune svg{ transition:filter .25s; }
-.rune:hover, .rune:focus-visible{ color:#ffe6ae; outline:none; }
+.rune:hover, .rune:focus-visible{ color:#ffe6ae; outline:none; box-shadow:0 0 14px rgba(236,192,102,.3), var(--lift); }
 .rune:hover svg, .rune:focus-visible svg{ filter:drop-shadow(0 0 6px rgba(255,200,110,.8)); }
 .rune.on{
   color:#ffe6ae;
-  box-shadow:inset 0 0 0 2.5px var(--gilt-gap), inset 0 0 0 3.5px var(--gilt-fillet), inset 0 0 16px rgba(255,206,110,.4), 0 0 16px rgba(236,192,102,.5), 0 4px 12px rgba(0,0,0,.6);
+  box-shadow:inset 0 0 14px rgba(255,206,110,.35), 0 0 16px rgba(236,192,102,.45), var(--lift);
 }
 .rune[disabled]{ opacity:.35; pointer-events:none; }
 .rune[hidden]{ display:none; }
@@ -89,12 +92,12 @@ body.cur-pointer{ cursor:pointer; }
 #btnBook .ico-close, #btnBook.open .ico-open{ display:none; }
 #btnBook.open .ico-close{ display:block; }
 
-/* pagination: a gilt label like the ones on an old spine, rounded ends and a double fillet */
+/* pagination: a gilt label like the ones on an old spine, rounded ends and one hairline */
 .pager{
   bottom:18px; left:50%; transform:translateX(-50%);
   height:58px; padding:0 6px;
   display:flex; align-items:center;
-  filter:drop-shadow(0 6px 14px rgba(0,0,0,.6));
+  filter:drop-shadow(0 6px 14px rgba(0,0,0,.45));
   animation:fadein .4s ease-out;
 }
 .pager[hidden]{ display:none; }
@@ -103,13 +106,11 @@ body.cur-pointer{ cursor:pointer; }
 .settling .bar, .settling .pager{ opacity:0; pointer-events:none; }
 .pager{ transition:opacity .4s; }
 body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
-.pager::before, .pager::after, .pager .fillet{
+.pager::after, .pager .fillet{
   content:''; position:absolute; z-index:0; pointer-events:none; border-radius:999px;
 }
-.pager::before{ inset:0; background:var(--gilt); }
-.pager .fillet.under{ inset:1.5px; background:linear-gradient(180deg, #262a17, #0f110a); }
-.pager .fillet.line{ inset:4px; background:linear-gradient(180deg, rgba(236,196,110,.75), rgba(170,120,50,.6)); }
-.pager::after{ inset:5px; background:var(--face); }
+.pager .fillet{ display:none; }
+.pager::after{ inset:0; border:1px solid var(--hairline); background:var(--face-lite); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
 .pager > button, .pageno{ position:relative; z-index:1; }
 .pager > button{
   width:48px; height:48px; flex-shrink:0; padding:0; border:0; background:transparent;
@@ -155,6 +156,9 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   transition:opacity .9s ease; cursor:default;
 }
 #intro.gone{ opacity:0; pointer-events:none; }
+/* after the whole film its last frame is the live book itself, so the film gives way at
+   once, before the camera sets off: a slow fade would show both copies of the page drifting */
+#intro.gone.swift{ transition-duration:.2s; }
 #intro video{
   position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
   opacity:0; transition:opacity .6s ease;
@@ -218,9 +222,9 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .menu{
   top:72px; right:18px; min-width:230px; padding:8px;
   display:flex; flex-direction:column; gap:2px;
-  border-radius:18px; border:1.5px solid transparent;
+  border-radius:18px; border:1px solid transparent;
   background:var(--face) padding-box, var(--gilt) border-box;
-  box-shadow:inset 0 0 0 2.5px var(--gilt-gap), inset 0 0 0 3.5px var(--gilt-fillet), 0 10px 30px rgba(0,0,0,.65);
+  box-shadow:0 10px 30px rgba(0,0,0,.55);
   animation:fadein .2s ease-out;
 }
 .menu[hidden]{ display:none; }
@@ -257,9 +261,9 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .spells[hidden]{ display:none; }
 .spells .card{
   position:relative; width:min(560px, 100%); max-height:calc(100vh - 32px); overflow:auto;
-  padding:24px 28px 20px; border-radius:18px; border:1.5px solid transparent;
+  padding:24px 28px 20px; border-radius:18px; border:1px solid transparent;
   background:var(--face) padding-box, var(--gilt) border-box;
-  box-shadow:inset 0 0 0 2.5px var(--gilt-gap), inset 0 0 0 3.5px var(--gilt-fillet), 0 10px 40px rgba(0,0,0,.7);
+  box-shadow:0 10px 40px rgba(0,0,0,.6);
   color:rgba(240,226,192,.92); font-size:17px;
 }
 .spells h2{ font-family:var(--ui-font); font-weight:700; letter-spacing:5px; color:var(--gold); font-size:17px; text-align:center; text-shadow:0 0 14px rgba(255,190,90,.35); }
@@ -296,7 +300,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   min-height:46px; padding:6px 18px; border-radius:23px; border:1px solid var(--gold-line); background:transparent;
   color:#ffe6ae; font:600 17px var(--text-font); cursor:pointer;
 }
-.shelf .btn.main{ background:rgba(214,164,74,.22); }
+.shelf .btn.main{ border-color:var(--hairline); background:linear-gradient(180deg, rgba(240,200,120,.14), rgba(240,200,120,.04)); }
 .shelf .btn:hover, .shelf .btn:focus-visible{ box-shadow:0 0 12px rgba(236,192,102,.35); outline:none; }
 .shelf .btn[disabled]{ opacity:.5; pointer-events:none; }
 .shelf .btn.minor{ min-height:36px; border:0; color:var(--gold-dim); font:italic 500 15px var(--text-font); text-decoration:underline; }
@@ -358,59 +362,68 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .tools{ display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:10px; }
 .shelf .who{ display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:6px 10px; margin-top:16px; font-style:italic; color:var(--gold-dim); font-size:15px; }
 .shelf .who .pill{ font-style:normal; }
-.shelf .body[data-mode=ask] h2:empty{ display:none; }
+.shelf .body h2:empty{ display:none; }
 
-/* the invitation: a card on a leaf of the book, sealed in wax, written in brown ink */
+/* the invitation: a leaf of the book's story, a magic circle at the head, written in brown ink */
 .shelf.locked .close{ display:none; }
 .shelf .hint{ margin:6px 0 0; text-align:center; font-style:italic; color:var(--gold-dim); font-size:14px; }
-.shelf.invite{ --ink:#3b2612; --ink-soft:#6b4b2a; --ink-rule:rgba(59,38,18,.5); }
+.shelf.over{ z-index:36; }
+.shelf.invite{ --fs-s:15px; --fs-m:19px; --fs-l:44px; --ink:#3b2612; --ink-soft:#6b4b2a; --ink-rule:rgba(59,38,18,.5); --flourish:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-90 -10 180 20'%3E%3Cg fill='none' stroke='%236b4b2a' stroke-width='.9' stroke-linecap='round'%3E%3Cpath d='M-80 0H-17M17 0H80'/%3E%3Cpath d='M-7 0C-10 -1 -12 -5 -15 -5S-19 -2 -16.5 -1.2 -14 -3 -15 -3.6'/%3E%3Cpath d='M-7 0C-10 1 -12 5 -15 5S-19 2 -16.5 1.2 -14 3 -15 3.6'/%3E%3Cpath d='M7 0C10 -1 12 -5 15 -5S19 -2 16.5 -1.2 14 -3 15 -3.6'/%3E%3Cpath d='M7 0C10 1 12 5 15 5S19 2 16.5 1.2 14 3 15 3.6'/%3E%3C/g%3E%3Cg fill='%236b4b2a'%3E%3Cpath d='M0 -7 2.4 0 0 7 -2.4 0Z'/%3E%3Cpath d='M-84 0-78 -1.8V1.8ZM84 0 78 -1.8V1.8Z'/%3E%3C/g%3E%3C/svg%3E"); }
 .shelf.invite .card{
-  width:min(470px, 100%); padding:30px 58px 64px; border:0; border-radius:2px;
+  width:min(470px, 100%); padding:40px 58px 88px; border:0; border-radius:2px;
   background:#e6d2a6 center/100% 100% no-repeat; color:var(--ink);
   box-shadow:0 26px 70px rgba(0,0,0,.7), 0 3px 8px rgba(0,0,0,.45);
   animation:invite .8s cubic-bezier(.2,.7,.2,1);
 }
 @keyframes invite{ from{ opacity:0; transform:translateY(18px) rotate(-1.2deg) scale(.97); } to{ opacity:1; transform:none; } }
-.shelf.invite .seal{ width:74px; height:74px; margin:0 auto 6px; filter:drop-shadow(0 3px 3px rgba(40,10,4,.45)); }
-.shelf.invite .seal svg{ display:block; width:100%; height:100%; }
-.shelf.invite .body[data-mode=vow]{ padding-top:24px; }
-.shelf.invite h2{ padding:0; color:var(--ink-soft); font-size:14px; letter-spacing:6px; text-shadow:none; }
-.shelf.invite h2::after{
-  content:''; display:block; width:150px; height:10px; margin:8px auto 0;
-  background:radial-gradient(circle, var(--ink-soft) 0 2px, transparent 2.5px) center/10px 10px no-repeat,
-    linear-gradient(90deg, transparent, var(--ink-rule) 30%, transparent 45%, transparent 55%, var(--ink-rule) 70%, transparent) center/100% 1px no-repeat;
-}
-.shelf.invite .script{ margin:14px 0 2px; text-align:center; font:400 46px/1.15 'Great Vibes', cursive; color:var(--ink); }
-.shelf.invite .line{ text-align:center; font-style:italic; font-size:18px; color:var(--ink-soft); }
-.shelf.invite .title{ margin:4px 0 6px; text-align:center; font:700 23px/1.2 var(--ui-font); letter-spacing:2px; color:var(--ink); }
-.shelf.invite .orn{ width:120px; height:14px; margin:16px auto 14px; background:
-  radial-gradient(circle, var(--ink-soft) 0 1.6px, transparent 2px) 0 50%/40px 14px repeat-x; opacity:.75; }
+.shelf.invite h2{ padding:16px 0 0; color:var(--ink-soft); font:600 var(--fs-s) var(--text-font); letter-spacing:6px; text-transform:uppercase; text-shadow:none; }
+.shelf.invite h2::after{ content:''; display:block; width:170px; height:18px; margin:8px auto 0; background:var(--flourish) center/contain no-repeat; }
+.shelf.invite .script{ margin:22px 0 4px; text-align:center; font:400 var(--fs-l)/1.15 'Great Vibes', cursive; color:var(--ink); }
+.shelf.invite .line{ text-align:center; font-style:italic; font-size:var(--fs-m); color:var(--ink-soft); }
+.shelf.invite .title{ margin:2px 0 4px; text-align:center; font:600 var(--fs-m)/1.3 var(--text-font); color:var(--ink); overflow-wrap:anywhere; }
+.shelf.invite .orn{ width:150px; height:16px; margin:22px auto 16px; background:var(--flourish) center/contain no-repeat; }
 .shelf.invite .rules{ list-style:none; display:flex; flex-direction:column; gap:7px; width:max-content; max-width:100%; margin:0 auto; padding:0; }
-.shelf.invite .rules li{ display:flex; align-items:baseline; gap:12px; font-size:19px; }
-.shelf.invite .rules b{ flex:0 0 26px; text-align:right; font:600 15px var(--ui-font); letter-spacing:1px; color:var(--ink-soft); }
-.shelf.invite .note{ margin:10px 0 0; text-align:center; font-style:italic; font-size:15px; color:var(--ink-soft); }
-.shelf.invite .vow{ margin:16px 0 0; text-align:center; font:italic 500 20px/1.5 var(--text-font); color:var(--ink); }
-.shelf.invite .vow .amen{ margin-top:10px; font:700 15px var(--ui-font); letter-spacing:6px; color:var(--ink-soft); }
-.shelf.invite .sign{ margin-top:22px; text-align:center; }
+.shelf.invite .rules li{ display:flex; align-items:baseline; gap:12px; font-size:var(--fs-m); }
+.shelf.invite .rules b{ flex:0 0 26px; text-align:right; font:italic 500 var(--fs-s) var(--text-font); color:var(--ink-soft); }
+.shelf.invite .vow{ margin:18px 0 0; text-align:center; font:italic 500 var(--fs-m)/1.5 var(--text-font); color:var(--ink); }
+.shelf.invite .vow .amen{ margin-top:14px; font:600 var(--fs-s) var(--text-font); font-style:normal; letter-spacing:6px; text-transform:uppercase; color:var(--ink-soft); }
+.shelf.invite .vow .amen::after{ content:''; display:block; width:150px; height:16px; margin:10px auto 0; background:var(--flourish) center/contain no-repeat; }
+.shelf.invite .sign{ margin-top:16px; text-align:center; }
 .shelf.invite .sign input[type=text], .shelf.invite .sign .name{
   display:block; width:80%; height:auto; margin:0 auto; padding:0 0 2px; border:0; border-bottom:1px solid var(--ink-rule); border-radius:0;
-  background:transparent; box-shadow:none; text-align:center; font:400 40px/1.25 'Great Vibes', cursive; color:#2a1808; caret-color:var(--ink);
+  background:transparent; box-shadow:none; text-align:center; font:400 var(--fs-l)/1.2 'Great Vibes', cursive; color:#2a1808; caret-color:var(--ink);
 }
 .shelf.invite .sign input[type=text]:focus{ border-bottom-color:var(--ink); }
 .shelf.invite .sign input[type=text]::placeholder{ color:rgba(59,38,18,.3); }
-.shelf.invite .sign .cap{ margin-top:6px; font:600 11px var(--ui-font); letter-spacing:2.5px; text-transform:uppercase; color:var(--ink-soft); }
-.shelf.invite .acts{ margin-top:22px; align-items:center; }
-.shelf.invite .btn.main{ min-width:min(240px, 100%); padding:0 30px; }
-.shelf.invite .btn.main{ border:1px solid #2a180a; background:#4b2d15; color:#f4e4bf; font-size:18px; letter-spacing:1px; box-shadow:inset 0 1px 0 rgba(255,224,170,.18); }
-.shelf.invite .btn.main:hover, .shelf.invite .btn.main:focus-visible{ background:#5c3819; box-shadow:0 4px 14px rgba(59,38,18,.35); }
-.shelf.invite .btn.minor{ color:var(--ink-soft); }
+.shelf.invite .sign .cap{ margin-top:6px; font:600 var(--fs-s) var(--text-font); letter-spacing:2.5px; text-transform:uppercase; color:var(--ink-soft); }
+.shelf.invite .acts{ margin-top:28px; align-items:center; gap:4px; }
+/* the button speaks the book's own button language, the pager's and the Share card's:
+   a dark face with rounded ends, one gilt hairline, gold letters. On the pale card it
+   is plainly the thing to press. It never grows: the gilt only warms under the pointer */
+.shelf.invite .btn.main{
+  min-width:min(270px, 100%); min-height:50px; padding:0 36px; border:1px solid var(--hairline); border-radius:999px;
+  background:var(--face); color:var(--gold); font:500 var(--fs-m) var(--text-font);
+  text-shadow:0 1px 2px rgba(0,0,0,.6); box-shadow:0 4px 10px rgba(40,24,8,.35);
+  cursor:pointer; transition:color .25s, box-shadow .25s, transform .08s;
+}
+.shelf.invite .btn.main:hover, .shelf.invite .btn.main:focus-visible{ color:#ffe6ae; box-shadow:0 0 0 1px rgba(236,192,102,.35), 0 4px 14px rgba(40,24,8,.4); }
+.shelf.invite .btn.main:focus-visible{ outline:1px solid rgba(59,38,18,.6); outline-offset:3px; }
+.shelf.invite .btn.main:active{ transform:translateY(1px); box-shadow:0 2px 5px rgba(40,24,8,.35); }
+/* the card's magic (invite-magic.js): the letters and their light are drawn over the card
+   while the text itself waits unseen, and the ornaments follow the words */
+.shelf.invite .card canvas.magic{ position:absolute; left:0; top:0; z-index:2; pointer-events:none; }
+.shelf.invite .card canvas.magic.glow{ filter:blur(1.5px); mix-blend-mode:screen; }
+.shelf.invite .body.ghost *{ color:transparent; text-shadow:none; }
+.shelf.invite .body .orn, .shelf.invite .body h2::after, .shelf.invite .body .amen::after, .shelf.invite .body .sign, .shelf.invite .body .acts{ transition:opacity .7s ease, filter .7s ease; }
+.shelf.invite .body.leaving .orn, .shelf.invite .body.leaving h2::after, .shelf.invite .body.leaving .acts{ opacity:0; filter:drop-shadow(0 0 6px rgba(255,214,140,.9)); }
+.shelf.invite .body.arriving h2::after, .shelf.invite .body.arriving .amen::after, .shelf.invite .body.arriving .sign, .shelf.invite .body.arriving .acts{ opacity:0; }
+.shelf.invite .btn.minor{ color:var(--ink-soft); font-size:var(--fs-s); }
 .shelf.invite .btn.minor:hover, .shelf.invite .btn.minor:focus-visible{ color:var(--ink); }
 @media (prefers-reduced-motion:reduce){ .shelf.invite .card{ animation:none; } }
 @media (max-width:420px){
-  .shelf.invite .card{ padding:24px 34px 48px; }
-  .shelf.invite .script{ font-size:38px; }
-  .shelf.invite .vow{ font-size:17px; }
-  .shelf.invite .rules li{ font-size:17px; }
+  .shelf.invite .card{ padding:30px 34px 72px; }
+  .shelf.invite{ --fs-s:14px; --fs-m:17px; --fs-l:38px; }
+  .shelf.invite .btn.main{ padding:0 18px; white-space:nowrap; }
 }
 @media (max-width:420px){ .shelf h2{ padding:0 24px; letter-spacing:2px; font-size:16px; } .shelf .card{ padding:22px 20px 18px; } }
 @keyframes fadein{ from{ opacity:0; } to{ opacity:1; } }
@@ -522,8 +535,17 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
     if(I.gone) return;
     I.gone = true;
     I.take(mode);
-    box.classList.add('gone');
+    box.classList.add(...(mode === 'open' ? ['swift', 'gone'] : ['gone']));
     setTimeout(()=>{ v.removeAttribute('src'); v.load(); if(I.film) URL.revokeObjectURL(I.film); box.remove(); }, 1000);
+  };
+  /* the film has its music, unless the reader turned the sound off; a browser that
+     will not let a page sound before it is touched gets the film without it */
+  let quiet = false;
+  try{ quiet = localStorage.getItem('liber-arcanum.muted') === '1'; }catch(e){}
+  const roll = mute=>{
+    v.muted = mute;
+    const p = v.play();
+    if(p && p.catch) p.catch(()=>{ if(!mute) roll(true); else finish('closed'); });
   };
   /* the circle completes and flares, then the veil lifts */
   let lifting = false;
@@ -535,19 +557,18 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
     if(!I.film || noFilm){ setTimeout(()=>finish('closed'), 700); return; }
     /* the player starts under the veil, so its first steps are never seen */
     v.addEventListener('playing', ()=>setTimeout(()=>box.classList.add('play', 'reveal'), 250), { once: true });
-    setTimeout(()=>{
-      const p = v.play();
-      if(p && p.catch) p.catch(()=>finish('closed'));
-    }, 450);
+    setTimeout(()=>roll(quiet), 450);
     setTimeout(()=>{ if(!playing) finish('closed'); }, 4000);
   };
   const check = ()=>{
-    if(I.gone || lifting || !I.take) return;
+    if(I.gone || lifting || !I.take || I.holding) return;
     if(noFilm) return lift();
     if(I.film && v.readyState >= 2) return lift();
     if(performance.now() - bookAt > LATE){ noFilm = true; if(ctl) ctl.abort(); lift(); }
   };
   I.ready = take=>{ I.take = take; bookAt = performance.now(); check(); };
+  /* an invitation is read over the circle first; the film waits until it is done */
+  I.wait = p=>{ I.holding = true; p.then(()=>{ I.holding = false; bookAt = performance.now(); check(); }); };
 
   setInterval(()=>{
     if(I.gone || lifting) return;
@@ -571,7 +592,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   /* the film comes down whole before it plays, so it never waits on the line */
   const fetchCut = async cut=>{
     ctl = new AbortController();
-    const res = await fetch('assets/intro/' + kind + cut + '.mp4?v=4', { signal: ctl.signal });
+    const res = await fetch('assets/intro/' + kind + cut + '.mp4?v=6', { signal: ctl.signal });
     if(!res.ok) throw new Error(res.status);
     filmTotal = +res.headers.get('content-length') || filmTotal;
     filmGot = 0;
@@ -608,7 +629,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 
   const skip = ()=>{ if(playing && !I.gone) finish(v.currentTime > OPENED ? 'open' : 'closed'); };
   box.addEventListener('pointerdown', skip);
-  addEventListener('keydown', e=>{ if(!I.gone && !e.metaKey && !e.ctrlKey){ e.stopPropagation(); skip(); } }, true);
+  addEventListener('keydown', e=>{ if(!I.gone && !I.holding && !e.metaKey && !e.ctrlKey){ e.stopPropagation(); skip(); } }, true);
 })();
 </script>
 
@@ -621,7 +642,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 <div class="ui spells" id="spells" hidden><div class="card" role="dialog" aria-label="Shortcuts"><button class="close" aria-label="Close">✕</button><h2>SPELLS OF THE TOME</h2><p class="sub">keyboard shortcuts</p></div></div>
 
 <div class="ui bar">
-  <button class="rune muted" id="btnSound" title="Sound off (M)" aria-label="Forest sound" aria-pressed="false"><svg class="ico-on" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.2 9.2a4 4 0 0 1 0 5.6M17.8 6.6a7.6 7.6 0 0 1 0 10.8" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg><svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></button>
+  <button class="rune" id="btnSound" title="Sound on (M)" aria-label="Forest sound" aria-pressed="true"><svg class="ico-on" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.2 9.2a4 4 0 0 1 0 5.6M17.8 6.6a7.6 7.6 0 0 1 0 10.8" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg><svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></button>
   <button class="rune" id="btnBook" title="Open the book (O)" aria-label="Open the book"><svg class="ico-open" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 6.6C9.8 5 6.9 4.5 3.2 5v13.2c3.7-.5 6.6 0 8.8 1.6 2.2-1.6 5.1-2.1 8.8-1.6V5c-3.7-.5-6.6 0-8.8 1.6z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M12 6.6v13.2" stroke="currentColor" stroke-width="1.2"/><path d="M5.6 8.6c1.8-.2 3.4.1 4.6.8M5.6 11.4c1.8-.2 3.4.1 4.6.8M18.4 8.6c-1.8-.2-3.4.1-4.6.8M18.4 11.4c-1.8-.2-3.4.1-4.6.8" stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round" opacity=".75"/></svg><svg class="ico-close" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="5.5" y="3.2" width="13.5" height="17.6" rx="1.6" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M8.3 3.2v17.6" stroke="currentColor" stroke-width="1.2"/><circle cx="13.6" cy="10.4" r="1.7" fill="currentColor"/><path d="M13.6 6.6v1.6M13.6 12.6v1.6M10.6 10.4h1.4M15.6 10.4h1.4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg></button>
   <button class="rune" id="btnWrite" title="Lay the book open and write" aria-label="Lay the book open and write"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M20.5 2.5c-6 1-11 5.5-13.2 12.3l-1.6 4.9 1.4.5 1.2-3.3c3.6-.4 6.6-2.3 8.4-5.3-1.4.3-2.7.2-3.9-.2 2.6-.6 4.6-2.1 5.9-4.3-1 .1-1.9 0-2.8-.3 2-.9 3.6-2.4 4.6-4.3z" fill="currentColor"/><path d="M4.2 21.5c1.8-.4 3.5-.2 5 .4" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg></button>
   <button class="rune" id="btnMore" title="More" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="18.5" cy="12" r="1.7" fill="currentColor"/></svg></button>
@@ -669,6 +690,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=100"></script>
+<script type="module" src="./grimoire.js?v=105"></script>
 </body>
 </html>

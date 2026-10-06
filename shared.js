@@ -11,6 +11,7 @@
    so it comes back on a new device or after the browser forgets it.
    ==========================================================================*/
 import { FIREBASE } from './book-config.js';
+import { vanish, burnIn, calm } from './invite-magic.js?v=5';
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/';
 const EMU = /[?&]emu\b/.test(location.search);
@@ -29,8 +30,8 @@ const MAX_BOOKS = 3;            // firestore.rules holds each person to the same
 const KEEP_PART = 200000;       // letters in one part of the private book's copy; the rules allow 250000
 const KEEP_MS = 15000;
 const SLOW_MS = 6000;
-const wait = ms => new Promise(res => setTimeout(res, ms));
 const MAKE_MS = 20000;
+const wait = ms => new Promise(res => setTimeout(res, ms));
 
 export const sharingOn = !!FIREBASE || EMU;
 
@@ -377,6 +378,7 @@ export function createShelf(api){
       b.update(ref('books', id), { name });
       b.set(ref('users', user.uid, 'books', id), { name, at: F.serverTimestamp() });
       await Promise.race([b.commit(), wait(4000)]);
+      api.toast(`THE BOOK IS NOW CALLED ${name.toUpperCase()}`, 2400);
     }catch(e){ api.toast('COULD NOT RENAME THE BOOK', 2400); }
   }
   /* a guest signs with any name and may change it later, in every book they keep */
@@ -388,6 +390,7 @@ export function createShelf(api){
     const uid = user.uid;
     books.forEach(b => F.updateDoc(ref('books', b.id, 'members', uid), { name }).catch(()=>{}));
     api.refresh();
+    api.toast(`THE KEEPERS NOW KNOW YOU AS ${name.toUpperCase()}`, 2400);
   }
 
   /* ---------- the private book's copy in the Google account ---------- */
@@ -495,7 +498,8 @@ export function createShelf(api){
       batch.set(ref('books', id, 'invite', 'code'), { code });
       link = { id, url: joinUrl(id, code) };
     }
-    batch.commit().catch(e=>{ console.warn('remove keeper', e); if(guest) link = null; api.toast(`COULD NOT REMOVE. ${refused(e)}`, 3200); });
+    batch.commit().then(()=> api.toast(`${name.toUpperCase()} CAN NO LONGER OPEN THE BOOK`, 2600))
+      .catch(e=>{ console.warn('remove keeper', e); if(guest) link = null; api.toast(`COULD NOT REMOVE. ${refused(e)}`, 3200); });
   }
   /* the server's rules turning a change down read differently from a lost connection */
   const refused = e => e && e.code === 'permission-denied' ? 'THE BOOK’S RULES DO NOT ALLOW IT' : 'TRY AGAIN LATER';
@@ -504,10 +508,11 @@ export function createShelf(api){
   async function forgetKeeper(uid){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
     const id = cur.id, code = randomId(32);
+    const name = String((access.get(uid) || {}).name || 'Friend').slice(0, 40);
     const batch = F.writeBatch(F.db);
     batch.delete(ref('books', id, 'access', uid));
     batch.set(ref('books', id, 'invite', 'code'), { code });
-    try{ await batch.commit(); link = { id, url: joinUrl(id, code) }; }
+    try{ await batch.commit(); link = { id, url: joinUrl(id, code) }; api.toast(`${name.toUpperCase()} IS FORGOTTEN. YOUR LINK IS NEW`, 2800); }
     catch(e){ console.warn('forget keeper', e); api.toast(`COULD NOT FORGET THEM. ${refused(e)}`, 3200); }
   }
   /* the creator lets a keeper she sent away back in: their place returns as it was,
@@ -528,6 +533,7 @@ export function createShelf(api){
     const r = ref('books', cur.id, 'access', uid);
     const name = (names.get(uid) || 'Friend').replace(/ \(guest\)$/, '').slice(0, 60);
     (can ? F.setDoc(r, { can, name, at: F.serverTimestamp() }) : F.deleteDoc(r))
+      .then(()=> api.toast(can ? `${name.toUpperCase()} CAN ONLY READ NOW` : `${name.toUpperCase()} CAN WRITE AGAIN`, 2400))
       .catch(e=>{ console.warn('keeper access', e); api.toast(`COULD NOT CHANGE IT. ${refused(e)}`, 3200); });
   }
 
@@ -747,12 +753,6 @@ export function createShelf(api){
     link = { id, url: joinUrl(id, code) };
     show('share');
   }
-  /* the link carries who invites and to which book, so the invitation can say it
-     before the friend is let in to read either */
-  const joinUrl = (id, code)=> `${location.origin}${location.pathname}#join=${id}.${code}`
-    + `&from=${encodeURIComponent(myName())}&book=${encodeURIComponent(cur ? cur.name : 'Our book')}`;
-  /* the link is fetched once per book and kept, so the card can redraw freely */
-  async function inviteLink(rotate){
   /* a new book takes a few seconds (a guest is signed in first): the card says so
      meanwhile, and lets go if the connection never answers */
   async function makeBook(guest){
@@ -770,6 +770,12 @@ export function createShelf(api){
       if(!view.hidden && mode === 'share') render();
     }
   }
+  /* the link carries who invites and to which book, so the invitation can say it
+     before the friend is let in to read either */
+  const joinUrl = (id, code)=> `${location.origin}${location.pathname}#join=${id}.${code}`
+    + `&book=${encodeURIComponent(cur ? cur.name : 'Our book')}`;
+  /* the link is fetched once per book and kept, so the card can redraw freely */
+  async function inviteLink(rotate){
     await firebase();
     if(!cur) return null;
     const id = cur.id;
@@ -841,7 +847,7 @@ export function createShelf(api){
   view.addEventListener('click', e => view.querySelectorAll('details.menu-p[open]').forEach(d => { if(!d.contains(e.target)) d.open = false; }));
   view.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key === 'Escape'){ e.preventDefault(); dismiss(); } });
   function show(m){ mode = m; view.hidden = false; api.blurQuill(); render(); }
-  function close(){ sign = ''; if(asking) asking.done(false); view.hidden = true; mode = 'share'; api.focusQuill(); }
+  function close(){ sign = ''; if(asking) asking.done(false); view.hidden = true; mode = 'share'; api.focusQuill(); release(); }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if(cls) e.className = cls; if(text !== undefined) e.textContent = text; return e; };
   function pill(text, fn, cls){
     const b = el('button', 'pill' + (cls ? ' ' + cls : ''), text);
@@ -860,13 +866,14 @@ export function createShelf(api){
     if(!n.length) return 'waiting for a friend';
     return n.length > 4 ? `with ${n.slice(0, 3).join(', ')} and ${n.length - 3} more` : `with ${n.join(', ')}`;
   }
-  const TITLES = { share: 'SHARE THE BOOK', join: 'AN INVITATION', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', remove: 'REMOVE A KEEPER', back: 'LET BACK IN', backIn: 'LET BACK IN', forget: 'FORGET A KEEPER', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '' };
+  const TITLES = { share: 'SHARE THE BOOK', join: '', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', remove: 'REMOVE A KEEPER', back: 'LET BACK IN', backIn: 'LET BACK IN', forget: 'FORGET A KEEPER', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '' };
   function render(){
     body.textContent = '';
     if(['leave', 'remove', 'back', 'backIn', 'forget', 'del', 'rename'].includes(mode) && !cur) mode = 'share';
     body.dataset.mode = mode;
     view.classList.toggle('locked', locked());
     view.classList.toggle('invite', locked());
+    view.classList.toggle('over', !!invited);
     const card = view.querySelector('.card');
     card.style.backgroundImage = locked() && api.paper ? `url(${api.paper()})` : '';
     body.appendChild(el('h2', null, TITLES[mode]));
@@ -899,6 +906,7 @@ export function createShelf(api){
   /* the private book is shared by making a shared copy of it, which opens */
   function renderShare(){
     const acts = el('div', 'acts');
+    if(making){ body.appendChild(el('p', 'sub', 'Making the book and its link…')); return; }
     if(clash && real()) renderClash();
     if(!user){
       body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. No account needed. Each of you can erase only your own writing'));
@@ -906,7 +914,6 @@ export function createShelf(api){
       body.appendChild(input);
       body.appendChild(el('p', 'hint', 'the name your friend sees by your writing'));
       const go = async ()=>{
-    if(making){ body.appendChild(el('p', 'sub', 'Making the book and its link…')); return; }
         const name = input.value.trim();
         if(!name){ input.focus(); api.toast('WRITE YOUR NAME FIRST', 1600); return; }
         await makeBook(name);
@@ -1142,7 +1149,7 @@ export function createShelf(api){
     if(navigator.share) acts.prepend(btn('Send the link', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'You’ve been invited to become a keeper of our bible. No notes', url: link.url }); }catch(e){} }));
   }
   /* ---------- the invitation: a card on the book's own paper, the rules, the vow, a signature ---------- */
-  const RULES = ['What is written here is gospel*', 'It is not up for discussion', 'If a page bores you, turn it'];
+  const RULES = ['What is written here is gospel', 'It is not up for discussion', 'If a page bores you, turn it'];
   const VOW = [
     'I swear that what I write is true.',
     'I swear: no notes, from me or you.',
@@ -1151,28 +1158,29 @@ export function createShelf(api){
     'I swear by cake, I swear by wine:',
     'your word is law, and so is mine.',
   ];
-  const SEAL = '<svg viewBox="0 0 80 80" aria-hidden="true"><defs><radialGradient id="wax" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="#a8392c"/><stop offset=".55" stop-color="#7c2119"/><stop offset="1" stop-color="#4c110c"/></radialGradient></defs>'
-    + '<path fill="url(#wax)" d="M40 3c6 0 8 3 13 4s9 1 12 6 2 8 5 12 6 7 5 13-4 8-4 13 1 9-3 13-8 3-12 6-7 6-13 6-8-4-13-5-9 0-12-4-2-8-6-11-6-6-6-12 4-8 4-13-2-9 2-13 8-3 12-6 9-9 16-9z"/>'
-    + '<circle cx="40" cy="40" r="24" fill="none" stroke="#3a0b07" stroke-opacity=".55" stroke-width="2.4"/><circle cx="40" cy="40" r="24" fill="none" stroke="#e08a6a" stroke-opacity=".28" stroke-width="1" transform="translate(-.8 -.8)"/>'
-    + '<path fill="none" stroke="#3a0b07" stroke-opacity=".6" stroke-width="2" stroke-linejoin="round" d="M40 22 47.8 56.2 25.9 28.8 57.5 44 22.5 44 54.1 28.8 32.2 56.2Z"/>'
-    + '<path fill="none" stroke="#f0a98a" stroke-opacity=".3" stroke-width=".9" stroke-linejoin="round" transform="translate(-.7 -.7)" d="M40 22 47.8 56.2 25.9 28.8 57.5 44 22.5 44 54.1 28.8 32.2 56.2Z"/></svg>';
   let sign = '';
   function renderJoin(){
-    const seal = el('div', 'seal'); seal.innerHTML = SEAL;
-    body.prepend(seal);
-    const from = joinWant && joinWant.from;
-    body.appendChild(el('p', 'script', from ? `${from} invites you` : 'You are invited'));
+    body.appendChild(el('p', 'script', 'You have been chosen'));
     body.appendChild(el('p', 'line', 'to become a keeper of'));
     body.appendChild(el('p', 'title', joinWant && joinWant.book || 'this bible'));
-    body.appendChild(el('p', 'line', 'Ours. No notes'));
+    body.appendChild(el('p', 'line', 'where our story begins'));
     body.appendChild(el('div', 'orn'));
     const list = el('ol', 'rules');
     RULES.forEach((r, i)=>{ const li = el('li'); li.appendChild(el('b', null, ['I', 'II', 'III'][i])); li.appendChild(el('span', null, r)); list.appendChild(li); });
     body.appendChild(list);
-    body.appendChild(el('p', 'note', '* typos included'));
     const acts = el('div', 'acts');
-    acts.appendChild(btn('Accept the invitation', 'main', async ()=> show('vow')));
+    acts.appendChild(btn('Accept the invitation', 'main', accept));
     body.appendChild(acts);
+  }
+  /* taking the invitation works the book's own magic on the card: its words lift off
+     like erased letters, and the vow burns in line by line like fresh writing */
+  async function accept(){
+    const card = view.querySelector('.card');
+    if(calm()) return show('vow');
+    await vanish(card, body, ()=> api.sfx && api.sfx('vanish', true));
+    body.classList.replace('leaving', 'arriving');
+    show('vow');
+    await burnIn(card, body, ()=> api.sfx && api.sfx('burn'));
   }
   function renderVow(){
     const box = el('div', 'vow');
@@ -1184,7 +1192,7 @@ export function createShelf(api){
     const seal = async open => { wantJoin({ ...joinWant, vowed: true }); await open(); };
     if(user){
       sig.appendChild(el('p', 'name', myName()));
-      sig.appendChild(el('p', 'cap', 'your signature'));
+      sig.appendChild(el('p', 'cap', 'your name'));
       body.appendChild(sig);
       acts.appendChild(btn('I swear', 'main', ()=> seal(join)));
     }else{
@@ -1192,9 +1200,8 @@ export function createShelf(api){
       name.autocomplete = 'given-name';
       name.addEventListener('input', ()=>{ sign = name.value; });
       sig.appendChild(name);
-      sig.appendChild(el('p', 'cap', 'the name your friends will see'));
       body.appendChild(sig);
-      const open = ()=>{ if(!name.value.trim()){ name.focus(); api.toast('SIGN YOUR NAME FIRST', 1600); return; } return seal(()=> joinAsGuest(name.value)); };
+      const open = ()=>{ if(!name.value.trim()){ name.focus(); api.toast('WRITE YOUR NAME FIRST', 1600); return; } return seal(()=> joinAsGuest(name.value)); };
       name.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); open(); } });
       acts.appendChild(btn('I swear', 'main', open));
       acts.appendChild(btn('Sign with Google instead', 'minor', ()=> seal(signIn)));
@@ -1216,13 +1223,16 @@ export function createShelf(api){
   }
 
   /* ---------- start ---------- */
+  /* the opening film waits while the invitation is on the screen */
+  let invited = null;
+  const release = ()=>{ if(invited){ invited(); invited = null; } };
   /* the vow is said once: someone already in the book goes straight in */
   async function invite(){
     if(lsGet(SIGNED_KEY) && !joinWant.vowed){
       try{
         await firebase();
         const mine = user && await F.getDoc(ref('books', joinWant.id, 'members', user.uid));
-        if(mine && mine.exists()){ wantJoin({ ...joinWant, vowed: true }); return join(); }
+        if(mine && mine.exists()){ wantJoin({ ...joinWant, vowed: true }); await join(); if(view.hidden) release(); return; }
       }catch(e){}
     }
     show(joinWant.vowed ? 'vow' : 'join');
@@ -1239,11 +1249,14 @@ export function createShelf(api){
       if(m){
         const q = new URLSearchParams(m[3].slice(1));
         const said = (k, max)=> (q.get(k) || '').trim().slice(0, max) || null;
-        wantJoin({ id: m[1], code: m[2], from: said('from', 24), book: said('book', 60) });
+        wantJoin({ id: m[1], code: m[2], book: said('book', 60) });
       }else wantJoin(kept);
       if(m) history.replaceState(null, '', location.pathname + location.search);
-      /* the invitation comes once the opening is over and the book is still */
-      Promise.resolve(api.settled && api.settled()).then(invite);
+      /* the invitation comes first, over the loading circle, and the film waits for it:
+         the touches on the card are what let the film play with its music */
+      const opening = window.__intro;
+      if(opening && !opening.gone && opening.wait){ opening.wait(new Promise(r=>{ invited = r; })); invite(); }
+      else Promise.resolve(api.settled && api.settled()).then(invite);
     }
     else if(lsGet(SIGNED_KEY)) firebase().catch(()=>{});
     const c = lsGet(CUR_KEY);
