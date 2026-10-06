@@ -74,13 +74,16 @@ try{
     c.close();
     poses[k] = { start, end };
     const [W, H] = C.out, scale = `scale=${W}:${H}:flags=lanczos`;
+    /* tagged bt709 limited range, so every browser decodes the colours alike */
+    const tag = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
+    const yuv = ':out_color_matrix=bt709:out_range=tv,format=yuv420p';
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-framerate', String(fps), '-i', path.join(frames, 'f%04d.jpg'),
-      '-vf', `${scale},format=yuv420p`, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '29', '-x264-params', 'aq-mode=3', '-profile:v', 'high', '-level', '4.2',
+      '-vf', scale + yuv, ...tag, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '29', '-x264-params', 'aq-mode=3', '-profile:v', 'high', '-level', '4.2',
       '-movflags', '+faststart', '-an', path.join(OUT, `${k}.mp4`)]);
     /* a lighter cut for slow connections, and a light first-frame still */
     const [lw, lh] = C.lite;
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-framerate', String(fps), '-i', path.join(frames, 'f%04d.jpg'),
-      '-vf', `scale=${lw}:${lh}:flags=lanczos,format=yuv420p`, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '30', '-x264-params', 'aq-mode=3', '-profile:v', 'high', '-level', '4.0',
+      '-vf', `scale=${lw}:${lh}:flags=lanczos` + yuv, ...tag, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '30', '-x264-params', 'aq-mode=3', '-profile:v', 'high', '-level', '4.0',
       '-movflags', '+faststart', '-an', path.join(OUT, `${k}_lite.mp4`)]);
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', path.join(frames, 'f0000.jpg'), '-vf', scale, '-q:v', '7', path.join(OUT, `${k}.jpg`)]);
     fs.rmSync(frames, { recursive: true, force: true });

@@ -628,7 +628,8 @@ function at(t, dt){
    and up as the gold runs out and the circle grows, round to the reader's side as the
    board opens, and down onto the title page; keyed in time and joined by a spline that
    is smooth in speed as well as in place (Catmull-Rom with the keys' own times), so
-   there are no cuts and no jolts. The last key is the reader's own view, and over the
+   there are no cuts and no jolts. The eye sets off from rest, so the film rises out of
+   its own still frame. The last key is the reader's own view, and over the
    last second the eye is handed to the live camera exactly */
 const rig = { t: 0, hand: 0, keys: null };
 function sph(l, az, el, d){
@@ -660,8 +661,7 @@ function buildRig(end){
   const n = keys.length;
   for(let i=0;i<n;i++){
     const k = keys[i];
-    if(i === 0){ k.vp = keys[1].p.clone().sub(k.p).multiplyScalar(0.5/(keys[1].t - k.t)); k.vl = keys[1].l.clone().sub(k.l).multiplyScalar(0.5/(keys[1].t - k.t)); }
-    else if(i === n - 1){ k.vp = new THREE.Vector3(); k.vl = new THREE.Vector3(); }
+    if(i === 0 || i === n - 1){ k.vp = new THREE.Vector3(); k.vl = new THREE.Vector3(); }
     else {
       const a = keys[i - 1], b = keys[i + 1], dt = b.t - a.t;
       k.vp = b.p.clone().sub(a.p).divideScalar(dt);
