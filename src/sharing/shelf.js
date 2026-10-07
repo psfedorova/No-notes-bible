@@ -1433,27 +1433,31 @@ export function createShelf(api){
     }
   }
 
+  function attention(){
+    if(cur){
+      if(reading) return 'You can only read this book';
+      if(unsent() && !navigator.onLine) return 'Not sent yet: no connection. It goes when you’re back';
+      if(unsent() && slow) return 'Sending…';
+      return '';
+    }
+    return clash && real() ? 'Your Google account keeps another copy: see Share' : '';
+  }
+
   return {
     start, sync, flush,
     open: ()=>{ if(!locked()) show('share'); },
     isOpen: ()=> !view.hidden,
     close: dismiss,
     note: ()=> cur ? [cur.name, others()].filter(Boolean).join(', ') : 'Send the book to a friend',
-    /* one line under the menu on where the writing is kept */
     kept: ()=> !!cur || copied(),
     status: ()=>{
-      if(cur){
-        if(reading) return 'You can only read this book';
-        if(unsent() && !navigator.onLine) return 'Not sent yet: no connection. It goes when you’re back';
-        if(unsent() && slow) return 'Sending…';
-        if(user && user.isAnonymous) return 'Saves automatically, in this browser for you as a guest';
-        return 'Saves automatically';
-      }
-      if(clash && real()) return 'Your Google account keeps another copy: see Share';
+      if(attention()) return attention();
+      if(cur) return user && user.isAnonymous ? 'Saves automatically, in this browser for you as a guest' : 'Saves automatically';
       if(copied()) return 'Saves automatically, with a copy in your Google account';
       if(real()) return 'Saves automatically. A copy goes to your Google account as you write';
       return 'Saves in this browser only';
     },
+    attention,
     keepSoon, ask, personal: ()=> goPersonal(),
     name: h => names.get(h) || null,
     shared: ()=> !!cur,

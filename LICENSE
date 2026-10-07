@@ -1,0 +1,24 @@
+Copyright (c) 2026 fedorova.studio. All rights reserved.
+
+Liber Arcanum: its code, 3D models, textures made for it, illustrations,
+animation, film, sound design, interface and written text are the work of
+fedorova.studio.
+
+This repository is public so the work can be seen. Seeing it gives no licence.
+No part of it may be copied, modified, published, distributed, sold or used in
+another project, in whole or in part, without written permission from
+fedorova.studio. Forking on GitHub is allowed only as GitHub's Terms of Service
+require, and grants no further rights.
+
+Writing that people put in their own books belongs to them, not to
+fedorova.studio.
+
+Third-party material keeps its own licence and is not covered by the notice
+above:
+  - three.js, MIT License (loaded from cdn.jsdelivr.net)
+  - Cormorant Garamond, Cormorant SC, Great Vibes and UnifrakturMaguntia fonts,
+    SIL Open Font License 1.1 (loaded from Google Fonts)
+  - HDRIs, textures and models from Poly Haven, CC0 1.0
+  - Firebase JavaScript SDK, Apache License 2.0
+
+For permission or questions: https://github.com/psfedorova

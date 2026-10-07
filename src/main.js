@@ -44,7 +44,7 @@ import { pickAt } from './input/gestures.js';
 import { flip, setOpen } from './book/turning.js';
 import { erasePages, pour, quillTo, restoreErased } from './ink/spells.js';
 import { seekSpread, turnToPage } from './book/seek.js';
-import { closeMenu, menuEl, refreshUI } from './ui/controls.js';
+import { closeMenu, menuEl, menuNotes, refreshUI } from './ui/controls.js';
 import { backdrop } from './scene/forest.js';
 import { loadAssets } from './assets/load.js';
 import { frame, onResize, rafLoop, update, warmUp } from './app/loop.js';
@@ -80,7 +80,7 @@ async function boot(){
     useBook: (key, hand)=> useBook(key, hand, !booted),
     settled: ()=> settled ? settled.p : Promise.resolve(),
     usePersonal: ()=> useBook(LS_KEY, BROWSER_HAND, !booted),
-    refresh: ()=>{ if(writing && readOnly()) exitWriting(); refreshUI(); if(!menuEl.hidden) menuEl.querySelector('.menu-note').textContent = shelf.status(); },
+    refresh: ()=>{ if(writing && readOnly()) exitWriting(); refreshUI(); if(!menuEl.hidden) menuNotes(); },
     blurQuill: ()=>{ closeMenu(); if(writing) quill.blur(); },
     focusQuill: ()=>{ if(writing) quill.focus({ preventScroll: true }); },
     paper: invitePaper,

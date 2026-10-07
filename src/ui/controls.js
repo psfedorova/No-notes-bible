@@ -34,6 +34,12 @@ const historyPages = ()=> writing ? [writing.n] : st.open ? [2*st.k - 1, 2*st.k]
 function menuView(name){
   menuEl.querySelectorAll('.view').forEach(v=>{ v.hidden = v.dataset.view !== name; });
 }
+function menuNotes(){
+  const need = shelf ? shelf.attention() : '';
+  menuEl.querySelector('.menu-alert').hidden = !need;
+  menuEl.querySelector('.menu-alert .menu-note').textContent = need;
+  menuEl.querySelector('[data-view="files"] .menu-note').textContent = shelf ? shelf.status() : 'Saves automatically';
+}
 function openMenu(){
   closeSpells();
   menuView('main');
@@ -50,7 +56,7 @@ function openMenu(){
   menuBtn('restore').hidden = readOnly() || !lastErase || performance.now() - lastErase.at > 60000;
   menuBtn('history').hidden = !shelf || !shelf.shared() || !historyPages().length;
   menuBtn('files').querySelector('span').textContent = !shelf || shelf.kept() ? 'Download or restore the book' : 'Back it up to keep it safe';
-  menuEl.querySelector('.menu-note').textContent = shelf ? shelf.status() : 'Saves automatically';
+  menuNotes();
   menuEl.hidden = false;
   btnMore.setAttribute('aria-expanded', 'true');
 }
@@ -159,5 +165,5 @@ document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ saveNow
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) saveNow(true); });
 
 export {
-  closeMenu, menuEl, refreshUI, spreadLabel, toggleBook
+  closeMenu, menuEl, menuNotes, refreshUI, spreadLabel, toggleBook
 };

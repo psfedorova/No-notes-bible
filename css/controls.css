@@ -122,6 +122,10 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .menu .back::before{ left:18px; transform:rotate(-135deg); }
 .menu [hidden]{ display:none; }
 .menu-note{ max-width:240px; margin:4px 16px 6px; color:var(--gold-dim); font:italic 500 14px var(--text-font); }
+.menu-mark{ margin:0 16px 6px; color:var(--gold-dim); font:italic 500 13px var(--text-font); opacity:.8; }
+.menu-mark a{ position:relative; color:inherit; text-underline-offset:3px; }
+.menu-mark a::after{ content:''; position:absolute; inset:-14px -10px; }
+.menu-mark a:hover, .menu-mark a:focus-visible{ color:var(--gold); outline:none; }
 @media (pointer:coarse){ .menu .fine{ display:none; } }
 
 

@@ -68,15 +68,17 @@
     <button role="menuitem" data-act="files" class="two more">Files<span>Download or restore the book</span></button>
     <button role="menuitem" data-act="replay">Intro</button>
     <button role="menuitem" data-act="spells" class="fine">Shortcuts</button>
+    <div class="menu-alert" hidden><hr><p class="menu-note"></p></div>
   </div>
   <div class="view" data-view="files" hidden>
     <button role="menuitem" data-act="main" class="back">Files</button>
     <button role="menuitem" data-act="exportText" class="two">Download as text<span>To read or print anywhere</span></button>
     <button role="menuitem" data-act="saveCopy" class="two">Download a backup<span>Everything, to restore later</span></button>
     <button role="menuitem" data-act="openCopy" class="two">Restore a backup<span>Replaces your private book</span></button>
+    <hr>
+    <p class="menu-note">Saves automatically</p>
+    <p class="menu-mark">© 2026 fedorova.studio · <a href="privacy.html">Privacy</a></p>
   </div>
-  <hr>
-  <p class="menu-note">Saves automatically</p>
 </div>
 
 <nav class="ui pager" id="pager" aria-label="Pages" hidden>
@@ -90,6 +92,6 @@
 <pre id="err"></pre>
 
 <script src="src/core/errors.js"></script>
-<script type="module" src="src/main.js?v=122"></script>
+<script type="module" src="src/main.js?v=123"></script>
 </body>
 </html>
