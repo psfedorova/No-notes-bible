@@ -36,8 +36,11 @@ function pageEntry(n){
   return e;
 }
 /* a canvas let go of at once, not whenever the collector comes round: on a phone the
-   pixels of a dropped page would otherwise linger for seconds */
-function freeCanvas(c){ if(c) c.width = c.height = 0; }
+   pixels of a dropped page would otherwise linger for seconds. A sheet the page only
+   borrows (the opening's title sheets) is not the page's to free */
+const lent = new WeakSet();
+function lend(c){ lent.add(c); return c; }
+function freeCanvas(c){ if(c && !lent.has(c)) c.width = c.height = 0; }
 function trimCache(keep){
   if(pageCache.size <= CACHE_MAX) return;
   const list = [...pageCache.entries()].filter(([n])=>!keep.has(n)).sort((a,b)=>a[1].used-b[1].used);
@@ -99,6 +102,6 @@ function paintPage(n, now){
 }
 
 export {
-  defaultFont, freeCanvas, pageCache, pageEntry, pageFont, pages, paintPage,
+  defaultFont, freeCanvas, lend, pageCache, pageEntry, pageFont, pages, paintPage,
   setDefaultFont, trimCache
 };

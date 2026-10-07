@@ -1027,7 +1027,7 @@ export function createShelf(api){
     const list = el('div', 'list');
     list.appendChild(bookRow('Private book', copied() ? 'only you · a copy is in your Google account' : 'only you', !cur, async ()=> goPersonal()));
     books.forEach(b => list.appendChild(bookRow(b.name, cur && cur.id === b.id ? others() : 'shared', cur && cur.id === b.id, ()=> openBook(b.id))));
-    if(cur) list.appendChild(bookRow('New shared book', 'a fresh book and its own link', false, ()=> createBook(`${myName()}’s book`, true), true));
+    if(cur) list.appendChild(bookRow('New shared book', 'a fresh book and its own link', false, ()=> createBook(`${myName()}’s book`, false), true));
     pick.appendChild(list);
     body.querySelector('h2').replaceWith(pick);
   }

@@ -8,7 +8,7 @@ import { camera } from '../scene/renderer.js';
 import { spinGrp } from '../scene/rig.js';
 import { borderArt, drawTitle, gilt, pageBackground, runeStroke, setTitleHidden } from '../book/print.js';
 import { BURN_T, burnNoise, CHAR, COOL_T, EMBER, NIB_DX, NIB_DY, ramp, setBurnNoise, SINGE, softMask } from '../ink/paint.js';
-import { pageEntry, paintPage } from '../book/pages.js';
+import { lend, pageEntry, paintPage } from '../book/pages.js';
 import { pagePointWorld } from '../book/leaves.js';
 import { invalidateLayout, layout, st } from '../book/state.js';
 import { camTarget, fitDistance, homeQuat, orbit, spinGoal } from '../book/view.js';
@@ -71,9 +71,9 @@ let titleFull = null, titleBare = null, titleMix = null, titleMask = null, soak 
 function titleReveal(reach){
   const e = pageEntry(0);
   if(!titleFull){
-    titleFull = pageBackground(0);
-    setTitleHidden(true); titleBare = pageBackground(0); setTitleHidden(false);
-    titleMix = cv(PAGE_W, PAGE_H); titleMask = cv(PAGE_W, PAGE_H);
+    titleFull = lend(pageBackground(0));
+    setTitleHidden(true); titleBare = lend(pageBackground(0)); setTitleHidden(false);
+    titleMix = lend(cv(PAGE_W, PAGE_H)); titleMask = cv(PAGE_W, PAGE_H);
     const w = PAGE_W >> 2, h = PAGE_H >> 2;
     soak = { w, h, c: cv(w, h), n: fbm(w, h, 7, 9, 4, 4242) };
   }
@@ -143,7 +143,7 @@ function burnInit(){
     }
   });
   if(!burnNoise) setBurnNoise(fbm(256, 256, 12, 12, 3, 4242));
-  tb = { W, H, inkA, bands, glyphs, mix: cv(W, H), done: cv(W, H), tmp: cv(W, H), cvs: [cv(8, 8), cv(8, 8), cv(8, 8)], M: null };
+  tb = { W, H, inkA, bands, glyphs, mix: lend(cv(W, H)), done: cv(W, H), tmp: cv(W, H), cvs: [cv(8, 8), cv(8, 8), cv(8, 8)], M: null };
   tb.done.getContext('2d').drawImage(titleBare, 0, 0);
 }
 /* when each letter catches, after the first: line after line down the page, each
