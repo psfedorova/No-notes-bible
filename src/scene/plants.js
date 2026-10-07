@@ -15,10 +15,76 @@ const nearTime = { value: 0 };
 /* the grass grows out to GRASS_R1 and thins away by GRASS_R2 (tenths of a metre from the rock);
    a phone grows it as thick, on the ground nearer the rock */
 const GRASS_R1 = HI_RES ? 32 : 24, GRASS_R2 = HI_RES ? 58 : 42;
-async function nearField(){
+/* where the boulder meets the floor, by bearing in the forest's frame, read smoothly */
+function footAround(a){
+  const fa = (a/(2*Math.PI) + 1)*ROCK_FOOT_N, f0 = Math.floor(fa) % ROCK_FOOT_N, f1 = (f0 + 1) % ROCK_FOOT_N;
+  return lerp(rockFoot[f0] || rockFoot[f1], rockFoot[f1] || rockFoot[f0], fa - Math.floor(fa));
+}
+function groundHeight(G){
+  const half = G.size/2, step = G.size/(G.n - 1);
+  return (x, z)=>{
+    const fx = clamp((x + half)/step, 0, G.n - 1.001), fz = clamp((z + half)/step, 0, G.n - 1.001);
+    const j = fx|0, i = fz|0, u = fx - j, v = fz - i, H = G.h, n = G.n;
+    return lerp(lerp(H[i*n + j], H[i*n + j + 1], u), lerp(H[(i + 1)*n + j], H[(i + 1)*n + j + 1], u), v);
+  };
+}
+/* the moss runs off the boulder onto the floor round its foot in a ragged cushion, in the
+   stone's own moss, so the two are one growth and the rock sits in it */
+function mossSkirt(G, mat){
+  const A = 192, R = 16, hAt = groundHeight(G), rnd = mulberry32(5150);
+  const waves = [1, 2, 3, 5, 8].map(k => [k, rnd()*6.283, 1/k]);
+  const reachAt = a => 2.6 + 3.2*(0.5 + 0.5*waves.reduce((s, [k, ph, w])=> s + Math.sin(a*k + ph)*w, 0)/1.9);
+  const pos = new Float32Array(A*R*3), fade = new Float32Array(A*R), idx = [];
+  for(let i=0;i<A;i++){
+    const a = i/A*2*Math.PI, f = footAround(a), r1 = f + reachAt(a), ca = Math.cos(a), sa = Math.sin(a);
+    for(let j=0;j<R;j++){
+      const t = j/(R - 1), r = lerp(f - 0.8, r1, Math.pow(t, 0.8)), x = r*ca, z = r*sa, k = i*R + j;
+      pos[k*3] = x; pos[k*3 + 1] = hAt(x, z) + 0.05; pos[k*3 + 2] = z;
+      fade[k] = 1 - smooth(clamp((r - f)/(r1 - f), 0, 1));
+    }
+  }
+  for(let i=0;i<A;i++) for(let j=0;j<R - 1;j++){
+    const a = i*R + j, b = ((i + 1) % A)*R + j;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aFade', new THREE.BufferAttribute(fade, 1));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  mesh.userData.noPick = true;
+  mesh.name = 'moss-skirt';
+  return mesh;
+}
+/* a few ferns, periwinkle and mossy pebbles at the boulder's foot, partly hiding where
+   it goes into the ground, as round any old stone in a wood */
+function footPlants(G, list){
+  const hAt = groundHeight(G), rnd = mulberry32(7741), out = [];
+  const pick = a => list.filter(it => it.a === a);
+  const kinds = [['fern_02', 4, 0.8, 2.0, 5, 7.5], ['periwinkle_plant', 7, 0.4, 2.0, 4, 6],
+    ['rock_moss_set_01', 7, -0.3, 1.0, 1.1, 1.9], ['rock_moss_set_02', 6, -0.3, 1.0, 1.1, 1.9]];
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  kinds.forEach(([a, count, r0, r1, s0, s1])=>{
+    const src = pick(a);
+    if(!src.length) return;
+    for(let c=0;c<count;c++){
+      const ang = (c + rnd()*0.8)/count*2*Math.PI + rnd()*0.4, f = footAround(ang);
+      if(!(f > 0)) continue;
+      const r = f + lerp(r0, r1, rnd()), x = r*Math.cos(ang), z = r*Math.sin(ang);
+      const s = lerp(s0, s1, rnd());
+      m.compose(p.set(x, hAt(x, z) - (a.startsWith('rock') ? 0.15*s : 0.1), z), q.setFromAxisAngle(up, rnd()*6.283), sc.set(s, s, s));
+      out.push({ a, v: src[Math.floor(rnd()*src.length)].v, m: m.toArray(), s: 0.25 + 0.2*rnd() });
+    }
+  });
+  return out;
+}
+async function nearField(skirtMat){
   let data;
   try{ data = await retry(async ()=>{ const r = await fetch(ASSETS.forestNear); if(!r.ok) throw new Error(r.status); return r.json(); }); }catch(e){ return; }
-  const list = data.items;
+  const list = data.ground ? data.items.concat(footPlants(data.ground, data.items)) : data.items;
   /* the floor and the stream's surface round the boulder, drawn only into depth, so what
      is buried in the moss or lies under the water stays hidden */
   if(data.ground){
@@ -107,6 +173,7 @@ async function nearField(){
     });
   }));
   if(data.ground) grp.add(grassField(data.ground, stones, tufts));
+  if(data.ground && skirtMat) grp.add(mossSkirt(data.ground, skirtMat));
   grp.rotation.y = FOREST_YAW;
   scene.add(grp);
 }
@@ -219,8 +286,8 @@ function grassField(G, stones, tufts){
       if(Math.hypot(x, z) < footAt(x, z) || underStone(x, z)) continue;
       root[n*4] = x; root[n*4 + 1] = hAt(x, z) - 0.05; root[n*4 + 2] = z; root[n*4 + 3] = rnd();
       blade[n*4] = qa + (rnd() - 0.5)*1.4;
-      blade[n*4 + 1] = (0.6 + 0.9*rnd()*rnd())*(1.15 - 0.45*q)*tall;
-      blade[n*4 + 2] = (0.045 + 0.05*rnd())*WIDE;
+      blade[n*4 + 1] = (0.6 + 0.9*rnd()*rnd())*(1.15 - 0.45*q)*tall*(0.55 + 0.6*rnd());
+      blade[n*4 + 2] = (0.035 + 0.065*rnd())*WIDE;
       blade[n*4 + 3] = 0.08 + 0.55*q + 0.2*rnd();
       n++;
     }
@@ -266,7 +333,11 @@ function grassField(G, stones, tufts){
         vScr = gl_Position;
         float lum = dot(fl, vec3(0.3, 0.59, 0.11));
         vec3 c = max(mix(vec3(lum), fl, 1.3), 0.0)*mix(0.85, 1.15, fract(aRoot.w*7.13));
-        if(fract(aRoot.w*3.7) < 0.12) c = mix(c, lum*vec3(1.3, 1.1, 0.55), 0.6*t);
+        /* patches of grass differ: some fresher and warmer, nearer the yellow-green of the moss,
+           and one blade in five gone to straw */
+        float plot = fract(sin(dot(floor(r.xz*0.35), vec2(12.9898, 78.233)))*43758.5453);
+        c *= mix(vec3(1.0), vec3(1.14, 1.1, 0.78), smoothstep(0.35, 0.9, plot));
+        if(fract(aRoot.w*3.7) < 0.2) c = mix(c, lum*vec3(1.35, 1.12, 0.55), 0.75*t);
         vCol = c*uGain*(1.0 - textureLod(tAO, (r.xz + uAO.x)/uAO.y, 0.0).r*(1.0 - 0.6*t)); vT = t;
       }`,
     fragmentShader: `uniform vec3 uSun; uniform sampler2D tHaze;

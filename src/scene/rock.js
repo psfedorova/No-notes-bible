@@ -69,7 +69,7 @@ function heightNormal(im, strength){
   return rockTex(normalFromHeight(hf, S, S, strength), false);
 }
 const rockTime = { value: 0 };
-function rockMaterial(img){
+function rockMaterial(img, skirt){
   const u = {
     tGranite: { value: rockTex(img.granite, true) }, tGraniteN: { value: heightNormal(img.granite, 1.4) },
     tStone: { value: rockTex(img.stone, true) }, tStoneN: { value: rockTex(img.stoneNor, false) }, sScale: { value: 0.085 },
@@ -77,18 +77,25 @@ function rockMaterial(img){
     gScale: { value: 0.3 }, mScale: { value: 0.7 }, uSunDir: { value: SUN_DIR }, uTime: rockTime
   };
   const m = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 1.3 });
+  if(skirt) m.defines = { SKIRT: '' };
   m.onBeforeCompile = sh=>{
     Object.assign(sh.uniforms, u);
-    sh.vertexShader = 'varying vec3 vWp; varying vec3 vWn;\n' + sh.vertexShader.replace('#include <fog_vertex>',
-      '#include <fog_vertex>\n vWp = (modelMatrix*vec4(position,1.0)).xyz; vWn = normalize(mat3(modelMatrix)*normal);');
+    sh.vertexShader = 'varying vec3 vWp; varying vec3 vWn;\n#ifdef SKIRT\nattribute float aFade; varying float vFade;\n#endif\n' + sh.vertexShader.replace('#include <fog_vertex>',
+      '#include <fog_vertex>\n vWp = (modelMatrix*vec4(position,1.0)).xyz; vWn = normalize(mat3(modelMatrix)*normal);\n#ifdef SKIRT\n vFade = aFade;\n#endif');
     sh.fragmentShader = `uniform sampler2D tGranite, tGraniteN, tMoss, tMossN, tStone, tStoneN; uniform float gScale, mScale, sScale, uTime; uniform vec3 uSunDir;
-      varying vec3 vWp; varying vec3 vWn;` + MOSS_GLSL + sh.fragmentShader
+      varying vec3 vWp; varying vec3 vWn;\n#ifdef SKIRT\nvarying float vFade;\n#endif\n` + MOSS_GLSL + sh.fragmentShader
       .replace('#include <map_fragment>', `
+        vec3 Nw = normalize(vWn), Wt = triW(Nw);
+        #ifdef SKIRT
+        /* the moss runs off the stone over the ground in a ragged cushion */
+        float mm = 1.0;
+        if(vFade < vn3(vWp*1.4)*0.55 + vn3(vWp*4.5)*0.3 + vn3(vWp*12.0)*0.15) discard;
+        #else
         /* the lower half of the boulder is buried: cut at the floor, or it hangs below the
            forest's ground as a dark skirt that slides over the moss as one walks round */
         if(vWp.y < ${GROUND_Y.toFixed(2)}) discard;
-        vec3 Nw = normalize(vWn), Wt = triW(Nw);
         float mm = mossMask(vWp, Nw);
+        #endif
         /* the scanned stone gives the boulder its lichen, stains and cracks at the scale of
            the whole rock; the granite's grain is laid over it for the eye that comes close */
         vec3 stone = tri(tStone, vWp*sScale + 0.37, Wt).rgb;
@@ -100,6 +107,9 @@ function rockMaterial(img){
         float edge = smoothstep(0.0, 0.35, mm)*(1.0 - smoothstep(0.35, 0.9, mm));
         gran *= 1.0 - edge*0.35;
         diffuseColor.rgb *= mix(gran, mos, smoothstep(0.25, 0.75, mm));
+        #ifdef SKIRT
+        diffuseColor.rgb *= mix(0.55, 0.85, vFade);
+        #else
         /* shade gathering low down, where the boulder sinks into the forest floor */
         diffuseColor.rgb *= mix(0.4, 1.0, smoothstep(${GROUND_Y.toFixed(2)} - 0.2, ${(GROUND_Y + 2.6).toFixed(2)}, vWp.y));
         /* the earth it is sunk in: damp dark soil and rotted moss creep up its foot in an
@@ -107,7 +117,8 @@ function rockMaterial(img){
         { float rise = 0.35 + 0.45*vn3(vWp*0.9 + 3.0) + 0.25*(vn3(vWp*4.0) - 0.5);
           float soil = 1.0 - smoothstep(${GROUND_Y.toFixed(2)} + rise*0.45, ${GROUND_Y.toFixed(2)} + rise, vWp.y);
           vec3 earth = mix(vec3(0.075, 0.062, 0.042), vec3(0.11, 0.12, 0.06), vn3(vWp*2.3 + 1.0));
-          diffuseColor.rgb = mix(diffuseColor.rgb, earth, soil*0.85); }`)
+          diffuseColor.rgb = mix(diffuseColor.rgb, earth, soil*0.85); }
+        #endif`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.82, 0.97, mm);')
       .replace('#include <lights_fragment_end>', MOSS_LIT('smoothstep(0.3, 0.8, mm)'))
       .replace('#include <normal_fragment_maps>', `

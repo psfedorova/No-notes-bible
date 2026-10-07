@@ -63,7 +63,7 @@ async function loadAssets(){
      render's ground and would otherwise shave the stone's foot off, baring the black
      earth beneath it */
   rockGrp.traverse(o=>{ if(o.isMesh) o.renderOrder = -6; });
-  await nearField();
+  await nearField(rockMaterial(imgs, true));
   /* the boulder's shadow is in the forest render itself; the backdrop only fills the
      floor under its foot (uFoot) */
 }
