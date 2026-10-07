@@ -940,7 +940,7 @@ export function createShelf(api){
       if(cur) leaveBook();
       openCached({ id: want.id, uid: me, name, owner: b.exists() ? b.data().owner : null });
       openLive();
-      close();
+      await farewell();
       /* said once the opening film is over and the book is still, or it plays unseen under the film */
       Promise.resolve(api.settled && api.settled()).then(()=> api.toast(back && !want.vowed ? `BACK IN ${name.toUpperCase()}` : 'AMEN. NO NOTES', 2600));
     }catch(e){
@@ -959,8 +959,8 @@ export function createShelf(api){
   view.querySelector('.close').addEventListener('click', dismiss);
   view.addEventListener('click', e => view.querySelectorAll('details.menu-p[open]').forEach(d => { if(!d.contains(e.target)) d.open = false; }));
   view.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key === 'Escape'){ e.preventDefault(); dismiss(); } });
-  function show(m){ mode = m; view.hidden = false; api.blurQuill(); render(); }
-  function close(){ sign = ''; if(asking) asking.done(false); view.hidden = true; mode = 'share'; api.focusQuill(); release(); }
+  function show(m){ mode = m; view.hidden = false; api.blurQuill(); fresh = true; render(); }
+  function close(){ sign = ''; if(asking) asking.done(false); view.hidden = true; mode = 'share'; unspell(); api.focusQuill(); release(); }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if(cls) e.className = cls; if(text !== undefined) e.textContent = text; return e; };
   function pill(text, fn, cls){
     const b = el('button', 'pill' + (cls ? ' ' + cls : ''), text);
@@ -980,9 +980,15 @@ export function createShelf(api){
     return n.length > 4 ? `with ${n.slice(0, 3).join(', ')} and ${n.length - 3} more` : `with ${n.join(', ')}`;
   }
   const TITLES = { share: 'SHARE THE BOOK', join: '', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '', past: 'PAGE HISTORY' };
+  /* while the invitation's words are under a spell, a refresh from elsewhere (the
+     account, the list of books) leaves the card alone: only a new card is drawn anew */
+  let fresh = false;
   function render(){
+    if(locked() && !fresh && body.classList.contains('ghost')) return;
+    fresh = false;
     body.textContent = '';
     if(['leave', 'del', 'rename', 'past'].includes(mode) && !cur) mode = 'share';
+    if(mode !== 'join' && mode !== 'vow') unspell();
     body.dataset.mode = mode;
     view.classList.toggle('locked', locked());
     view.classList.toggle('invite', locked());
@@ -1323,26 +1329,64 @@ export function createShelf(api){
     acts.appendChild(btn('Accept the invitation', 'main', accept));
     body.appendChild(acts);
   }
-  /* taking the invitation works the book's own magic on the card: its words lift off
-     like erased letters, and the vow burns in line by line like fresh writing */
+  /* the card works the book's own magic on its words: they burn in line by line like
+     fresh writing when it comes, and taking the invitation lifts them off like erased
+     letters before the vow burns in. One spell at a time, each waiting for the last */
+  const card = view.querySelector('.card');
+  let spell = Promise.resolve(), going = null;
+  /* a sound needs a touch first, or the browser would play the waiting ones all at once */
+  const sound = (k, arg)=>{ if(api.sfx && navigator.userActivation && navigator.userActivation.hasBeenActive) api.sfx(k, arg); };
+  const lift = ()=> vanish(card, body, ()=> sound('vanish', true));
+  function unspell(){
+    body.classList.remove('ghost', 'leaving', 'arriving');
+    view.querySelectorAll('canvas.magic').forEach(c => c.remove());
+  }
+  function cast(fn){
+    spell = spell.then(fn).catch(()=>{ unspell(); if(!view.hidden && locked()) show(mode); });
+    return spell;
+  }
+  const kindle = ()=> burnIn(card, body, ()=> sound('burn'));
+  /* the card has come to rest and its fonts are in, so the words land where the page sets them */
+  const settledCard = ()=> Promise.all([
+    Promise.all(card.getAnimations().map(a => a.finished)).catch(()=>{}),
+    document.fonts.ready,
+  ]);
+  function arrive(){
+    if(calm()) return;
+    body.classList.add('ghost', 'arriving');
+    const m = mode;
+    cast(async ()=>{
+      await settledCard();
+      if(view.hidden || mode !== m) return unspell();
+      await kindle();
+    });
+  }
   let accepting = false;
-  async function accept(){
+  function accept(){
     if(accepting || mode !== 'join') return;
     accepting = true;
-    try{
-      const card = view.querySelector('.card');
+    return cast(async ()=>{
       if(calm()) return show('vow');
-      await vanish(card, body, ()=> api.sfx && api.sfx('vanish', true));
+      await lift();
       body.classList.replace('leaving', 'arriving');
       show('vow');
-      await burnIn(card, body, ()=> api.sfx && api.sfx('burn'));
+      await kindle();
       const name = body.querySelector('.sign input');
       if(name && !name.value) name.focus();
-    }catch(e){
-      body.classList.remove('ghost', 'leaving', 'arriving');
-      view.querySelectorAll('canvas.magic').forEach(c => c.remove());
-      show('vow');
-    }finally{ accepting = false; }
+    }).finally(()=>{ accepting = false; });
+  }
+  /* the vow taken: its words lift off at once, and the card fades off what waits behind
+     it, the loading circle and the opening it lets begin, or the book */
+  async function farewell(){
+    if(view.hidden || !locked() || calm()) return close();
+    await spell;
+    await (going || lift());
+    going = null;
+    view.classList.add('away');
+    release();
+    await new Promise(r => setTimeout(r, 900));
+    view.classList.remove('away');
+    close();
   }
   function renderVow(){
     const box = el('div', 'vow');
@@ -1352,12 +1396,21 @@ export function createShelf(api){
     const sig = el('div', 'sign');
     const acts = el('div', 'acts');
     /* the vow is sealed once at a time, and a failure says so instead of leaving the card mute */
-    const seal = async open => {
+    const seal = async (open, away) => {
       if(swearing || !joinWant) return;
       swearing = true;
+      if(away && !calm()){ const p = spell.then(lift); going = p; spell = p.catch(()=>{}); }
       try{ wantJoin({ ...joinWant, vowed: true }); await open(); }
       catch(e){ api.toast('NO CONNECTION. TRY AGAIN LATER', 2400); }
       finally{ swearing = false; }
+      /* not let in after all: the vow comes back, or the card that says why stands clean */
+      if(going){
+        await going.catch(()=>{});
+        going = null;
+        if(view.hidden) return;
+        if(mode === 'vow'){ body.classList.replace('leaving', 'arriving'); show('vow'); cast(kindle); }
+        else render();
+      }
     };
     /* a Google account signs with its own name; a guest, even one this browser has
        been before, writes a name afresh, since a new invitation starts from nothing */
@@ -1365,14 +1418,14 @@ export function createShelf(api){
       sig.appendChild(el('p', 'name', myName()));
       sig.appendChild(el('p', 'cap', 'your name'));
       body.appendChild(sig);
-      acts.appendChild(btn('I swear', 'main', ()=> seal(join)));
+      acts.appendChild(btn('I swear', 'main', ()=> seal(join, true)));
     }else{
       const name = el('input'); name.type = 'text'; name.maxLength = 24; name.value = sign; name.placeholder = 'Your name'; name.setAttribute('aria-label', 'Your name');
       name.autocomplete = 'given-name';
       name.addEventListener('input', ()=>{ sign = name.value; });
       sig.appendChild(name);
       body.appendChild(sig);
-      const open = ()=>{ if(!name.value.trim()){ name.focus(); api.toast('WRITE YOUR NAME FIRST', 1600); return; } return seal(()=> joinAsGuest(name.value)); };
+      const open = ()=>{ if(!name.value.trim()){ name.focus(); api.toast('WRITE YOUR NAME FIRST', 1600); return; } return seal(()=> joinAsGuest(name.value), true); };
       name.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); open(); } });
       acts.appendChild(btn('I swear', 'main', open));
       acts.appendChild(btn('Sign with Google instead', 'minor', ()=> seal(signIn)));
@@ -1401,6 +1454,7 @@ export function createShelf(api){
      the card, the vow and the opening with its music, which the touches on the card let play */
   function invite(){
     show(joinWant.vowed ? 'vow' : 'join');
+    if(!joinWant.vowed) arrive();
     firebase().catch(()=>{});
   }
   function start(){

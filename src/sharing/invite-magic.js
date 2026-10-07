@@ -44,7 +44,8 @@ function layers(card){
 }
 
 /* every glyph of the text under root, drawn one by one where the page put it,
-   grouped in lines from the top; buttons, inputs and ornaments are left to CSS */
+   grouped in lines from the top, a name written in the field too; the ornaments,
+   the buttons and an empty field with its hint come and go whole, by CSS */
 function glyphs(root, card, L){
   const cr = card.getBoundingClientRect(), ox = cr.left, oy = cr.top - card.scrollTop;
   const mask = document.createElement('canvas');
@@ -53,7 +54,7 @@ function glyphs(root, card, L){
   mx.scale(L.S, L.S);
   const lines = [];
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: n => n.textContent.trim() && !n.parentElement.closest('button, input, .acts') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    acceptNode: n => n.textContent.trim() && !n.parentElement.closest('button') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
   });
   const range = document.createRange();
   for(let n = walk.nextNode(); n; n = walk.nextNode()){
@@ -73,6 +74,20 @@ function glyphs(root, card, L){
       if(!ln){ ln = { top: y, bot: y + r.height, x0: x, x1: x + r.width }; lines.push(ln); }
       ln.x0 = Math.min(ln.x0, x); ln.x1 = Math.max(ln.x1, x + r.width); ln.bot = Math.max(ln.bot, y + r.height);
     }
+  }
+  for(const f of root.querySelectorAll('input')){
+    const t = f.value;
+    if(!t) continue;
+    const cs = getComputedStyle(f), fs = parseFloat(cs.fontSize), lh = parseFloat(cs.lineHeight) || fs*1.2;
+    mx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    mx.fillStyle = cs.color;
+    const r = f.getBoundingClientRect(), m = mx.measureText(t);
+    const px = parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth), pw = r.width - px - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
+    const pt = parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth), ph = r.height - pt - parseFloat(cs.paddingBottom) - parseFloat(cs.borderBottomWidth);
+    const x = r.left - ox + px + Math.max(0, (pw - m.width)/2), y = r.top - oy + pt + (ph - lh)/2;
+    const asc = m.fontBoundingBoxAscent || fs*0.8, desc = m.fontBoundingBoxDescent || fs*0.2;
+    mx.fillText(t, x, y + (lh - asc - desc)/2 + asc);
+    lines.push({ top: y, bot: y + lh, x0: x, x1: x + m.width });
   }
   lines.sort((a, b)=> a.top - b.top);
   return { mask: mx.getImageData(0, 0, mask.width, mask.height).data, lines };
@@ -144,6 +159,20 @@ function motes(){
   };
 }
 
+/* the ornaments and the buttons keep time with the words next to them: each belongs
+   to the first line that starts below its top (a flourish under a heading, to the line
+   under the flourish), and the buttons, below all the words, come last */
+const DECOR = [['.orn, .sign, .btn', 'top'], ['h2, .amen', 'bottom']];
+function decor(root, card, lines, when){
+  const oy = card.getBoundingClientRect().top - card.scrollTop, list = [];
+  for(const [sel, side] of DECOR) for(const e of root.querySelectorAll(sel)){
+    const y = e.getBoundingClientRect()[side] - oy;
+    const k = lines.findIndex(l => l.top >= y - 2);
+    list.push({ e, at: when(k < 0 ? lines.length : k) });
+  }
+  return list;
+}
+
 /* the words lift off the card; done as soon as they are gone, while their last
    motes still rise over whatever the card shows next */
 export function vanish(card, root, onStart){
@@ -156,12 +185,14 @@ export function vanish(card, root, onStart){
   const pd = new Uint32Array(paint.data.buffer), gd = new Uint32Array(glow.data.buffer);
   const M = motes(), out = new Set();
   const last = (G.lines.length - 1)*LINE_STEP + VAPOR_T;
+  const orns = decor(root, card, G.lines, k => k*LINE_STEP);
   let prev = 0, gone;
   const words = new Promise(r => gone = r);
   if(onStart) onStart();
   run(t=>{
     pd.fill(0); gd.fill(0);
     const nk = 1/S, drift = t*40;
+    for(const o of orns) if(!o.hit && t >= o.at){ o.hit = true; o.e.classList.add('gone'); }
     if(t >= last) gone();
     else for(let j=0;j<P.length;j++){
       const i = P[j], p = i*4, a = d[p+3];
@@ -190,11 +221,11 @@ export function vanish(card, root, onStart){
     const live = M.draw(gx, t - prev, S, a => `rgba(255,224,150,${a})`);
     prev = t;
     return t < last || live;
-  }, ()=>{ gone(); L.paint.remove(); L.glow.remove(); });
+  }, ()=>{ gone(); orns.forEach(o => o.e.classList.remove('gone')); L.paint.remove(); L.glow.remove(); });
   return words;
 }
 
-/* the vow is burned into the card, line after line along the pen's slant */
+/* the words are burned into the card, line after line along the pen's slant */
 export function burnIn(card, root, onLine){
   if(!noise) noise = fbm(256, 256, 12, 12, 3, 4242);
   /* the vow is read in its own ink, then hidden before the next paint */
@@ -212,11 +243,13 @@ export function burnIn(card, root, onLine){
     return { s0, ss: Math.max(1, s1 - s0), dur: BURN_T*(0.6 + 0.9*(L0.x1 - L0.x0)/L.W) };
   });
   const last = ign(G.lines.length - 1) + BURN_T*1.6 + 2*COOL_T;
+  const orns = decor(root, card, G.lines, k => Math.max(0, ign(k) - 0.25));
   let prev = 0;
   return run(t=>{
     pd.fill(0); gd.fill(0);
     const nk = 1/S, rise = t*70;
     G.lines.forEach((L0, k)=>{ if(!lit.has(k) && t >= ign(k)){ lit.add(k); if(onLine) onLine(k); } });
+    for(const o of orns) if(!o.hit && t >= o.at){ o.hit = true; o.e.classList.add('lit'); }
     for(let j=0;j<P.length;j++){
       const i = P[j], y = (i / w) | 0, x = i - y*w, ln = lineOf[y], sp = span[ln];
       const p = i*4, a = d[p+3]/255, sa = soft[i];
@@ -250,5 +283,9 @@ export function burnIn(card, root, onLine){
     const live = M.draw(gx, t - prev, S, a => `rgba(255,${150 + (a*80) | 0},60,${a})`);
     prev = t;
     return t < last || live;
-  }, ()=>{ root.classList.remove('ghost', 'arriving'); L.paint.remove(); L.glow.remove(); });
+  }, ()=>{
+    root.classList.remove('ghost', 'arriving');
+    orns.forEach(o => o.e.classList.remove('lit'));
+    L.paint.remove(); L.glow.remove();
+  });
 }

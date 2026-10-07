@@ -94,12 +94,15 @@ function makeBackdrop(pano, depth, water, back, backDepth){
       tPano: { value: tex(pano, true) }, tDepth: { value: depth }, tWater: { value: tex(water, false) },
       tBack: { value: tex(back, true) }, tBackDepth: { value: backDepth }, tSoft: { value: depth.userData.soft },
       uCam: { value: new THREE.Vector3() }, uCap: { value: FOREST_CAP }, uYaw: { value: new THREE.Vector2(Math.cos(FOREST_YAW), Math.sin(FOREST_YAW)) }, uTime: { value: 0 }, uGain: { value: FOREST_GAIN*FOREST_EXPOSURE },
-      uNear: { value: DEPTH_NEAR }, uFar: { value: DEPTH_FAR }, uSun: { value: SUN_DIR }, uFoot: { value: rockFoot } },
+      uNear: { value: DEPTH_NEAR }, uFar: { value: DEPTH_FAR }, uSun: { value: SUN_DIR }, uFoot: { value: rockFoot },
+      tGround: { value: null }, uGround: { value: new THREE.Vector4(0, 0, 0, 0) },
+      tAO: { value: null }, uAO: { value: new THREE.Vector2(0, 0) } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position = p.xyww; }',
     fragmentShader: `#define MARCH_STEPS ${HI_RES ? 112 : 60}
       uniform sampler2D tPano, tDepth, tWater, tBack, tBackDepth, tSoft; uniform vec2 uYaw;
       vec3 unyaw(vec3 v){ return vec3(uYaw.x*v.x - uYaw.y*v.z, v.y, uYaw.y*v.x + uYaw.x*v.z); } uniform vec3 uCam, uCap, uSun; uniform float uTime, uGain, uNear, uFar;
       uniform float uFoot[${ROCK_FOOT_N}];
+      uniform sampler2D tGround, tAO; uniform vec4 uGround; uniform vec2 uAO;
       varying vec3 vDir;
       float h21(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
       float vn(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0 - 2.0*f);
@@ -213,6 +216,25 @@ function makeBackdrop(pano, depth, water, back, backDepth){
               float shade = mix(0.3, 0.5, smoothstep(rf - 1.0, rf, rg));
               col = max(col, moss*shade);
             }
+          }
+          /* where the grass stands (src/scene/plants.js) the floor between its blades is
+             the shaded, soft ground at their feet, not the render's sharp moss with the
+             shadows of plants lying on it like cut-outs; those shadows fall on the blades */
+          if(uGround.x > 0.0 && rg < uGround.w){
+            vec2 gu = (Wg.xz/uGround.y + 0.5)*(uGround.x - 1.0)/uGround.x + 0.5/uGround.x;
+            float onFloor = 1.0 - smoothstep(0.25, 0.6, abs(Wg.y - textureLod(tGround, gu, 0.0).r));
+            vec3 fs = pow(textureLod(tPano, uv, 5.0).rgb, vec3(1.0/2.2));
+            float hue = (fs.g - fs.b)/max(fs.r - fs.b, 1e-3);
+            float grassy = onFloor*(1.0 - smoothstep(uGround.z, uGround.w, rg))
+              *max(smoothstep(0.45, 0.75, hue), smoothstep(0.02, 0.15, textureLod(tWater, uv, 5.0).r));
+            vec3 base = vec3(0.0);
+            for(int k=0;k<8;k++){
+              float a = float(k)*0.785398 + 0.4, r = k < 4 ? 0.9 : 1.8;
+              base += textureGrad(tPano, eqUv(normalize(P + vec3(cos(a)*r, 0.0, sin(a)*r))), gx*2.0, gy*2.0).rgb;
+            }
+            base *= 1.0/8.0;
+            col = mix(col, base, grassy*${HI_RES ? '0.75' : '0.5'});
+            if(uAO.y > 0.0) col *= 1.0 - textureLod(tAO, (Wg.xz + uAO.x)/uAO.y, 0.0).r*onFloor;
           }
         }
         gl_FragColor = vec4(col*uGain, 1.0);

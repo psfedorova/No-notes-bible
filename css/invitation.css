@@ -53,14 +53,23 @@
    while the text itself waits unseen, and the ornaments follow the words */
 .shelf.invite .card canvas.magic{ position:absolute; left:0; top:0; z-index:2; pointer-events:none; }
 .shelf.invite .card canvas.magic.glow{ filter:blur(1.5px); mix-blend-mode:screen; }
-.shelf.invite .body.ghost *{ color:transparent; text-shadow:none; }
-.shelf.invite .body .orn, .shelf.invite .body h2::after, .shelf.invite .body .amen::after, .shelf.invite .body .sign, .shelf.invite .body .acts{ transition:opacity .7s ease, filter .7s ease; }
+.shelf.invite .body.ghost :not(.btn){ color:transparent; text-shadow:none; caret-color:transparent; }
+.shelf.invite .body.ghost .sign:not(.lit) ::placeholder{ color:transparent; }
+.shelf.invite .body.ghost .btn[disabled]{ opacity:1; }
+/* a button comes and goes whole, its words with it, in a breath of gold */
+.shelf.invite .body .orn, .shelf.invite .body h2::after, .shelf.invite .body .amen::after, .shelf.invite .body .sign{ transition:opacity .7s ease, filter .7s ease; }
+.shelf.invite .body .btn{ transition:opacity .8s ease, filter .8s ease, color .25s, box-shadow .25s, transform .08s; }
 .shelf.invite .body.leaving, .shelf.invite .body.arriving{ pointer-events:none; }
-.shelf.invite .body.leaving .orn, .shelf.invite .body.leaving h2::after, .shelf.invite .body.leaving .acts{ opacity:0; filter:drop-shadow(0 0 6px rgba(255,214,140,.9)); }
-.shelf.invite .body.arriving h2::after, .shelf.invite .body.arriving .amen::after, .shelf.invite .body.arriving .sign, .shelf.invite .body.arriving .acts{ opacity:0; }
+.shelf.invite .body.leaving :is(.orn, .sign, .btn).gone, .shelf.invite .body.leaving :is(h2, .amen).gone::after{ opacity:0; filter:drop-shadow(0 0 6px rgba(255,214,140,.9)); }
+.shelf.invite .body.arriving :is(.orn, .sign, .btn):not(.lit), .shelf.invite .body.arriving :is(h2, .amen):not(.lit)::after{ opacity:0; filter:drop-shadow(0 0 6px rgba(255,214,140,.9)); }
+/* the vow taken, the card fades off the loading circle and the opening begins */
+.shelf.invite{ transition:opacity .9s ease; }
+.shelf.invite .card{ transition:transform 1.1s cubic-bezier(.4,0,.2,1); }
+.shelf.invite.away{ opacity:0; pointer-events:none; }
+.shelf.invite.away .card{ transform:translateY(-14px) scale(.97); }
 .shelf.invite .btn.minor{ color:var(--ink); font-size:var(--fs-s); }
 .shelf.invite .btn.minor:hover, .shelf.invite .btn.minor:focus-visible{ text-decoration-thickness:2px; }
-@media (prefers-reduced-motion:reduce){ .shelf.invite .card{ animation:none; } }
+@media (prefers-reduced-motion:reduce){ .shelf.invite .card{ animation:none; } .shelf.invite, .shelf.invite .card{ transition:none; } }
 @media (max-width:420px){
   .shelf.invite .card{ padding:28px 34px 48px; aspect-ratio:358/570; }
   .shelf.invite{ --gap:22px; --gap-act:28px; }

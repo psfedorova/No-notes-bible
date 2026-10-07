@@ -12,6 +12,9 @@ import { backdrop, FOREST_CAP, ROCK_FOOT_N, rockFoot } from './forest.js';
    as much as the canopy shades it from the sun there (baked in the same build), and the
    ferns and grass stir in the breeze */
 const nearTime = { value: 0 };
+/* the grass grows out to GRASS_R1 and thins away by GRASS_R2 (tenths of a metre from the rock);
+   a phone grows it as thick, on the ground nearer the rock */
+const GRASS_R1 = HI_RES ? 32 : 24, GRASS_R2 = HI_RES ? 58 : 42;
 async function nearField(){
   let data;
   try{ data = await retry(async ()=>{ const r = await fetch(ASSETS.forestNear); if(!r.ok) throw new Error(r.status); return r.json(); }); }catch(e){ return; }
@@ -28,14 +31,23 @@ async function nearField(){
     floor.renderOrder = -5; floor.userData.noPick = true;
     floor.rotation.y = FOREST_YAW;
     scene.add(floor);
+    /* the floor's height for the forest's march, which softens it where the grass stands;
+       half floats, since a phone will not filter full ones */
+    const gt = new THREE.DataTexture(Uint16Array.from(G.h, THREE.DataUtils.toHalfFloat), G.n, G.n, THREE.RedFormat, THREE.HalfFloatType);
+    gt.magFilter = gt.minFilter = THREE.LinearFilter; gt.needsUpdate = true;
+    const U = backdrop.material.uniforms;
+    U.tGround.value = gt;
+    U.uGround.value.set(G.n, G.size, GRASS_R1, GRASS_R2);
   }
   const byAsset = new Map();
   list.forEach(it=>{ if(!byAsset.has(it.a)) byAsset.set(it.a, []); byAsset.get(it.a).push(it); });
   const SWAY = { fern_02: 1.0, grass_medium_02: 1.4, celandine_01: 0.6, periwinkle_plant: 0.6 };
+  /* how deep the shade is on the ground at each plant's foot */
+  const SHADE = { fern_02: 0.4, grass_medium_02: 0.25, celandine_01: 0.32, periwinkle_plant: 0.32 };
   const grp = new THREE.Group();
   grp.name = 'near';
-  const _m = new THREE.Matrix4(), _c = new THREE.Color(), _v = new THREE.Vector3();
-  const stones = [];
+  const _m = new THREE.Matrix4(), _c = new THREE.Color();
+  const stones = [], tufts = [];
   await Promise.all([...byAsset].map(async ([a, items])=>{
     /* a plant that still will not come is left out rather than losing the whole book */
     const gl = await retry(()=>gltfLoader.loadAsync(`assets/plants/${a}/${a}_1k.gltf`)).catch(e=>{ console.warn('Plant left out:', a, e); return null; });
@@ -78,11 +90,12 @@ async function nearField(){
         _m.fromArray(it.m); im.setMatrixAt(i, _m);
         const k = (plant ? 0.78 : 0.82) + (plant ? 0.32 : 0.22)*(it.s ?? 1);
         im.setColorAt(i, _c.setRGB(k, k, k));
-        if(!plant){
-          if(!src.geometry.boundingSphere) src.geometry.computeBoundingSphere();
-          const bs = src.geometry.boundingSphere;
-          _v.copy(bs.center).applyMatrix4(_m);
-          stones.push([_v.x, _v.z, bs.radius*_m.getMaxScaleOnAxis()*0.8]);
+        if(!plant) stones.push({ geo: src.geometry, m: _m.clone() });
+        else{
+          if(!src.geometry.boundingBox) src.geometry.computeBoundingBox();
+          const b = src.geometry.boundingBox;
+          const reach = Math.max(-b.min.x, b.max.x, -b.min.z, b.max.z)*_m.getMaxScaleOnAxis();
+          tufts.push([_m.elements[12], _m.elements[14], reach, SHADE[a] ?? 0.35]);
         }
       });
       im.instanceMatrix.needsUpdate = true;
@@ -93,19 +106,23 @@ async function nearField(){
       grp.add(im);
     });
   }));
-  if(data.ground) grp.add(grassField(data.ground, stones));
+  if(data.ground) grp.add(grassField(data.ground, stones, tufts));
   grp.rotation.y = FOREST_YAW;
   scene.add(grp);
 }
 
-/* grass round the boulder: thin blades in clumps, rooted on the floor the forest render
+/* grass round the boulder: blades in tufts, rooted on the floor the forest render
    shows and coloured by it where they stand, so they rise out of the moss in its own
-   light and shade. Where that floor is bare earth, water or hidden from the capture
-   point no blade grows, and at the near field's edge they shorten and thin out into
-   the picture. Built in the forest's own frame (the group turns it by FOREST_YAW) */
-function grassField(G, stones){
-  const N = HI_RES ? 56000 : 16000, SEG = HI_RES ? 5 : 3;
-  const R1 = 32, R2 = 58;
+   light and shade. Each tuft fans out from its root, the outer blades leaning most, and
+   the tufts stand close enough to hide the painted floor between them. No blade grows
+   on brown earth, in the water, inside a stone's outline at the floor or far behind
+   what the capture point saw; moss turned yellow by the sun is still moss, and the pale
+   bank grows grass down to the water. Where the floor is half earth the tufts thin out
+   rather than shrink, and at the near field's edge they shorten and thin out into the
+   picture. Built in the forest's own frame (the group turns it by FOREST_YAW) */
+function grassField(G, stones, tufts){
+  const N = HI_RES ? 220000 : 90000, SEG = HI_RES ? 4 : 2, WIDE = HI_RES ? 1 : 1.3;
+  const R1 = GRASS_R1, R2 = GRASS_R2;
   const half = G.size/2, step = G.size/(G.n - 1);
   const hAt = (x, z)=>{
     const fx = clamp((x + half)/step, 0, G.n - 1.001), fz = clamp((z + half)/step, 0, G.n - 1.001);
@@ -118,30 +135,69 @@ function grassField(G, stones){
   const sstep = (a, b, x)=> smooth(clamp((x - a)/(b - a), 0, 1));
   const footAt = (x, z)=>{ const k = Math.floor((Math.atan2(z, x)/(2*Math.PI) + 1)*ROCK_FOOT_N) % ROCK_FOOT_N;
     return Math.max(rockFoot[k], rockFoot[(k + 1) % ROCK_FOOT_N]); };
-  const CELL = 6, cells = new Map(), key = (i, j)=> i*4096 + j;
-  stones.forEach(s=>{
-    for(let i=Math.floor((s[0] - s[2])/CELL);i<=Math.floor((s[0] + s[2])/CELL);i++)
-      for(let j=Math.floor((s[1] - s[2])/CELL);j<=Math.floor((s[1] + s[2])/CELL);j++){
-        const k = key(i, j); if(!cells.has(k)) cells.set(k, []); cells.get(k).push(s);
+  /* most stones sit deep in the moss, so what keeps the grass off one is the outline it
+     shows at the floor, not its whole size */
+  const CELL = 0.3, SPAN = Math.ceil(2*R2/CELL) + 2, rocky = new Uint8Array(SPAN*SPAN);
+  const cellOf = (x, z)=>{ const i = Math.floor((x + R2)/CELL), j = Math.floor((z + R2)/CELL);
+    return i < 0 || j < 0 || i >= SPAN || j >= SPAN ? -1 : j*SPAN + i; };
+  stones.forEach(({ geo, m })=>{
+    const p = geo.attributes.position, v = new THREE.Vector3();
+    for(let k=0;k<p.count;k++){
+      v.fromBufferAttribute(p, k).applyMatrix4(m);
+      if(v.y < hAt(v.x, v.z) - 0.1) continue;
+      const c = cellOf(v.x, v.z);
+      if(c >= 0) rocky[c] = 1;
+    }
+  });
+  const underStone = (x, z)=>{
+    for(let dz=-CELL;dz<=CELL;dz+=CELL) for(let dx=-CELL;dx<=CELL;dx+=CELL){ const c = cellOf(x + dx, z + dz); if(c >= 0 && rocky[c]) return true; }
+    return false;
+  };
+  /* the shade at the foot of each plant and round each stone: what leaves and stone keep
+     from the sky darkens the ground and the grass close by, soft and without their shape,
+     so they stand in the meadow instead of on it. One map, read by the grass here and by
+     the forest's floor */
+  const AO_R = R2 + 6, AO_N = Math.ceil(2*AO_R/CELL), AO_W = AO_N*CELL, ao = new Float32Array(AO_N*AO_N);
+  tufts.forEach(([x, z, reach, k])=>{
+    const sg = Math.max(0.35, reach*0.3), R = sg*2.5;
+    for(let j=Math.max(0, Math.floor((z - R + AO_R)/CELL));j<=Math.min(AO_N - 1, Math.floor((z + R + AO_R)/CELL));j++)
+      for(let i=Math.max(0, Math.floor((x - R + AO_R)/CELL));i<=Math.min(AO_N - 1, Math.floor((x + R + AO_R)/CELL));i++){
+        const dx = -AO_R + (i + 0.5)*CELL - x, dz = -AO_R + (j + 0.5)*CELL - z;
+        const c = j*AO_N + i;
+        ao[c] = 1 - (1 - ao[c])*(1 - k*Math.exp(-(dx*dx + dz*dz)/(2*sg*sg)));
       }
   });
-  const underStone = (x, z)=>{ const c = cells.get(key(Math.floor(x/CELL), Math.floor(z/CELL)));
-    return !!c && c.some(s=> (x - s[0])**2 + (z - s[1])**2 < s[2]*s[2]); };
+  const rim = new Float32Array(AO_N*AO_N), tmp = new Float32Array(AO_N*AO_N);
+  for(let j=0;j<AO_N;j++) for(let i=0;i<AO_N;i++){ const c = cellOf(-AO_R + (i + 0.5)*CELL, -AO_R + (j + 0.5)*CELL); rim[j*AO_N + i] = c >= 0 && rocky[c] ? 1 : 0; }
+  for(let pass=0;pass<1;pass++){
+    const B = 2;
+    for(let j=0;j<AO_N;j++) for(let i=0;i<AO_N;i++){ let t = 0; for(let d=-B;d<=B;d++) t += rim[j*AO_N + Math.min(AO_N - 1, Math.max(0, i + d))]; tmp[j*AO_N + i] = t/(2*B + 1); }
+    for(let j=0;j<AO_N;j++) for(let i=0;i<AO_N;i++){ let t = 0; for(let d=-B;d<=B;d++) t += tmp[Math.min(AO_N - 1, Math.max(0, j + d))*AO_N + i]; rim[j*AO_N + i] = t/(2*B + 1); }
+  }
+  for(let c=0;c<ao.length;c++) ao[c] = Math.min(0.45, 1 - (1 - ao[c])*(1 - 0.4*rim[c]));
+  const aoTex = new THREE.DataTexture(Uint16Array.from(ao, THREE.DataUtils.toHalfFloat), AO_N, AO_N, THREE.RedFormat, THREE.HalfFloatType);
+  aoTex.magFilter = aoTex.minFilter = THREE.LinearFilter; aoTex.needsUpdate = true;
+  const BU = backdrop.material.uniforms;
+  BU.tAO.value = aoTex; BU.uAO.value.set(AO_R, AO_W);
   const rnd = mulberry32(2718), root = new Float32Array(N*4), blade = new Float32Array(N*4);
   let n = 0;
-  for(let tries=0; n < N && tries < N*14; tries++){
-    const r = R2*Math.sqrt(rnd()), a = rnd()*2*Math.PI, x = r*Math.cos(a), z = r*Math.sin(a);
+  for(let tries=0; n < N && tries < N*4; tries++){
+    const r = R2*Math.sqrt(rnd()), a = rnd()*2*Math.PI, cx = r*Math.cos(a), cz = r*Math.sin(a);
     const edge = 1 - sstep(R1, R2, r);
-    const dense = sstep(0.4, 0.72, vnz(x*0.16, z*0.16)*0.65 + vnz(x*0.5 + 7.3, z*0.5 + 1.9)*0.35);
-    if(rnd() > edge*(0.1 + 0.9*dense)) continue;
-    if(r < footAt(x, z) + 0.15 || underStone(x, z)) continue;
-    const tall = (0.45 + 0.55*dense)*(0.5 + 0.5*edge);
-    root[n*4] = x; root[n*4 + 1] = hAt(x, z) - 0.05; root[n*4 + 2] = z; root[n*4 + 3] = rnd();
-    blade[n*4] = rnd()*2*Math.PI;
-    blade[n*4 + 1] = (0.55 + 1.25*rnd()*rnd())*tall;
-    blade[n*4 + 2] = 0.05 + 0.05*rnd();
-    blade[n*4 + 3] = 0.1 + 0.7*rnd()*rnd();
-    n++;
+    const dense = sstep(0.4, 0.72, vnz(cx*0.16, cz*0.16)*0.65 + vnz(cx*0.5 + 7.3, cz*0.5 + 1.9)*0.35);
+    if(rnd() > edge*(0.45 + 0.55*dense)) continue;
+    const tall = (0.5 + 0.5*dense)*(0.5 + 0.5*edge);
+    const k = 5 + Math.floor((4 + 10*dense)*rnd()), spread = 0.25 + 0.35*rnd() + 0.3*dense;
+    for(let b=0;b<k && n<N;b++){
+      const q = Math.sqrt(rnd()), qa = rnd()*2*Math.PI, x = cx + spread*q*Math.cos(qa), z = cz + spread*q*Math.sin(qa);
+      if(Math.hypot(x, z) < footAt(x, z) + 0.15 || underStone(x, z)) continue;
+      root[n*4] = x; root[n*4 + 1] = hAt(x, z) - 0.05; root[n*4 + 2] = z; root[n*4 + 3] = rnd();
+      blade[n*4] = qa + (rnd() - 0.5)*1.4;
+      blade[n*4 + 1] = (0.6 + 0.9*rnd()*rnd())*(1.15 - 0.45*q)*tall;
+      blade[n*4 + 2] = (0.045 + 0.05*rnd())*WIDE;
+      blade[n*4 + 3] = 0.08 + 0.55*q + 0.2*rnd();
+      n++;
+    }
   }
   const ig = new THREE.InstancedBufferGeometry();
   const pos = [], idx = [];
@@ -155,9 +211,9 @@ function grassField(G, stones){
   const U = backdrop.material.uniforms;
   const mat = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
-    uniforms: { uTime: nearTime, tPano: U.tPano, tWater: U.tWater, tDepth: U.tDepth, uNear: U.uNear, uFar: U.uFar,
+    uniforms: { uTime: nearTime, tPano: U.tPano, tWater: U.tWater, tDepth: U.tDepth, uNear: U.uNear, uFar: U.uFar, tAO: U.tAO, uAO: U.uAO,
       uCap: { value: FOREST_CAP }, uGain: U.uGain, uSun: { value: SUN_DIR }, tHaze: { value: backdrop.picture } },
-    vertexShader: `uniform float uTime, uGain, uNear, uFar; uniform sampler2D tPano, tWater, tDepth; uniform vec3 uCap;
+    vertexShader: `uniform float uTime, uGain, uNear, uFar; uniform sampler2D tPano, tWater, tDepth, tAO; uniform vec3 uCap; uniform vec2 uAO;
       attribute vec4 aRoot, aBlade;
       varying vec3 vCol, vWp; varying float vT; varying vec4 vScr;
       vec2 eqUv(vec3 q){ return vec2(atan(q.z, q.x)*0.15915494 + 0.5, asin(clamp(q.y, -1.0, 1.0))*0.31830989 + 0.5); }
@@ -168,9 +224,11 @@ function grassField(G, stones){
         vec3 fl = textureLod(tPano, uv, 1.0).rgb;
         float wet = textureLod(tWater, uv, 0.0).r;
         float seen = 1.0/(textureLod(tDepth, uv, 0.0).r*(1.0/uNear - 1.0/uFar) + 1.0/uFar);
-        float green = fl.g/max(max(fl.r, fl.b), 1e-4);
-        float keep = smoothstep(0.9, 1.1, green)*(1.0 - smoothstep(0.0, 0.08, wet))*step(L*0.85, seen);
-        float t = position.y, H = aBlade.y*keep, lean = aBlade.w;
+        vec3 fs = pow(textureLod(tPano, uv, 5.0).rgb, vec3(1.0/2.2));
+        float hue = (fs.g - fs.b)/max(fs.r - fs.b, 1e-3);
+        float bank = smoothstep(0.02, 0.15, textureLod(tWater, uv, 5.0).r);
+        float keep = max(smoothstep(0.45, 0.75, hue), bank)*(1.0 - smoothstep(0.0, 0.08, wet))*step(L*0.4, seen);
+        float t = position.y, H = aBlade.y*step(fract(aRoot.w*17.31), keep), lean = aBlade.w;
         vec2 f = vec2(cos(aBlade.x), sin(aBlade.x)), sd = vec2(-f.y, f.x);
         float w = aBlade.z*pow(1.0 - t, 0.6);
         float g = sin(uTime*1.3 + r.x*0.35 + r.z*0.27)*0.6 + sin(uTime*2.1 + r.x*0.9)*0.25 + sin(uTime*3.7 + aRoot.w*40.0)*0.06;
@@ -183,7 +241,7 @@ function grassField(G, stones){
         float lum = dot(fl, vec3(0.3, 0.59, 0.11));
         vec3 c = max(mix(vec3(lum), fl, 1.3), 0.0)*mix(0.85, 1.15, fract(aRoot.w*7.13));
         if(fract(aRoot.w*3.7) < 0.12) c = mix(c, lum*vec3(1.3, 1.1, 0.55), 0.6*t);
-        vCol = c*uGain; vT = t;
+        vCol = c*uGain*(1.0 - textureLod(tAO, (r.xz + uAO.x)/uAO.y, 0.0).r*(1.0 - 0.6*t)); vT = t;
       }`,
     fragmentShader: `uniform vec3 uSun; uniform sampler2D tHaze;
       varying vec3 vCol, vWp; varying float vT; varying vec4 vScr;
