@@ -135,7 +135,7 @@
   /* the film comes down whole before it plays, so it never waits on the line */
   const fetchCut = async cut=>{
     ctl = new AbortController();
-    const res = await fetch('assets/intro/' + kind + cut + '.mp4?v=6', { signal: ctl.signal });
+    const res = await fetch('assets/intro/' + kind + cut + '.mp4?v=7', { signal: ctl.signal });
     if(!res.ok) throw new Error(res.status);
     filmTotal = +res.headers.get('content-length') || filmTotal;
     filmGot = 0;
