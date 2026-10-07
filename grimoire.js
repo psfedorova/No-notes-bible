@@ -31,7 +31,7 @@ import {
   clamp, lerp, smooth, mulberry32, fbm, upsample, cv, normalFromHeight, tex,
   setMaxAniso, makeSpriteCanvas, makeRayAlpha, crackCanvas, fieldFromCanvas
 } from './textures.js?v=4';
-import { createShelf, sharingOn } from './shared.js?v=28';
+import { createShelf, sharingOn } from './shared.js?v=29';
 
 const T0 = performance.now();
 /* ?film: the opening film is shot from this very scene, one frame at a time (film.js).
@@ -2783,6 +2783,8 @@ function onePage(){
 }
 const sideOf = n => n % 2 ? -1 : 1;
 const pageMid = {};
+/* how far the reader has slid the page being written, in page px, and page px per screen px */
+let pageScroll = 0, pagePerPx = 1;
 /* the spread the book will lie open at once the leaves in the air and the ones
    asked for after them are down */
 function landingSpread(){
@@ -3225,6 +3227,7 @@ function trackBirths(n, oldV, newV){
 }
 function onQuillInput(){
   if(!writing || composing) return;
+  pageScroll = 0;
   const n = writing.n, v = quill.value;
   const sp = editSpan(pages[n].t, v, lastGood.a, lastGood.b, quill.selectionEnd), was = handsOf(n);
   const hands = was.slice(0, sp.at).concat(Array(sp.ins).fill(HAND), was.slice(sp.at + sp.del));
@@ -4155,7 +4158,7 @@ canvasEl.addEventListener('pointerdown', e=>{
     if(g && g.mode === 'turn') endTurn(true);
     if(g && g.mode === 'cover') endCover(true);
     const [a,b] = [...pointers.values()];
-    pinch = { d: Math.hypot(a.x-b.x, a.y-b.y), z: st.zoom, mx:(a.x+b.x)/2, my:(a.y+b.y)/2 };
+    pinch = { d: Math.hypot(a.x-b.x, a.y-b.y), z: st.zoom, mx:(a.x+b.x)/2, my:(a.y+b.y)/2, read: onePage() && st.open && st.focusTo > 0.5 };
     g = null;
     return;
   }
@@ -4174,10 +4177,14 @@ canvasEl.addEventListener('pointermove', e=>{
   if(pinch && pointers.size === 2){
     const [a,b] = [...pointers.values()];
     const d = Math.hypot(a.x-b.x, a.y-b.y);
+    /* a page read close on a phone is already as near as it comes: spreading the
+       fingers over it keeps it, only drawing them together steps back from it */
+    if(pinch.read && d >= pinch.d*0.92) return;
+    pinch.read = false;
     st.zoom = clamp(pinch.z * pinch.d/Math.max(20,d), 0.3, 3.2);
     const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
     rotating = true;
-    st.focusTo = 0;
+    lookAway();
     rotateBy((mx-pinch.mx)*0.006, (my-pinch.my)*0.006);
     pinch.mx = mx; pinch.my = my;
     return;
@@ -4209,10 +4216,16 @@ canvasEl.addEventListener('pointermove', e=>{
       stepPage(back ? -1 : 1);
       return;
     }
+    /* reading a page on a phone an up-or-down drag never throws the eye off it: it
+       slides the page when the keyboard leaves too little of it, as a page scrolls */
+    if(!g.force && onePage() && st.open && st.focusTo > 0.5 && !sideways){
+      g.mode = 'scroll'; g.scroll0 = pageScroll;
+      return;
+    }
     if(!g.force && h && h.type === 'page' && (h.s > PW*0.5 || sideways)) startTurn(h);
     else if(!g.force && h && h.type === 'front' && (st.open ? (h.inner && st.k === 0) : true) && h.outer && !st.flight && !st.riffle) startCover(h);
-    else if(!g.force && (!h || st.open)){ g.mode = 'orbit'; st.focusTo = 0; dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
-    else { g.mode = 'rot'; rotating = true; st.focusTo = 0; dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
+    else if(!g.force && (!h || st.open)){ g.mode = 'orbit'; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
+    else { g.mode = 'rot'; rotating = true; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
     document.body.classList.add('grabbing');
   }
   if(g.mode === 'rot'){
@@ -4240,16 +4253,30 @@ canvasEl.addEventListener('pointermove', e=>{
     fl.goal = solveDragP(fl, e.clientX, e.clientY, fl.goal);
     return;
   }
+  if(g.mode === 'scroll'){ pageScroll = g.scroll0 - (e.clientY - g.sy)*pagePerPx; return; }
   if(g.mode === 'cover'){
     g.goal = solveCoverTheta(g.local, e.clientX, e.clientY, g.goal);
   }
 });
 let rotating = false;
+/* the eye leaving the page to look round sets the quill down with it: words typed
+   then would land on a page no longer in sight */
+function lookAway(){
+  st.focusTo = 0;
+  if(writing) exitWriting();
+}
 function liftGate(){ return smooth(clamp(st.lift*1.6, 0, 1)); }
 function endPointer(e, cancelled){
   pointers.delete(e.pointerId);
   try{ canvasEl.releasePointerCapture(e.pointerId); }catch(_){}
-  if(pinch){ if(pointers.size < 2){ pinch = null; rotating = false; } return; }
+  if(pinch){
+    if(pointers.size < 2){
+      pinch = null; rotating = false;
+      /* drawn in close over the open book, a phone comes down onto its page again */
+      if(onePage() && st.open && st.focusTo < 0.5 && st.zoom < 0.8){ st.zoom = 1; st.focusTo = 1; refreshUI(); }
+    }
+    return;
+  }
   if(!g || g.id !== e.pointerId) return;
   const gg = g; g = null;
   rotating = false;
@@ -4272,7 +4299,7 @@ function endPointer(e, cancelled){
     if(performance.now() - (gg.lt||0) < 70 && Math.hypot(orbit.vx, orbit.vy) > 0.2) orbit.coast = true;
     return;
   }
-  if(gg.mode === 'swept') return;
+  if(gg.mode === 'swept' || gg.mode === 'scroll') return;
   if(!cancelled) click(gg.hit);
 }
 canvasEl.addEventListener('pointerup', e=>endPointer(e, false));
@@ -4298,7 +4325,7 @@ canvasEl.addEventListener('wheel', e=>{
   if(g && g.mode !== 'pending') return;
   const k = 0.0045;
   orbit.coast = false; orbit.vx = orbit.vy = 0;
-  st.focusTo = 0;
+  lookAway();
   orbit.azTo += e.deltaX*k;
   orbit.elTo -= e.deltaY*k;
 }, { passive:false });
@@ -6118,10 +6145,13 @@ function update(dt){
       const perPx = 2*pageD*Math.tan(camera.fov*Math.PI/360)/VH;
       const e = pageCache.get(writing.n), half = h*perPx/2/PH*PAGE_H;
       let py = PAGE_H/2;
+      pagePerPx = perPx/PH*PAGE_H;
       if(half < PAGE_H/2 && e && e.lay){
         const lay = e.lay, cy = caretXY(lay, clamp(quill.selectionEnd, 0, pages[writing.n].t.length)).y - lay.size*0.35;
-        py = clamp(cy, half, PAGE_H - half);
-      }
+        const base = clamp(cy, half, PAGE_H - half);
+        py = clamp(base + pageScroll, half, PAGE_H - half);
+        pageScroll = py - base;
+      }else pageScroll = 0;
       c = pagePointWorld(writing.n, PAGE_W/2, py).p;
       /* centred in the free band, not in the screen: the eye moves towards the reader */
       _bc.set(0, -1, 0).applyQuaternion(camera.quaternion).setY(0);

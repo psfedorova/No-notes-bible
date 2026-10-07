@@ -67,7 +67,7 @@ body.cur-pointer{ cursor:pointer; }
 }
 
 .ui{ position:fixed; z-index:10; }
-.bar{ top:18px; right:18px; display:flex; gap:10px; }
+.bar{ top:calc(18px + env(safe-area-inset-top)); right:calc(18px + env(safe-area-inset-right)); display:flex; gap:10px; }
 .rune{
   width:44px; height:44px; border-radius:50%;
   border:1px solid var(--hairline);
@@ -96,7 +96,7 @@ body.cur-pointer{ cursor:pointer; }
 
 /* pagination: a gilt label like the ones on an old spine, rounded ends and one hairline */
 .pager{
-  bottom:18px; left:50%; transform:translateX(-50%);
+  bottom:calc(18px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
   height:58px; padding:0 6px;
   display:flex; align-items:center;
   filter:drop-shadow(0 6px 14px rgba(0,0,0,.45));
@@ -208,6 +208,13 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   25%,70%{ opacity:.8; }
   100%{ opacity:0; transform:translate(var(--dx), -90px); }
 }
+/* the film had to start silent (no touch yet): one tap brings its music in */
+#tapSound{
+  position:absolute; left:0; right:0; bottom:calc(36px + env(safe-area-inset-bottom)); margin:0; text-align:center;
+  color:rgba(240,214,150,.85); font:600 13px var(--ui-font); letter-spacing:4px; text-transform:uppercase; text-shadow:0 1px 4px #000;
+  opacity:0; transition:opacity .8s ease; pointer-events:none;
+}
+#intro.hush.play #tapSound{ opacity:1; }
 #introNote{
   position:absolute; left:0; right:0; bottom:calc(60px + env(safe-area-inset-bottom)); text-align:center;
   color:rgba(240,214,150,.85); font:600 14px var(--ui-font); letter-spacing:4px; text-shadow:0 1px 4px #000;
@@ -224,7 +231,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 
 /* the menu behind the three dots: actions that otherwise live on keys */
 .menu{
-  top:72px; right:18px; min-width:230px; padding:8px;
+  top:calc(72px + env(safe-area-inset-top)); right:calc(18px + env(safe-area-inset-right)); min-width:230px; padding:8px;
   display:flex; flex-direction:column; gap:2px;
   border-radius:18px; border:1px solid transparent;
   background:var(--face) padding-box, var(--gilt) border-box;
@@ -456,10 +463,12 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 @keyframes fadein{ from{ opacity:0; } to{ opacity:1; } }
 
 @media (max-width:640px){
-  .bar{ top:12px; right:12px; gap:7px; }
-  .rune{ width:40px; height:40px; font-size:18px; }
-  .pager{ bottom:12px; }
-  .menu{ top:62px; right:12px; }
+  .bar{ top:calc(12px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); gap:7px; }
+  .rune{ width:40px; height:40px; font-size:18px; position:relative; }
+  /* the finger is given the 44 px a phone expects, the button keeps its size */
+  .rune::after{ content:''; position:absolute; inset:-3px; border-radius:50%; }
+  .pager{ bottom:calc(12px + env(safe-area-inset-bottom)); }
+  .menu{ top:calc(62px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); }
 }
 </style>
 </head>
@@ -480,6 +489,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
     <div class="name">LIBER ARCANUM</div>
     <p id="introNote"></p>
   </div>
+  <p id="tapSound">Tap for sound</p>
 </div>
 <script>
 /* the opening. A magic circle draws itself as the book's files and the film arrive;
@@ -572,7 +582,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   const roll = mute=>{
     v.muted = mute;
     const p = v.play();
-    if(p && p.catch) p.catch(()=>{ if(!mute) roll(true); else finish('closed'); });
+    if(p && p.catch) p.catch(()=>{ if(!mute){ box.classList.add('hush'); roll(true); } else finish('closed'); });
   };
   /* the circle completes and flares, then the veil lifts */
   let lifting = false;
@@ -659,7 +669,13 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
     v.load();
   }).catch(()=>{ noFilm = true; check(); });
 
-  const skip = ()=>{ if(playing && !I.gone) finish(v.currentTime > OPENED ? 'open' : 'closed'); };
+  /* a film the browser made start silent takes the first touch as a wish to hear it,
+     not to skip it: the touch is what the browser was waiting for */
+  const skip = ()=>{
+    if(!playing || I.gone) return;
+    if(box.classList.contains('hush')){ box.classList.remove('hush'); v.muted = false; return; }
+    finish(v.currentTime > OPENED ? 'open' : 'closed');
+  };
   box.addEventListener('pointerdown', skip);
   /* keys belong to the opening, except those typed into an invitation shown over it */
   addEventListener('keydown', e=>{ if(!I.gone && !e.metaKey && !e.ctrlKey && !(I.holding && e.target.closest && e.target.closest('#shelf'))){ e.stopPropagation(); skip(); } }, true);
@@ -724,6 +740,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=117"></script>
+<script type="module" src="./grimoire.js?v=120"></script>
 </body>
 </html>

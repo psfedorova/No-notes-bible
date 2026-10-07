@@ -942,7 +942,7 @@ export function createShelf(api){
       openLive();
       close();
       /* said once the opening film is over and the book is still, or it plays unseen under the film */
-      Promise.resolve(api.settled && api.settled()).then(()=> api.toast(back ? `BACK IN ${name.toUpperCase()}` : 'AMEN. NO NOTES', 2600));
+      Promise.resolve(api.settled && api.settled()).then(()=> api.toast(back && !want.vowed ? `BACK IN ${name.toUpperCase()}` : 'AMEN. NO NOTES', 2600));
     }catch(e){
       show('badInvite');
     }
@@ -1397,18 +1397,9 @@ export function createShelf(api){
   /* the opening film waits while the invitation is on the screen */
   let invited = null;
   const release = ()=>{ if(invited){ invited(); invited = null; } };
-  /* the vow is said once: someone already in the book goes straight in */
-  async function invite(){
-    if(lsGet(SIGNED_KEY) && !joinWant.vowed){
-      try{
-        /* a slow line does not keep a keeper at the circle: after a few seconds the card shows */
-        const mine = await Promise.race([
-          firebase().then(()=> user && F.getDoc(ref('books', joinWant.id, 'members', user.uid))),
-          wait(4000).then(()=> null),
-        ]);
-        if(mine && mine.exists()){ wantJoin({ ...joinWant, vowed: true }); await join(); if(view.hidden) release(); return; }
-      }catch(e){}
-    }
+  /* an invitation opened again starts from nothing, for one of the book's keepers too:
+     the card, the vow and the opening with its music, which the touches on the card let play */
+  function invite(){
     show(joinWant.vowed ? 'vow' : 'join');
     firebase().catch(()=>{});
   }
