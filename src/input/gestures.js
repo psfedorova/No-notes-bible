@@ -355,31 +355,12 @@ function endPointer(e, cancelled){
 }
 canvasEl.addEventListener('pointerup', e=>endPointer(e, false));
 canvasEl.addEventListener('pointercancel', e=>endPointer(e, true));
-/* trackpad: two-finger swipe looks around, pinch zooms; a mouse wheel zooms */
-let padUntil = 0;
-function fromTrackpad(e){
-  const now = performance.now();
-  if(e.deltaMode !== 0) return false;
-  if(e.deltaX !== 0 || (e.wheelDeltaY && e.wheelDeltaY === -3*e.deltaY)) padUntil = now + 400;
-  return now < padUntil;
-}
+/* scrolling, by a mouse wheel or two fingers on a trackpad, only draws the eye nearer
+   or further; the book and the view are turned by dragging alone */
 canvasEl.addEventListener('wheel', e=>{
   e.preventDefault();
-  if(e.ctrlKey){
-    st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.01), 0.3, 3.2);
-    return;
-  }
-  if(!fromTrackpad(e)){
-    st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.0012), 0.3, 3.2);
-    return;
-  }
-  if(g && g.mode !== 'pending') return;
-  const k = 0.0045;
-  orbit.coast = false; orbit.vx = orbit.vy = 0;
-  lookAway();
-  orbit.azTo += e.deltaX*k;
-  orbit.elTo -= e.deltaY*k;
-  returnHome();
+  const k = e.ctrlKey ? 0.01 : e.deltaMode === 0 && Math.abs(e.deltaY) < 40 ? 0.004 : 0.0012;
+  st.zoom = clamp(st.zoom * Math.exp(e.deltaY*k), 0.3, 3.2);
 }, { passive:false });
 /* Safari reports a trackpad pinch as gesture events, not ctrl+wheel */
 let gestureZoom = 1;
