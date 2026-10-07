@@ -88,6 +88,16 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   white-space:nowrap;
 }
 .toast.show{ opacity:1; }
+.toast.act{ display:flex; align-items:center; gap:14px; }
+.toast.act.show{ pointer-events:auto; }
+.toast button{
+  position:relative; padding:6px 16px; border:1px solid var(--gold-line); border-radius:999px;
+  background:rgba(20,18,10,.72); color:var(--gold); cursor:pointer;
+  font:600 13px var(--ui-font); letter-spacing:2px; text-transform:uppercase; text-shadow:none;
+}
+.toast:not(.show) button{ visibility:hidden; transition:visibility 0s .5s; }
+.toast button::after{ content:''; position:absolute; inset:-10px -8px; }
+.toast button:hover, .toast button:focus-visible{ background:rgba(255,210,120,.14); color:#ffe6ae; outline:none; }
 /* above the loading circle and an invitation over it, so what the card says is seen */
 .toast{ z-index:37; }
 

@@ -27,8 +27,8 @@ btnBook.addEventListener('click', ()=> toggleBook());
 const btnMore = document.getElementById('btnMore');
 const menuEl = document.getElementById('menu');
 const menuBtn = act => menuEl.querySelector(`[data-act="${act}"]`);
-/* one erase line per page of the open spread that has writing on it */
-const eraseLabel = n => `Erase page ${n + 1}`;
+const eraseLabel = list => list.length > 1 ? `Erase pages ${list[0] + 1} and ${list[1] + 1}` : `Erase page ${list[0] + 1}`;
+const eraseFresh = ()=> !readOnly() && lastErase && performance.now() - lastErase.at <= 60000;
 /* the pages whose history the menu opens: the one under the quill, else the open spread */
 const historyPages = ()=> writing ? [writing.n] : st.open ? [2*st.k - 1, 2*st.k].filter(n => n >= 1 && n < 2*N) : [];
 function menuView(name){
@@ -46,16 +46,13 @@ function openMenu(){
   const share = menuBtn('share');
   share.hidden = !sharingOn;
   share.querySelector('span').textContent = shelf ? shelf.note() : 'Send the book to a friend';
-  const list = readOnly() ? [] : eraseTargets();
-  [menuBtn('erase'), menuBtn('erase2')].forEach((b, i)=>{
-    const n = list[i];
-    b.hidden = n === undefined;
-    b.dataset.page = n === undefined ? '' : n;
-    if(n !== undefined) b.textContent = eraseLabel(n);
-  });
-  menuBtn('restore').hidden = readOnly() || !lastErase || performance.now() - lastErase.at > 60000;
-  menuBtn('history').hidden = !shelf || !shelf.shared() || !historyPages().length;
-  menuBtn('files').querySelector('span').textContent = !shelf || shelf.kept() ? 'Download or restore the book' : 'Back it up to keep it safe';
+  const list = readOnly() ? [] : eraseTargets(), erase = menuBtn('erase');
+  erase.hidden = !list.length && !eraseFresh();
+  erase.dataset.pages = list.join(' ');
+  erase.textContent = list.length ? eraseLabel(list) : 'Undo erase';
+  const past = !!shelf && shelf.shared() && historyPages().length > 0;
+  menuBtn('history').hidden = !past;
+  menuBtn('files').querySelector('span').textContent = shelf && !shelf.kept() ? 'Back it up to keep it safe' : past ? 'Page history, download or restore' : 'Download or restore the book';
   menuNotes();
   menuEl.hidden = false;
   btnMore.setAttribute('aria-expanded', 'true');
@@ -80,8 +77,8 @@ menuEl.addEventListener('click', e=>{
     return;
   }
   closeMenu();
-  const page = ()=> erasePages([+b.dataset.page]);
-  ({ erase: page, erase2: page, restore: restoreErased, exportText, saveCopy: ()=> saveCopy(false), openCopy: ()=> copyPicker.click(), replay: replayOpening, spells: openSpells, share: ()=> shelf && shelf.open(), history: ()=> shelf && shelf.history(historyPages()) })[b.dataset.act]();
+  const erase = ()=> b.dataset.pages ? erasePages(b.dataset.pages.split(' ').map(Number)) : restoreErased();
+  ({ erase, exportText, saveCopy: ()=> saveCopy(false), openCopy: ()=> copyPicker.click(), replay: replayOpening, spells: openSpells, share: ()=> shelf && shelf.open(), history: ()=> shelf && shelf.history(historyPages()) })[b.dataset.act]();
 });
 addEventListener('pointerdown', e=>{
   if(!menuEl.hidden && !menuEl.contains(e.target) && !btnMore.contains(e.target)) closeMenu();

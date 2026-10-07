@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { lerp } from '../lib/textures.js';
 import { easeSine } from '../core/easing.js';
-import { MOD, N, PAGE_H, PAGE_W, SC } from '../core/config.js';
+import { N, PAGE_H, PAGE_W, SC } from '../core/config.js';
 import { scene } from '../scene/renderer.js';
 import { layoutText, textBox } from './layout.js';
 import { addVapor } from './paint.js';
@@ -16,6 +16,7 @@ import { sparkMat } from '../fx/ink-fx.js';
 import { sfx } from '../audio/sound.js';
 import { burstMat, particlePool } from '../fx/magic.js';
 import { seekSpread } from '../book/seek.js';
+import { onePage, shownPage } from '../book/view.js';
 
 
 function spreadOf(n){ return n <= 0 ? 0 : (n % 2 ? (n + 1)/2 : n/2); }
@@ -234,7 +235,7 @@ function erasePages(list){
   lastErase = { pages: gone, shifted, at: now };
   sfx.erase();
   saveSoon(true);
-  toast(`ERASED · ${MOD}Z BRINGS IT BACK`, 2800);
+  toast('ERASED', 6000, { label: 'Undo', fn: restoreErased });
 }
 /* the ink comes back and writes itself in, letter by letter */
 function restoreErased(){
@@ -273,22 +274,18 @@ function restoreErased(){
   toast('THE INK RETURNS', 1600);
   return true;
 }
-/* one page at a time, never the whole book: the page under the quill, else
-   the one page of the open spread that has writing on it */
+/* what one erase takes: the page under the quill, the one page shown, the page last
+   written on this spread, else every written page of the spread at once */
 function eraseTargets(){
   if(writing) return [writing.n];
   if(!st.open) return [];
-  return [2*st.k - 1, 2*st.k].filter(n => n >= 1 && n < 2*N && pages[n].t);
+  if(onePage()){ const n = shownPage(); return n >= 1 && n < 2*N && pages[n].t ? [n] : []; }
+  const list = [2*st.k - 1, 2*st.k].filter(n => n >= 1 && n < 2*N && pages[n].t);
+  return list.includes(lastWritten) ? [lastWritten] : list;
 }
 function eraseHere(){
   if(!writing && !st.open){ toast('OPEN THE BOOK FIRST', 1400); return; }
-  const list = eraseTargets();
-  if(list.length === 2){
-    if(list.includes(lastWritten)) return erasePages([lastWritten]);
-    toast('CHOOSE THE PAGE IN THE ⋯ MENU', 2000);
-    return;
-  }
-  erasePages(list);
+  erasePages(eraseTargets());
 }
 
 export {
