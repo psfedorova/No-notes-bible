@@ -12,7 +12,7 @@ import { backGrp } from '../book/sapphire.js';
 import { spineMesh } from '../book/spine.js';
 import { flightAngleFn, hingeOf, layoutCtx, leaves, restParams } from '../book/leaves.js';
 import { _H, invalidateLayout, st } from '../book/state.js';
-import { angVel, atHome, glideSpin, onePage, orbit, pagePerPx, pageScroll, pageStep, qOpenHome, rotateBy, setInertia, setPageScroll, setSpinAnim, shownPage, spinAnim, spinGoal, stepPage } from '../book/view.js';
+import { angVel, atHome, glideSpin, homeQuat, inertia, onePage, orbit, pagePerPx, pageScroll, pageStep, qOpenHome, rotateBy, setInertia, setPageScroll, setSpinAnim, shownPage, spinAnim, spinGoal, stepPage } from '../book/view.js';
 import { homePage, homeSpread } from '../ink/storage.js';
 import { enterWriting, exitWriting, onSel, quill, writing } from '../ink/writing.js';
 import { sfx } from '../audio/sound.js';
@@ -69,7 +69,7 @@ function pickAt(cx, cy){
     const lp = frontGrp.worldToLocal(h.point.clone());
     return { type:'front', local: lp, outer: lp.x > CW*0.42, inner: lp.z < CVR*0.5 };
   }
-  return { type:'book' };
+  return { type:'book', board: true };
 }
 function toScreen(v){ const p = v.clone().project(camera); return { x:(p.x*0.5+0.5)*VW, y:(-p.y*0.5+0.5)*VH }; }
 
@@ -149,7 +149,47 @@ canvasEl.addEventListener('pointerdown', e=>{
   g = { id:e.pointerId, sx:e.clientX, sy:e.clientY, px:e.clientX, py:e.clientY, t:performance.now(),
         moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1, q0: spinGoal.clone(), o0: [orbit.azTo, orbit.elTo],
         slop: THRESH[e.pointerType] || THRESH.mouse };
+  /* on the page being written a mouse selects, as in any text: a drag marks the words,
+     a double click a word, a triple click its paragraph, a shift click runs on from
+     the caret; the leaf is still turned by its outer edge and by the pager */
+  const now = performance.now(), again = now - downs.t < 450 && Math.hypot(e.clientX - downs.x, e.clientY - downs.y) < 8;
+  downs.n = again ? downs.n + 1 : 1; downs.t = now; downs.x = e.clientX; downs.y = e.clientY;
+  const at = e.pointerType !== 'touch' && !g.force && hit && hit.s < PW*0.95 ? textAt(hit) : null;
+  if(at === null) return;
+  if(e.shiftKey){
+    const a = quill.selectionDirection === 'backward' ? quill.selectionEnd : quill.selectionStart;
+    g.mode = 'select'; g.anchor = a; select(a, at);
+  }else if(downs.n >= 2){
+    const [a, b] = downs.n === 2 ? wordAround(quill.value, at) : paragraphAround(quill.value, at);
+    g.mode = 'select'; g.anchor = a; select(a, b);
+  }else g.anchor = at;
 });
+/* pointer events carry no click count: presses close in time and place are counted here */
+const downs = { t: 0, x: 0, y: 0, n: 0 };
+/* the letter under a point of the page being written, or null elsewhere */
+function textAt(h){
+  if(!h || h.type !== 'page' || !writing || h.n !== writing.n) return null;
+  const en = pageEntry(h.n);
+  if(!en.lay) paintPage(h.n);
+  return en.lay ? indexAt(en.lay, h.uv.x*PAGE_W, (1-h.uv.y)*PAGE_H) : null;
+}
+function select(a, b){
+  quill.focus({ preventScroll:true });
+  quill.setSelectionRange(Math.min(a, b), Math.max(a, b), b < a ? 'backward' : 'forward');
+  onSel();
+}
+const WORD = /[\p{L}\p{N}'’-]/u;
+function wordAround(t, i){
+  let a = i, b = i;
+  if(!WORD.test(t[a] || '') && a > 0 && WORD.test(t[a-1])) a = b = i - 1;
+  while(a > 0 && WORD.test(t[a-1])) a--;
+  while(b < t.length && WORD.test(t[b])) b++;
+  return [a, Math.max(a, b)];
+}
+function paragraphAround(t, i){
+  const a = t.lastIndexOf('\n', i - 1) + 1, nl = t.indexOf('\n', i);
+  return [a, nl < 0 ? t.length : nl];
+}
 canvasEl.addEventListener('pointermove', e=>{
   const pp = pointers.get(e.pointerId);
   if(pp){ pp.x = e.clientX; pp.y = e.clientY; }
@@ -172,6 +212,15 @@ canvasEl.addEventListener('pointermove', e=>{
   let dx = e.clientX - g.px, dy = e.clientY - g.py;
   g.px = e.clientX; g.py = e.clientY;
   g.moved += Math.abs(dx) + Math.abs(dy);
+  if(g.mode === 'pending' && g.anchor !== undefined){
+    if(Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < g.slop) return;
+    g.mode = 'select';
+  }
+  if(g.mode === 'select'){
+    const at = textAt(pickAt(e.clientX, e.clientY));
+    if(at !== null) select(g.anchor, at);
+    return;
+  }
   if(g.mode === 'pending'){
     if(Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < g.slop) return;
     const h = g.hit;
@@ -238,6 +287,18 @@ canvasEl.addEventListener('pointermove', e=>{
   }
 });
 let rotating = false;
+/* looking round or turning the book is a glance: let go, and once it has coasted to a
+   stop the eye and the book ease back to where the reader sits */
+let homeTimer = 0;
+function returnHome(){
+  clearTimeout(homeTimer);
+  homeTimer = setTimeout(function check(){
+    if(g || pinch) return;
+    if(orbit.coast || inertia){ homeTimer = setTimeout(check, 250); return; }
+    orbit.azTo = 0; orbit.elTo = 0;
+    if(!atHome() && !spinAnim) glideSpin(homeQuat(), 1.6, st.lift < 0.05);
+  }, 1500);
+}
 /* the eye leaving the page to look round sets the quill down with it: words typed
    then would land on a page no longer in sight */
 function lookAway(){
@@ -251,6 +312,7 @@ function endPointer(e, cancelled){
   if(pinch){
     if(pointers.size < 2){
       pinch = null; rotating = false;
+      returnHome();
       /* drawn in close over the open book, a phone comes down onto its page again */
       if(onePage() && st.open && st.focusTo < 0.5 && st.zoom < 0.8){ st.zoom = 1; st.focusTo = 1; refreshUI(); }
     }
@@ -261,6 +323,7 @@ function endPointer(e, cancelled){
   rotating = false;
   document.body.classList.remove('grabbing');
   if(gg.mode === 'turn'){ endTurn(cancelled); return; }
+  if(gg.mode === 'select') return;
   /* a quick press that only slipped a few pixels was meant as a click */
   const tap = !cancelled && performance.now() - gg.t < 350 && gg.moved < 18;
   if(gg.mode === 'cover'){ if(tap && !st.open) click(gg.hit); else endCover(cancelled); return; }
@@ -272,10 +335,12 @@ function endPointer(e, cancelled){
   }
   if(gg.mode === 'rot'){
     if(performance.now() - (gg.lt||0) < 70 && Math.hypot(angVel.x, angVel.y) > 0.25) setInertia(true);
+    returnHome();
     return;
   }
   if(gg.mode === 'orbit'){
     if(performance.now() - (gg.lt||0) < 70 && Math.hypot(orbit.vx, orbit.vy) > 0.2) orbit.coast = true;
+    returnHome();
     return;
   }
   if(gg.mode === 'swept' || gg.mode === 'scroll') return;
@@ -307,6 +372,7 @@ canvasEl.addEventListener('wheel', e=>{
   lookAway();
   orbit.azTo += e.deltaX*k;
   orbit.elTo -= e.deltaY*k;
+  returnHome();
 }, { passive:false });
 /* Safari reports a trackpad pinch as gesture events, not ctrl+wheel */
 let gestureZoom = 1;
@@ -354,11 +420,14 @@ function endCover(cancelled){
 
 /* turning is done by dragging, so a click on the book, however it was left turned,
    means writing: it swings back square to the reader, closed or open, and the quill
-   comes up where it was last written or where the click fell on a page */
+   comes up where it was last written or where the click fell on a page. A click on
+   the binding of an open book closes it */
 const EDGE_TURN = 0.84;
 function click(hit){
   if(!hit){ if(writing) exitWriting(); else st.focusTo = 0; return; }
   if(!st.open){ writePose(); return; }
+  /* the binding of an open book, not its pages, shuts it */
+  if(hit.type === 'front' || hit.board){ if(!st.flight && !st.riffle) setOpen(false); return; }
   if(hit.type === 'page' && st.open){
     /* a click by the fore edge of a square book turns the leaf; the title page is only leaned in to */
     if(hit.s > PW*EDGE_TURN && atHome() && !spinAnim){ pageStep(hit.side === 'right' ? 1 : -1); return; }

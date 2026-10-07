@@ -101,7 +101,13 @@ function rockMaterial(img){
         gran *= 1.0 - edge*0.35;
         diffuseColor.rgb *= mix(gran, mos, smoothstep(0.25, 0.75, mm));
         /* shade gathering low down, where the boulder sinks into the forest floor */
-        diffuseColor.rgb *= mix(0.4, 1.0, smoothstep(${GROUND_Y.toFixed(2)} - 0.2, ${(GROUND_Y + 2.6).toFixed(2)}, vWp.y));`)
+        diffuseColor.rgb *= mix(0.4, 1.0, smoothstep(${GROUND_Y.toFixed(2)} - 0.2, ${(GROUND_Y + 2.6).toFixed(2)}, vWp.y));
+        /* the earth it is sunk in: damp dark soil and rotted moss creep up its foot in an
+           uneven line, so it goes into the ground instead of standing on it */
+        { float rise = 0.35 + 0.45*vn3(vWp*0.9 + 3.0) + 0.25*(vn3(vWp*4.0) - 0.5);
+          float soil = 1.0 - smoothstep(${GROUND_Y.toFixed(2)} + rise*0.45, ${GROUND_Y.toFixed(2)} + rise, vWp.y);
+          vec3 earth = mix(vec3(0.075, 0.062, 0.042), vec3(0.11, 0.12, 0.06), vn3(vWp*2.3 + 1.0));
+          diffuseColor.rgb = mix(diffuseColor.rgb, earth, soil*0.85); }`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.82, 0.97, mm);')
       .replace('#include <lights_fragment_end>', MOSS_LIT('smoothstep(0.3, 0.8, mm)'))
       .replace('#include <normal_fragment_maps>', `

@@ -31,7 +31,12 @@ const ORBIT_EL = [0.06, 1.38];
    tears, and walking round the old oak would step into its trunk */
 const CAM_REACH = 30;
 
-function homeQuat(){ return st.open ? qOpenHome : qClosedHome; }
+/* a book shut where it lay stays square to the reader; only the first closed pose,
+   the one the opening film starts from, lies turned on the rock */
+let closedHome = qClosedHome;
+function setClosedHome(q){ closedHome = q; }
+const closedQuat = ()=> closedHome;
+function homeQuat(){ return st.open ? qOpenHome : closedHome; }
 /* nearly straight down: square enough to read as a flat sheet, not so square
    that the eye's up direction is lost */
 const WRITE_EL = 1.5;
@@ -152,7 +157,7 @@ function atHome(){ return (spinAnim && spinAnim.settle) || (shut.spin && shut.sp
 export {
   angVel, atHome, CAM_REACH, camElevation, camTarget, fitDistance, frameTheta, freeFrame,
   glideSpin, holdFrame, homeQuat, inertia, onePage, orbit, ORBIT_EL, pageMid, pagePerPx,
-  pageScroll, pageStep, qClosedHome, qOpenHome, releaseFrame, rotateBy, setInertia,
+  pageScroll, pageStep, qClosedHome, qOpenHome, releaseFrame, closedQuat, setClosedHome, rotateBy, setInertia,
   setPagePerPx, setPageScroll, setSpinAnim, shownPage, sideOf, spinAnim, spinGoal,
   stepFrame, stepPage, uiInsets, visibleBand, WRITE_EL
 };

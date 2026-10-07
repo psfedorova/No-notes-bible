@@ -1,6 +1,6 @@
 /* the quiet magic round the book: motes, the aura, bursts of gold, dust and the inner glow */
 import * as THREE from 'three';
-import { clamp, lerp, smooth, mulberry32, makeSpriteCanvas } from '../lib/textures.js';
+import { clamp, cv, fbm, lerp, smooth, mulberry32, makeSpriteCanvas } from '../lib/textures.js';
 import { damp, sdamp } from '../core/easing.js';
 import { CH, CVR, CW, N, OPEN, PAGE_H, PAGE_W, T, ZB } from '../core/config.js';
 import { scene } from '../scene/renderer.js';
@@ -144,7 +144,7 @@ const dustMat = sparkMat.clone();
 dustMat.fragmentShader = `varying float vA;
   void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.05, d)*vA; gl_FragColor = vec4(vec3(1.0, 0.84, 0.62)*a, 1.0); }`;
 const dust2 = particlePool(140, dustMat);
-function emitOpenBurst(count = 110){
+function emitOpenBurst(count = 150){
   const pg = [];
   if(st.k > 0) pg.push(2*st.k - 1);
   if(st.k < N) pg.push(2*st.k);
@@ -157,10 +157,73 @@ function emitOpenBurst(count = 110){
       1.4 + Math.random()*1.6, 0.45 + Math.random()*0.4);
   }
 }
+/* the dust a shut book blows off the rock: soft billows of fine grit rolling out low
+   from under the boards, brighter on the sun's side, thinning as they spread, and a
+   few grains catching the light. Each billow is one of a few cloudy sprites */
+function puffTexture(S, seed){
+  const n = fbm(S, S, 3, 3, 4, seed), n2 = fbm(S, S, 8, 8, 3, seed + 5);
+  const c = cv(S, S), x = c.getContext('2d'), im = x.createImageData(S, S);
+  for(let y=0;y<S;y++) for(let i=0;i<S;i++){
+    const k = y*S + i, u = (i + 0.5)/S*2 - 1, v = (y + 0.5)/S*2 - 1;
+    const r = Math.hypot(u, v) + (n[k] - 0.5)*0.7;
+    const body = 1 - smooth(clamp((r - 0.1)/0.8, 0, 1));
+    const a = body*body*(0.45 + 0.55*n2[k]);
+    const lit = 0.86 + 0.16*(-u*0.4 - v*0.8) + 0.2*(n2[k] - 0.5), p = k*4;
+    im.data[p] = 255*Math.min(1, 0.86*lit); im.data[p+1] = 255*Math.min(1, 0.79*lit); im.data[p+2] = 255*Math.min(1, 0.68*lit);
+    im.data[p+3] = 255*clamp(a, 0, 1);
+  }
+  x.putImageData(im, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const puffTex = [0, 1, 2, 3].map(k => puffTexture(128, 4100 + k*17));
+const puffs = [];
+for(let i=0;i<28;i++){
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex[i % puffTex.length], color: 0xcabda6, transparent: true, opacity: 0, depthWrite: false }));
+  sp.visible = false;
+  scene.add(sp);
+  puffs.push({ sp, age: 1, life: 1, v: new THREE.Vector3(), size: 1, grow: 1, spin: 0, peak: 0 });
+}
+let puffAt = 0;
+function emitPuff(x, y, z, vx, vz){
+  const P = puffs[puffAt++ % puffs.length];
+  P.sp.position.set(x, y, z);
+  P.v.set(vx, 0.06 + Math.random()*0.12, vz);
+  P.age = 0; P.life = 1.8 + Math.random()*1.4;
+  P.size = 0.6 + Math.random()*0.5; P.grow = 2.4 + Math.random()*1.8;
+  P.spin = (Math.random() - 0.5)*0.5; P.sp.material.rotation = Math.random()*6.28;
+  P.peak = 0.34 + Math.random()*0.18;
+  P.sp.visible = true;
+}
+function stepPuffs(dt){
+  for(const P of puffs){
+    if(!P.sp.visible) continue;
+    P.age += dt;
+    const k = P.age/P.life;
+    if(k >= 1){ P.sp.visible = false; continue; }
+    P.v.multiplyScalar(Math.exp(-dt*2.4));
+    P.sp.position.addScaledVector(P.v, dt);
+    const s = P.size*(1 + P.grow*(1 - Math.exp(-P.age*2.0)));
+    P.sp.scale.set(s, s, 1);
+    P.sp.material.rotation += P.spin*dt;
+    P.sp.material.opacity = P.peak*Math.min(1, P.age/0.07)*Math.pow(1 - k, 1.5);
+  }
+}
 /* the closed book in world space: corners of its footprint on the rock */
 const _dc = new THREE.Vector3();
 function emitDustPuff(){
-  for(let i=0;i<110;i++){
+  for(let i=0;i<22;i++){
+    const side = i % 4, t = (Math.floor(i/4) + 0.5 + (Math.random() - 0.5)*0.6)/6;
+    const lx = side < 2 ? lerp(0, CW, t) : (side === 2 ? 0 : CW);
+    const ly = side < 2 ? (side ? CH/2 : -CH/2) : lerp(-CH/2, CH/2, t);
+    _dc.set(lx, ly, ZB - CVR*0.5);
+    bookRoot.localToWorld(_dc);
+    const v = new THREE.Vector3(lx - CW/2, ly, 0).normalize().transformDirection(bookRoot.matrixWorld);
+    const sp = 0.7 + Math.random()*0.8;
+    emitPuff(_dc.x + v.x*0.15, _dc.y + 0.12, _dc.z + v.z*0.15, v.x*sp, v.z*sp);
+  }
+  for(let i=0;i<36;i++){
     const side = i % 4, t = Math.random();
     const lx = side < 2 ? lerp(0, CW, t) : (side === 2 ? 0 : CW);
     const ly = side < 2 ? (side ? CH/2 : -CH/2) : lerp(-CH/2, CH/2, t);
@@ -168,8 +231,8 @@ function emitDustPuff(){
     bookRoot.localToWorld(_dc);
     const out = new THREE.Vector3(lx - CW/2, ly, 0).normalize();
     const v = new THREE.Vector3(out.x, out.y, 0).transformDirection(bookRoot.matrixWorld);
-    const sp = 0.35 + Math.random()*0.6;
-    dust2.emit(_dc.x, _dc.y + 0.05, _dc.z, v.x*sp, 0.12 + Math.random()*0.25, v.z*sp, 1.4 + Math.random()*1.4, 0.07 + Math.random()*0.07);
+    const sp = 0.3 + Math.random()*0.5;
+    dust2.emit(_dc.x, _dc.y + 0.05, _dc.z, v.x*sp, 0.1 + Math.random()*0.2, v.z*sp, 1.2 + Math.random()*1.2, 0.035 + Math.random()*0.04);
   }
 }
 /* warm light spilling out of the gap as the board lifts: a breath of it, the colour
@@ -192,14 +255,15 @@ function stepMagic(dt){
   stepAura(dt);
   burst.step(dt, 1.2, 0.08);
   dust2.step(dt, 2.2, 0.05);
+  stepPuffs(dt);
   const gap = Math.pow(Math.sin(clamp(st.theta, 0, OPEN)), 0.8);
   const gl = st.glow*(0.25 + 0.75*gap);
   _gp.set(lerp(CW*0.5, 0, smooth(clamp(st.theta/OPEN, 0, 1))), 0, T/2 + 0.8);
   bookRoot.localToWorld(_gp);
   innerGlow.position.copy(_gp);
-  innerGlow.intensity = gl*1.8;
+  innerGlow.intensity = gl*3.2;
   glowSprite.position.copy(_gp);
-  glowSprite.material.opacity = gl*0.06;
+  glowSprite.material.opacity = gl*0.14;
   glowSprite.visible = gl > 0.003;
 }
 

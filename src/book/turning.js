@@ -5,7 +5,7 @@ import { N, OPEN, PW } from '../core/config.js';
 import { spinGrp } from '../scene/rig.js';
 import { AIR, LAG_MAX, land, leaves } from './leaves.js';
 import { queue, st } from './state.js';
-import { freeFrame, glideSpin, holdFrame, qClosedHome, qOpenHome } from './view.js';
+import { closedQuat, freeFrame, glideSpin, holdFrame, qOpenHome, setClosedHome } from './view.js';
 import { saveSoon } from '../ink/storage.js';
 import { exitWriting, pageNoEl, writing } from '../ink/writing.js';
 import { sfx } from '../audio/sound.js';
@@ -25,6 +25,8 @@ function coverPath(open){
   const th = st.theta, segs = [];
   if(open){
     if(th < 0.1){
+      /* the stone wakes first, so the light that follows has a cause */
+      st.gemFlare = Math.max(st.gemFlare, 0.8);
       segs.push({ d:0.6, to:0.12, e:easeSine }, { d:0.3, to:0.145, e:easeSine });
       segs.push({ d:1.75, to:OPEN, e:easeSine, at:0.45, fire:'burst' });
     }else segs.push({ d:Math.max(0.6, 1.75*(OPEN - th)/OPEN), to:OPEN, e:easeSine });
@@ -101,9 +103,9 @@ function setOpen(open, thrown){
   }else coverAnim = coverPath(open);
   if(Math.abs(to - st.theta) > 0.4) sfx.creak(open);
   if(wasOpen !== open){
-    const from = open ? qClosedHome : qOpenHome, home = spinGrp.quaternion.angleTo(from) < 0.07;
+    const from = open ? closedQuat() : qOpenHome, home = spinGrp.quaternion.angleTo(from) < 0.07;
     if(open){ freeFrame(); if(home) glideSpin(qOpenHome, 2.2, st.lift < 0.05); }
-    else holdFrame(home ? qClosedHome : null, st.lift < 0.05);
+    else{ if(home) setClosedHome(qOpenHome); holdFrame(home ? qOpenHome : null, st.lift < 0.05); }
   }
   saveSoon(true);
   refreshUI();

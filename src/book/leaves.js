@@ -47,7 +47,7 @@ for(let i=0;i<N;i++){
      corners, each leaf here being far thicker than paper */
   const len = PW*(1 - 0.0015*rnd());
   const yb = -PH/2 + 0.0015*(rnd()-0.35), yt = PH/2 - 0.0015*(rnd()-0.35);
-  const tint = 0.84 + rnd()*0.2;
+  const tint = 0.84 + rnd()*0.2, warm = 0.92 + rnd()*0.1;
   /* the gutter: a page darkens as it runs down into the sewing, on both sides of
      every leaf, so the spread reads as bound into the spine and not laid beside it */
   const gutter = v => { const s = ((v % A_CNT) % (M+1))/M*len, f = 1 - smooth(clamp(s/0.42, 0, 1)); return 1 - 0.42*Math.pow(f, 1.6); };
@@ -55,7 +55,7 @@ for(let i=0;i<N;i++){
     const wallV = v >= 2*A_CNT, gs = wallV ? 1 : gutter(v);
     col[v*3]   = wallV ? 0.84*tint : gs;
     col[v*3+1] = wallV ? 0.68*tint : gs;
-    col[v*3+2] = wallV ? 0.42*tint*(0.92+rnd()*0.1) : gs;
+    col[v*3+2] = wallV ? 0.42*tint*warm : gs;
   }
   g.setAttribute('position', new THREE.BufferAttribute(pos,3));
   g.setAttribute('normal', new THREE.BufferAttribute(nrm,3));

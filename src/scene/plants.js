@@ -174,13 +174,39 @@ function grassField(G, stones, tufts){
     for(let j=0;j<AO_N;j++) for(let i=0;i<AO_N;i++){ let t = 0; for(let d=-B;d<=B;d++) t += rim[j*AO_N + Math.min(AO_N - 1, Math.max(0, i + d))]; tmp[j*AO_N + i] = t/(2*B + 1); }
     for(let j=0;j<AO_N;j++) for(let i=0;i<AO_N;i++){ let t = 0; for(let d=-B;d<=B;d++) t += tmp[Math.min(AO_N - 1, Math.max(0, j + d))*AO_N + i]; rim[j*AO_N + i] = t/(2*B + 1); }
   }
-  for(let c=0;c<ao.length;c++) ao[c] = Math.min(0.45, 1 - (1 - ao[c])*(1 - 0.4*rim[c]));
+  /* the boulder keeps the most sky from the floor at its foot: deep shade where it goes
+     into the ground, fading within a metre or so, so it sits in the earth and not on it */
+  for(let j=0;j<AO_N;j++) for(let i=0;i<AO_N;i++){
+    const x = -AO_R + (i + 0.5)*CELL, z = -AO_R + (j + 0.5)*CELL, d = Math.hypot(x, z) - footAt(x, z);
+    if(d > -0.5 && d < 4){ const c = j*AO_N + i; ao[c] = 1 - (1 - ao[c])*(1 - 0.52*Math.exp(-Math.max(0, d)/0.9)); }
+  }
+  for(let c=0;c<ao.length;c++) ao[c] = Math.min(0.55, 1 - (1 - ao[c])*(1 - 0.4*rim[c]));
   const aoTex = new THREE.DataTexture(Uint16Array.from(ao, THREE.DataUtils.toHalfFloat), AO_N, AO_N, THREE.RedFormat, THREE.HalfFloatType);
   aoTex.magFilter = aoTex.minFilter = THREE.LinearFilter; aoTex.needsUpdate = true;
   const BU = backdrop.material.uniforms;
   BU.tAO.value = aoTex; BU.uAO.value.set(AO_R, AO_W);
   const rnd = mulberry32(2718), root = new Float32Array(N*4), blade = new Float32Array(N*4);
   let n = 0;
+  /* the grass grows up against the stone all round its foot, thick and tall there as in
+     the shelter of any boulder; blades rooted a little under its edge rise in front of it */
+  for(let c=0, C = HI_RES ? 520 : 300; c<C && n<N; c++){
+    const a = (c + rnd()*0.8)/C*2*Math.PI, ca = Math.cos(a), sa = Math.sin(a);
+    const f = footAt(ca, sa);
+    if(!(f > 0)) continue;
+    const r = f + 0.05 + 0.55*rnd()*rnd(), cx = r*ca, cz = r*sa;
+    if(underStone(cx, cz)) continue;
+    const k = 8 + Math.floor(10*rnd()), spread = 0.2 + 0.25*rnd(), tall = 0.95 + 0.4*rnd();
+    for(let b=0;b<k && n<N;b++){
+      const q = Math.sqrt(rnd()), qa = rnd()*2*Math.PI, x = cx + spread*q*Math.cos(qa), z = cz + spread*q*Math.sin(qa);
+      if(Math.hypot(x, z) < footAt(x, z) - 0.12) continue;
+      root[n*4] = x; root[n*4 + 1] = hAt(x, z) - 0.05; root[n*4 + 2] = z; root[n*4 + 3] = rnd();
+      blade[n*4] = Math.atan2(z, x) + (rnd() - 0.5)*1.6;
+      blade[n*4 + 1] = (0.7 + 0.9*rnd()*rnd())*(1.15 - 0.4*q)*tall;
+      blade[n*4 + 2] = (0.045 + 0.05*rnd())*WIDE;
+      blade[n*4 + 3] = 0.08 + 0.55*q + 0.2*rnd();
+      n++;
+    }
+  }
   for(let tries=0; n < N && tries < N*4; tries++){
     const r = R2*Math.sqrt(rnd()), a = rnd()*2*Math.PI, cx = r*Math.cos(a), cz = r*Math.sin(a);
     const edge = 1 - sstep(R1, R2, r);
@@ -190,7 +216,7 @@ function grassField(G, stones, tufts){
     const k = 5 + Math.floor((4 + 10*dense)*rnd()), spread = 0.25 + 0.35*rnd() + 0.3*dense;
     for(let b=0;b<k && n<N;b++){
       const q = Math.sqrt(rnd()), qa = rnd()*2*Math.PI, x = cx + spread*q*Math.cos(qa), z = cz + spread*q*Math.sin(qa);
-      if(Math.hypot(x, z) < footAt(x, z) + 0.15 || underStone(x, z)) continue;
+      if(Math.hypot(x, z) < footAt(x, z) || underStone(x, z)) continue;
       root[n*4] = x; root[n*4 + 1] = hAt(x, z) - 0.05; root[n*4 + 2] = z; root[n*4 + 3] = rnd();
       blade[n*4] = qa + (rnd() - 0.5)*1.4;
       blade[n*4 + 1] = (0.6 + 0.9*rnd()*rnd())*(1.15 - 0.45*q)*tall;
