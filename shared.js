@@ -3,9 +3,11 @@
 
    Each member signs in with Google. A page is the letters of every hand on it,
    each letter with a position key; a page reads them sorted by key. Every
-   hand keeps its letters of a page in a doc of its own (books/{id}/ink/{n}_{uid}),
-   which only that hand may write, so two people can write on one page at the
-   same time and nobody can erase another's ink. The rules are firestore.rules.
+   hand's letters of a page are a doc of their own (books/{id}/ink/{n}_{uid}).
+   Any keeper may erase or move any hand's letters: the doc is changed letter
+   by letter in a transaction, so two people can write on one page at once, and
+   the page as it was goes to books/{id}/past first, so it can be brought back.
+   The rules are firestore.rules.
 
    A Google account also keeps a copy of the private book (users/{uid}/keep),
    so it comes back on a new device or after the browser forgets it.
@@ -84,6 +86,7 @@ export function createShelf(api){
   let offInk = null, offMembers = null, offBook = null, offMine = null, offAccess = null, firstSnap = true;
   let names = new Map(), plainNames = new Map(), guests = new Set(), access = new Map(), reading = false;
   let ink = new Map(), pending = new Set(), merged = new Map(), deferred = new Set();
+  let base = new Map(), pastQ = [], pastAt = new Map(), forced = new Set(), flight = null;
   let upTm = 0, joinWant = null, dirtyInk = new Set(), link = null;
   let inflight = 0, waitTm = 0, slow = false;
   let keepTm = 0, clash = null, checked = new Set(), making = false;
@@ -186,6 +189,7 @@ export function createShelf(api){
     flush();
     unlisten();
     cur = null; ink = new Map(); merged = new Map(); pending = new Set(); deferred = new Set(); names = new Map(); plainNames = new Map();
+    base = new Map(); pastQ = []; pastAt = new Map(); forced = new Set();
     guests = new Set(); access = new Map(); reading = false;
     lsDel(CUR_KEY);
   }
@@ -198,7 +202,14 @@ export function createShelf(api){
     api.useBook(bookKey(c.id), c.uid);
     cur = { id: c.id, name: c.name || 'Our book', owner: c.owner || null, uid: c.uid };
     const ic = lsGet(inkKey(c.id));
-    ink = new Map(); pending = new Set(ic && Array.isArray(ic.pending) ? ic.pending : []); dirtyInk = new Set(); link = null;
+    ink = new Map(); dirtyInk = new Set(); link = null;
+    pending = new Set((ic && Array.isArray(ic.pending) ? ic.pending : []).map(x => typeof x === 'number' ? pid(x, c.uid) : String(x)));
+    base = new Map(); pastAt = new Map(); forced = new Set();
+    Object.entries(ic && ic.base || {}).forEach(([x, e])=>{
+      const E = e && { s: e.s, k: splitKeys(e.k), f: e.f || null, c: !!e.c };
+      if(e === null) base.set(x, null); else if(goodEntry(E)) base.set(x, E);
+    });
+    pastQ = ic && Array.isArray(ic.past) ? ic.past : [];
     const take = (n, hands, old)=>{
       const m = new Map();
       Object.entries(hands || {}).forEach(([h, e])=>{ const x = e && { ...e, k: splitKeys(e.k) }; if(goodEntry(x)) m.set(h, x); });
@@ -242,13 +253,13 @@ export function createShelf(api){
       const was = reading;
       reading = s.exists() && s.data().can === 'read';
       if(reading === was) return;
-      if(!reading && pending.size) queueUp();
+      if(!reading && (pending.size || pastQ.length)) queueUp();
       api.refresh();
       if(!view.hidden) render();
       api.toast(reading ? 'YOU CAN ONLY READ THIS BOOK NOW' : 'YOU CAN WRITE IN THIS BOOK AGAIN', 2600);
     }, ()=>{});
     offInk = F.onSnapshot(F.collection(F.db, 'books', id, 'ink'), s => onInk(s), e => lost(e));
-    if(pending.size) queueUp();
+    if(pending.size || pastQ.length) queueUp();
   }
   /* two keepers of one name are told apart by the order they came in: Alex, Alex II */
   const ROMAN = ['', '', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
@@ -335,10 +346,10 @@ export function createShelf(api){
     if(!navigator.onLine){ api.toast('DELETING A BOOK NEEDS A CONNECTION', 2400); return; }
     const id = cur.id, me = user.uid, name = cur.name, server = F.getDocsFromServer || F.getDocs;
     unlisten();
-    clearTimeout(upTm); pending.clear();
+    clearTimeout(upTm); pending.clear(); base.clear(); pastQ = [];
     try{
-      const [inkS, memS, accS] = await Promise.all(['ink', 'members', 'access'].map(c => server(F.collection(F.db, 'books', id, c))));
-      const refs = [...inkS.docs.map(d => ref('books', id, 'ink', d.id)), ...memS.docs.filter(d => d.id !== me).map(d => ref('books', id, 'members', d.id)),
+      const [inkS, memS, accS, pastS] = await Promise.all(['ink', 'members', 'access', 'past'].map(c => server(F.collection(F.db, 'books', id, c))));
+      const refs = [...inkS.docs.map(d => ref('books', id, 'ink', d.id)), ...pastS.docs.map(d => ref('books', id, 'past', d.id)), ...memS.docs.filter(d => d.id !== me).map(d => ref('books', id, 'members', d.id)),
         ...accS.docs.map(d => ref('books', id, 'access', d.id))];
       for(let i=0;i<refs.length;i+=450){
         const b = F.writeBatch(F.db);
@@ -562,67 +573,126 @@ export function createShelf(api){
     if(samePage(n, M)) return;
     if(!api.applyPage(n, M.t, M.a, M.f, M.c, quiet)) deferred.add(n);
   }
-  /* what this hand changed on the pages goes into its own ink entries; the
-     other hands' letters are kept as they came, they are never written here */
+  /* an ink doc is named by its page and its hand: books/{id}/ink/{n}_{uid} */
+  const pid = (n, h) => `${n}|${h}`;
+  const splitId = x => { const i = x.indexOf('|'); return [x.slice(0, i)|0, x.slice(i + 1)]; };
+  const inkRef = (id, x) => { const [n, h] = splitId(x); return ref('books', id, 'ink', `${n}_${h}`); };
+  const EMPTY = { s: '', k: [], f: null, c: false };
+  const copyEntry = e => e ? { s: e.s, k: e.k.slice(), f: e.f || null, c: !!e.c } : null;
+  const sameEntry = (x, y) => x.s === y.s && x.k.join() === y.k.join() && (x.f || null) === (y.f || null) && !!x.c === !!y.c;
+  /* a change made here on top of what the server had (base) is carried over to what the
+     server has now: letter by letter, each known by its key, so two hands changing one
+     doc at once both keep their change */
+  function rebase(L, B, S){
+    L = L || EMPTY; B = B || EMPTY; S = S || EMPTY;
+    const map = e => { const m = new Map(); for(let i=0;i<e.s.length;i++) m.set(e.k[i], e.s[i]); return m; };
+    const ml = map(L), mb = map(B), out = map(S);
+    mb.forEach((ch, k)=>{ if(ml.get(k) !== ch && out.get(k) === ch) out.delete(k); });
+    ml.forEach((ch, k)=>{ if(mb.get(k) !== ch) out.set(k, ch); });
+    const ks = [...out.keys()].sort();
+    return { s: ks.map(k => out.get(k)).join(''), k: ks, f: (L.f || null) !== (B.f || null) ? L.f || null : S.f || null, c: !!L.c !== !!B.c ? !!L.c : !!S.c };
+  }
+  /* the page as it is here, matched letter by letter to the merged ink: the same hand and
+     the same letter keep their key; a long page with much changed is not matched inside */
+  function align(P, PA, M){
+    const mp = new Array(P.length).fill(-1), eq = (i, q) => P[i] === M.t[q] && PA[i] === M.a[q];
+    let a = 0, b = 0;
+    while(a < P.length && a < M.t.length && eq(a, a)){ mp[a] = a; a++; }
+    while(b < P.length - a && b < M.t.length - a && eq(P.length - 1 - b, M.t.length - 1 - b)){ mp[P.length - 1 - b] = M.t.length - 1 - b; b++; }
+    const n = P.length - a - b, m = M.t.length - a - b, W = m + 1;
+    if(!n || !m || n*m > 1e6) return mp;
+    const D = new Uint16Array((n + 1)*W);
+    for(let i=n-1;i>=0;i--) for(let q=m-1;q>=0;q--)
+      D[i*W + q] = eq(a + i, a + q) ? D[(i + 1)*W + q + 1] + 1 : Math.max(D[(i + 1)*W + q], D[i*W + q + 1]);
+    for(let i=0, q=0; i < n && q < m;){
+      if(eq(a + i, a + q)){ mp[a + i] = a + q; i++; q++; }
+      else if(D[(i + 1)*W + q] >= D[i*W + q + 1]) i++;
+      else q++;
+    }
+    return mp;
+  }
+  /* a page is kept as it was before another hand's ink on it is erased or changed, so any
+     keeper can bring it back; letter by letter erasing keeps it once, while every erased
+     letter is still in the copy kept here in the last ten minutes */
+  const PAST_MS = 600000;
+  function keepPast(n, M, force, gone){
+    if(!M.t || reading) return;
+    const now = Date.now(), last = pastAt.get(n);
+    if(!force && last && now - last.at < PAST_MS && gone.every(x => last.has.has(x))) return;
+    pastAt.set(n, { at: now, has: new Set(M.k.map((k, i)=> `${M.a[i]}|${k}`)) });
+    const h = [], runs = [];
+    M.a.forEach(x=>{
+      let i = h.indexOf(x);
+      if(i < 0){ i = h.length; h.push(x); }
+      const r = runs[runs.length - 1];
+      if(r && r[0] === i) r[1]++; else runs.push([i, 1]);
+    });
+    pastQ.push({ n, t: M.t, a: runs.map(r => r.join(':')).join(','), h, f: M.f || null, c: !!M.c, when: now });
+  }
+  function unpackPast(p){
+    const a = [];
+    String(p.a || '').split(',').forEach(r=>{ const [i, c] = r.split(':').map(Number); for(let j=0;j<c;j++) a.push(p.h[i]); });
+    return a.length === p.t.length ? a : null;
+  }
+  /* what changed on the pages goes into the ink of the hands whose letters they are: new
+     letters are this hand's, and any hand's letters may be erased or moved on */
   function sync(){
     if(!cur) return;
     const me = cur.uid;
     deferred.forEach(n=>{ deferred.delete(n); showMerged(n, true); });
     for(let n=1;n<2*api.N;n++){
       const M = merged.get(n) || mergePage(n), p = api.page(n);
-      if(samePage(n, M)) continue;
-      const P = p.t, PA = api.handsOf(n);
-      /* the other hands' letters on the page, matched in order to theirs in the merge */
-      const anchors = [];
-      let j = 0;
-      for(let i=0;i<P.length;i++){
-        if(PA[i] === me) continue;
-        let q = j;
-        while(q < M.t.length && (M.a[q] === me || M.a[q] !== PA[i] || M.t[q] !== P[i])) q++;
-        if(q < M.t.length){ anchors.push([i, q]); j = q + 1; }
+      if(samePage(n, M)){ forced.delete(n); continue; }
+      const P = p.t, PA = api.handsOf(n), mp = align(P, PA, M), K = new Array(P.length);
+      for(let i=0;i<P.length;){
+        if(mp[i] >= 0){ K[i] = M.k[mp[i]]; i++; continue; }
+        let j = i;
+        while(j < P.length && mp[j] < 0) j++;
+        const fresh = keysBetween(i > 0 ? K[i - 1] : '', j < P.length ? M.k[mp[j]] : null, j - i);
+        for(let q=i;q<j;q++) K[q] = fresh[q - i];
+        i = j;
       }
-      anchors.push([P.length, M.t.length]);
-      let s = '', k = [], pi = 0, mi = 0;
-      anchors.forEach(([pe, me2])=>{
-        let nw = '', od = '', ok = [];
-        for(let i=pi;i<pe;i++) if(PA[i] === me) nw += P[i];
-        for(let i=mi;i<me2;i++) if(M.a[i] === me){ od += M.t[i]; ok.push(M.k[i]); }
-        const lo = mi > 0 ? M.k[mi - 1] : '', hi = me2 < M.t.length ? M.k[me2] : null;
-        let a = 0;
-        const lim = Math.min(nw.length, od.length);
-        while(a < lim && nw[a] === od[a]) a++;
-        let b = 0;
-        while(b < lim - a && nw[nw.length - 1 - b] === od[od.length - 1 - b]) b++;
-        const kl = a > 0 ? ok[a - 1] : lo, kh = b > 0 ? ok[od.length - b] : hi;
-        s += nw;
-        k = k.concat(ok.slice(0, a), keysBetween(kl, kh, nw.length - a - b), ok.slice(od.length - b));
-        pi = pe + 1; mi = me2 + 1;
-      });
       let m = ink.get(n);
       if(!m){ m = new Map(); ink.set(n, m); }
-      const e = m.get(me);
-      if(e ? e.s !== s || e.k.join() !== k.join() || e.f !== (p.f || null) || !!e.c !== !!p.c : !!s){
-        m.set(me, { s, k, f: p.f || null, c: !!p.c });
-        pending.add(n); dirtyInk.add(n);
-      }
+      const gone = [];
+      new Set([...m.keys(), ...PA]).forEach(h=>{
+        let s = '';
+        const k = [], e = m.get(h);
+        for(let i=0;i<P.length;i++) if(PA[i] === h){ s += P[i]; k.push(K[i]); }
+        const mine = h === me || !e;
+        const next = { s, k, f: mine ? p.f || null : e.f || null, c: mine ? !!p.c : !!e.c };
+        if(e ? sameEntry(e, next) : !s) return;
+        if(e && h !== me){ const kept = new Set(k); e.k.forEach(x=>{ if(!kept.has(x)) gone.push(`${h}|${x}`); }); }
+        const x = pid(n, h);
+        if(!pending.has(x)){ base.set(x, copyEntry(e)); pending.add(x); }
+        m.set(h, next);
+        dirtyInk.add(n);
+      });
+      if(gone.length || forced.has(n)) keepPast(n, M, forced.has(n), gone);
+      forced.delete(n);
       merged.set(n, mergePage(n));
       showMerged(n, true);
     }
     saveInk();
-    if(pending.size) queueUp();
+    if(pending.size || pastQ.length) queueUp();
   }
   function onInk(snap){
     sync();
-    const me = cur.uid, touched = new Set();
+    const touched = new Set();
     snap.docChanges().forEach(ch=>{
       const d = ch.doc.data(), n = d.n|0;
       if(!(n >= 1 && n < 2*api.N) || typeof d.uid !== 'string' || ch.type === 'removed') return;
-      if(d.uid === me && (d.dev === DEV || pending.has(n))) return;
-      const e = { s: d.s, k: splitKeys(d.k), f: d.f || null, c: !!d.c };
-      if(!goodEntry(e)) return;
+      const E = { s: d.s, k: splitKeys(d.k), f: d.f || null, c: !!d.c };
+      if(!goodEntry(E)) return;
+      const x = pid(n, d.uid);
       let m = ink.get(n);
       if(!m){ m = new Map(); ink.set(n, m); }
-      if(e.s) m.set(d.uid, e); else m.delete(d.uid);
+      let next = E;
+      if(pending.has(x)){
+        next = base.has(x) ? rebase(m.get(d.uid), base.get(x), E) : m.get(d.uid) || EMPTY;
+        base.set(x, E);
+      }
+      if(next.s) m.set(d.uid, next); else m.delete(d.uid);
       touched.add(n); dirtyInk.add(n);
     });
     touched.forEach(n=>{ merged.set(n, mergePage(n)); showMerged(n, firstSnap); });
@@ -640,52 +710,88 @@ export function createShelf(api){
       lsSet(pageKey(cur.id, n), o);
     });
     dirtyInk.clear();
-    lsSet(inkKey(cur.id), { pending: [...pending], names: Object.fromEntries(names) });
+    const b = {};
+    base.forEach((e, x)=>{ b[x] = e && { s: e.s, k: e.k.join(','), f: e.f, c: e.c }; });
+    lsSet(inkKey(cur.id), { pending: [...pending], base: b, past: pastQ, names: Object.fromEntries(names) });
   }
   /* keys that grew long from much writing in one spot are spaced out again;
      only this hand's letters move, each run between the same neighbours */
-  function rekey(n){
-    const me = cur.uid, M = mergePage(n), k = M.k.slice();
+  function rekey(n, h){
+    const M = mergePage(n), k = M.k.slice();
     for(let i=0;i<M.t.length;){
-      if(M.a[i] !== me){ i++; continue; }
+      if(M.a[i] !== h){ i++; continue; }
       let j = i;
-      while(j < M.t.length && M.a[j] === me) j++;
+      while(j < M.t.length && M.a[j] === h) j++;
       const fresh = keysBetween(i > 0 ? k[i - 1] : '', j < M.t.length ? k[j] : null, j - i);
       for(let q=i;q<j;q++) k[q] = fresh[q - i];
       i = j;
     }
-    ink.get(n).get(me).k = k.filter((_, i)=> M.a[i] === me);
+    ink.get(n).get(h).k = k.filter((_, i)=> M.a[i] === h);
     merged.set(n, mergePage(n));
     dirtyInk.add(n);
   }
   function queueUp(){ clearTimeout(upTm); upTm = setTimeout(upload, WRITE_MS); }
+  /* each doc is read and written in one transaction, the change made here laid over
+     what the server has; a doc of another hand is marked with this hand in 'by' */
   function upload(){
     clearTimeout(upTm);
-    if(!cur || !user || !F || !pending.size || reading) return Promise.resolve();
-    const me = cur.uid, id = cur.id, list = [...pending].slice(0, 400);
-    const batch = F.writeBatch(F.db);
-    list.forEach(n=>{
-      let e = (ink.get(n) || new Map()).get(me);
-      if(e && e.k.join(',').length > Array.from(e.s).length*24){ rekey(n); e = ink.get(n).get(me); }
-      e = e || { s: '', k: [], f: null, c: false };
-      batch.set(ref('books', id, 'ink', `${n}_${me}`), { uid: me, dev: DEV, n, s: e.s, k: e.k.join(','), f: e.f || null, c: !!e.c, at: F.serverTimestamp() });
+    if(flight) return flight.then(()=> upload());
+    if(!cur || !user || !F || (!pending.size && !pastQ.length) || reading) return Promise.resolve();
+    const me = cur.uid, id = cur.id, list = [...pending].slice(0, 100), pasts = pastQ.slice(0, 20), sent = new Map();
+    list.forEach(x=>{
+      const [n, h] = splitId(x);
+      let e = (ink.get(n) || new Map()).get(h);
+      if(e && e.k.join(',').length > Array.from(e.s).length*24){ rekey(n, h); e = ink.get(n).get(h); }
+      sent.set(x, { L: copyEntry(e) || EMPTY, B: base.get(x), known: base.has(x) });
     });
-    list.forEach(n => pending.delete(n));
-    saveInk();
-    if(pending.size) queueUp();
     sending(1);
-    return batch.commit().then(()=>{
-      sending(-1);
-      if(user && user.isAnonymous) nudgeGuest();
-    }, e=>{
+    flight = F.runTransaction(F.db, async tx=>{
+      const docs = await Promise.all(list.map(x => tx.get(inkRef(id, x))));
+      const out = new Map();
+      list.forEach((x, i)=>{
+        const [n, h] = splitId(x), { L, B, known } = sent.get(x), d = docs[i].exists() ? docs[i].data() : null;
+        const S = d && { s: d.s, k: splitKeys(d.k), f: d.f || null, c: !!d.c };
+        const R = known && goodEntry(S) ? rebase(L, B, S) : L;
+        const w = { uid: h, dev: DEV, n, s: R.s, k: R.k.join(','), f: R.f || null, c: !!R.c, at: F.serverTimestamp() };
+        if(h !== me) w.by = me;
+        tx.set(inkRef(id, x), w);
+        out.set(x, R);
+      });
+      pasts.forEach(p=>{
+        const { when, ...keep } = p;
+        tx.set(F.doc(F.collection(F.db, 'books', id, 'past')), { ...keep, by: me, at: F.serverTimestamp() });
+      });
+      return out;
+    }).then(out=>{
+      flight = null;
       sending(-1);
       if(!cur || cur.id !== id) return;
-      list.forEach(n => pending.add(n));
+      pastQ.splice(0, pasts.length);
+      const touched = new Set();
+      out.forEach((R, x)=>{
+        const [n, h] = splitId(x), { L } = sent.get(x);
+        let m = ink.get(n);
+        if(!m){ m = new Map(); ink.set(n, m); }
+        const now = rebase(m.get(h), L, R);
+        if(sameEntry(now, R)){ pending.delete(x); base.delete(x); }
+        else base.set(x, R);
+        if(now.s) m.set(h, now); else m.delete(h);
+        touched.add(n); dirtyInk.add(n);
+      });
+      touched.forEach(n=>{ merged.set(n, mergePage(n)); showMerged(n, true); });
       saveInk();
+      if(pending.size || pastQ.length) queueUp();
+      if(user && user.isAnonymous) nudgeGuest();
+      sending(0);
+    }, e=>{
+      flight = null;
+      sending(-1);
+      if(!cur || cur.id !== id) return;
       /* refused for good (the book is gone or closed to this hand): the ink stays here, unsent */
-      if(e && e.code === 'permission-denied') return;
+      if(e && e.code === 'permission-denied'){ console.warn('ink refused', e); return; }
       clearTimeout(upTm); upTm = setTimeout(upload, 10000);
     });
+    return flight;
   }
   /* writes that take long are waiting for the connection; the reader is told
      when they wait and again when they arrive */
@@ -705,7 +811,7 @@ export function createShelf(api){
     api.refresh();
   });
   addEventListener('online', ()=>{
-    if(cur && pending.size) queueUp();
+    if(cur && (pending.size || pastQ.length)) queueUp();
     if(F && user) checkBooks();
     keepSoon();
   });
@@ -743,7 +849,7 @@ export function createShelf(api){
       for(let i=0;i<p.t.length;i++) if(p.a[i] === api.personalHand) s += p.t[i];
       if(!s) return;
       ink.set(p.n, new Map([[me, { s, k: keysBetween('', null, s.length), f: p.f || null, c: !!p.c }]]));
-      pending.add(p.n); dirtyInk.add(p.n);
+      pending.add(pid(p.n, me)); base.set(pid(p.n, me), null); dirtyInk.add(p.n);
       merged.set(p.n, mergePage(p.n));
       showMerged(p.n, true);
     });
@@ -873,10 +979,10 @@ export function createShelf(api){
     if(!n.length) return 'waiting for a friend';
     return n.length > 4 ? `with ${n.slice(0, 3).join(', ')} and ${n.length - 3} more` : `with ${n.join(', ')}`;
   }
-  const TITLES = { share: 'SHARE THE BOOK', join: '', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '' };
+  const TITLES = { share: 'SHARE THE BOOK', join: '', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '', past: 'PAGE HISTORY' };
   function render(){
     body.textContent = '';
-    if(['leave', 'del', 'rename'].includes(mode) && !cur) mode = 'share';
+    if(['leave', 'del', 'rename', 'past'].includes(mode) && !cur) mode = 'share';
     body.dataset.mode = mode;
     view.classList.toggle('locked', locked());
     view.classList.toggle('invite', locked());
@@ -886,7 +992,7 @@ export function createShelf(api){
     body.appendChild(el('h2', null, TITLES[mode]));
     if(mode === 'ask'){ body.firstChild.textContent = asking.title; renderAsk(); return; }
     if(!F && mode !== 'join' && mode !== 'vow'){ body.appendChild(el('p', 'sub', 'Loading…')); firebase().then(()=>{ if(!view.hidden) render(); }).catch(()=>{ body.lastChild.textContent = 'No connection. Try again later'; }); return; }
-    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, shut: renderShut, leave: renderLeave, del: renderDelete, rename: renderRename, name: renderName, out: renderOut })[mode]();
+    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, shut: renderShut, leave: renderLeave, del: renderDelete, rename: renderRename, name: renderName, out: renderOut, past: renderPast })[mode]();
   }
   function bookRow(title, sub, on, fn, add){
     const b = el('button', 'book' + (on ? ' on' : '') + (add ? ' add' : ''));
@@ -922,7 +1028,7 @@ export function createShelf(api){
     if(making){ body.appendChild(el('p', 'sub', 'Making the book and its link…')); return; }
     if(clash && real()) renderClash();
     if(!user){
-      body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. No account needed. Each of you can erase only your own writing'));
+      body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. No account needed. Anyone can erase or change any page, and every page keeps its history'));
       const input = el('input'); input.type = 'text'; input.maxLength = 24; input.value = guestName; input.placeholder = 'Your name'; input.setAttribute('aria-label', 'Your name');
       body.appendChild(input);
       body.appendChild(el('p', 'hint', 'the name your friend sees by your writing'));
@@ -942,13 +1048,13 @@ export function createShelf(api){
     else if(made >= MAX_BOOKS){
       body.appendChild(el('p', 'sub', `You keep ${MAX_BOOKS} shared books, the most there can be. Open one from the list above to share it, or delete one of yours to make room`));
     }else{
-      body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. Each of you can erase only your own writing'));
+      body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. Anyone can erase or change any page, and every page keeps its history'));
       acts.appendChild(btn('Get a link', 'main', ()=> makeBook()));
       body.appendChild(acts);
     }
     if(cur && user) renderKeepers();
-    if(user && !real()) body.appendChild(el('p', 'sub', 'Your ink is kept by this browser. Sign in with Google to keep it on any device'));
     /* a guest is offered Google instead of signing out, which would lose their ink */
+    const acct = el('div', 'acct');
     const who = el('div', 'who');
     who.appendChild(el('span', null, real() ? `Signed in as ${myName()}` : `${myName()}, a guest`));
     if(real()) who.appendChild(pill('Sign out', async ()=>{ if(unsent()) show('out'); else await signOut(); }));
@@ -956,7 +1062,9 @@ export function createShelf(api){
       who.appendChild(pill('Change name', ()=> show('name')));
       who.appendChild(pill('Sign in with Google', async ()=>{ await signIn(); render(); }));
     }
-    body.appendChild(who);
+    acct.appendChild(who);
+    if(user && !real()) acct.appendChild(el('p', 'hint', 'Your ink is kept by this browser. Sign in with Google to keep it on any device'));
+    body.appendChild(acct);
   }
   async function signOut(){
     await Promise.race([flush(), wait(4000)]).catch(()=>{});
@@ -970,8 +1078,8 @@ export function createShelf(api){
     if(!cur.owner) return;
     if(cur.owner !== user.uid){
       if(reading) body.appendChild(el('p', 'sub', 'You can read this book. Its creator has not let you write in it'));
-      const tools = el('div', 'tools');
-      tools.appendChild(pill('Leave this book', ()=> show('leave')));
+      const tools = el('div', 'acts quiet');
+      tools.appendChild(btn('Leave this book', 'minor', async ()=> show('leave')));
       body.appendChild(tools);
       return;
     }
@@ -1012,24 +1120,12 @@ export function createShelf(api){
       acts.forEach(a => row.appendChild(a));
       return row;
     };
-    /* forgetting changes the link for everyone, so the first tap only asks */
-    const forget = uid => {
-      const b = pill('Forget', async ()=>{
-        if(!sure(true)) return;
-        b.disabled = true;
-        await forgetKeeper(uid);
-        b.disabled = false; sure(false);
-      }, 'danger');
-      const sure = on => {
-        if(b.classList.contains('sure') === on) return on;
-        b.classList.toggle('sure', on);
-        b.textContent = on ? 'Forget for good' : 'Forget';
-        b.closest('.row').querySelector('small').textContent = on ? 'your link changes too' : 'cannot open the book';
-        return false;
-      };
-      b.addEventListener('blur', ()=>{ if(!b.disabled) sure(false); });
-      return b;
-    };
+    const forget = uid => pill('Forget for good', async e=>{
+      const b = e.currentTarget;
+      b.disabled = true;
+      await forgetKeeper(uid);
+      b.disabled = false;
+    }, 'danger');
     if(rest.length || shut.length){
       const sec = el('div', 'people');
       if(rest.length) sec.appendChild(el('h3', null, `People · ${rest.length}`));
@@ -1122,8 +1218,61 @@ export function createShelf(api){
     acts.appendChild(btn(q.no, 'minor', async ()=>{ q.done(false); close(); }));
     body.appendChild(acts);
   }
+  /* ---------- a page's history: each time another hand's ink on it was erased or changed ---------- */
+  let pastPages = [], pastRows = null;
+  async function openPast(list){
+    if(!cur || !list.length) return;
+    pastPages = list; pastRows = null;
+    show('past');
+    const id = cur.id;
+    try{
+      await firebase();
+      const snaps = await Promise.all(list.map(n => F.getDocs(F.query(F.collection(F.db, 'books', id, 'past'), F.where('n', '==', n)))));
+      if(!cur || cur.id !== id) return;
+      const rows = snaps.flatMap(q => q.docs.map(d=>{
+        const v = d.data({ serverTimestamps: 'estimate' });
+        return { ...v, when: v.at && v.at.toMillis ? v.at.toMillis() : Date.now() };
+      }));
+      pastQ.filter(p => list.includes(p.n)).forEach(p => rows.push({ ...p, by: cur.uid }));
+      pastRows = rows.filter(r => typeof r.t === 'string' && r.t && Array.isArray(r.h)).sort((x, y)=> y.when - x.when).slice(0, 40);
+    }catch(e){
+      console.warn('page history', e);
+      pastRows = [];
+      api.toast('COULD NOT OPEN THE PAGE HISTORY', 2400);
+    }
+    if(!view.hidden && mode === 'past') render();
+  }
+  function renderPast(){
+    const pages = pastPages.map(n => n + 1).join(' and ');
+    body.appendChild(el('p', 'sub', `Page ${pages} as it was each time someone erased or changed another hand’s ink. Bring back any of them`));
+    if(!pastRows){ body.appendChild(el('p', 'hint', 'Opening the history…')); return; }
+    if(!pastRows.length){ body.appendChild(el('p', 'hint', 'Nothing here has been erased or changed yet')); return; }
+    const sec = el('div', 'people');
+    const when = t => new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    pastRows.forEach(r=>{
+      const row = el('div', 'row');
+      const by = r.by === cur.uid ? 'your' : `${(names.get(r.by) || 'a keeper').replace(/ \(guest\)$/, '')}’s`;
+      const name = el('span', 'name', `“${r.t.replace(/\s+/g, ' ').trim().slice(0, 80)}”`);
+      name.appendChild(el('small', null, `${pastPages.length > 1 ? `page ${r.n + 1}, ` : ''}before ${by} change, ${when(r.when)}`));
+      row.appendChild(name);
+      if(!reading) row.appendChild(pill('Bring back', ()=> restorePast(r)));
+      sec.appendChild(row);
+    });
+    body.appendChild(sec);
+  }
+  /* the page returns as it was, every letter to the hand that wrote it; what it held
+     just before goes into its history too, so bringing back can itself be undone */
+  function restorePast(r){
+    const a = unpackPast(r);
+    if(!a || reading){ api.toast('THIS PAGE CANNOT BE BROUGHT BACK', 2200); return; }
+    forced.add(r.n);
+    if(!api.applyPage(r.n, r.t, a, r.f, r.c, false)){ forced.delete(r.n); api.toast('FINISH THE WORD ON THIS PAGE FIRST', 2200); return; }
+    sync();
+    close();
+    api.toast(`PAGE ${r.n + 1} IS BACK AS IT WAS`, 2400);
+  }
   function renderLeave(){
-    body.appendChild(el('p', 'sub', `What you wrote stays in ${cur.name}: it is gospel. To come back, ask for the link again`));
+    body.appendChild(el('p', 'sub', `What you wrote stays in ${cur.name}, with the keepers. To come back, ask for the link again`));
     const acts = el('div', 'acts');
     acts.appendChild(btn('Leave the book', 'main', leaveShared));
     acts.appendChild(btn('Stay', 'minor', async ()=> show('share')));
@@ -1151,14 +1300,14 @@ export function createShelf(api){
     if(navigator.share) acts.prepend(btn('Send the link', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'You’ve been invited to become a keeper of our bible. No notes', url: link.url }); }catch(e){} }));
   }
   /* ---------- the invitation: a card on the book's own paper, the rules, the vow, a signature ---------- */
-  const RULES = ['What is written here is gospel', 'It is not up for discussion', 'If a page bores you, turn it'];
+  const RULES = ['Any keeper writes on any page', 'No notes: if it is wrong, rewrite it', 'The book remembers every page'];
   const VOW = [
-    'I swear that what I write is true.',
-    'I swear: no notes, from me or you.',
-    'I swear, if any page should bore,',
-    'to turn it and to write some more.',
+    'I swear that what I write is true,',
+    'no notes from me, no notes from you.',
+    'If something’s wrong, I’ll make it right',
+    'and write it over, black on white.',
     'I swear by cake, I swear by wine:',
-    'your word is law, and so is mine.',
+    'the book forgets no single line.',
   ];
   let sign = '', swearing = false;
   function renderJoin(){
@@ -1317,6 +1466,7 @@ export function createShelf(api){
     keepSoon, ask, personal: ()=> goPersonal(),
     name: h => names.get(h) || null,
     shared: ()=> !!cur,
+    history: list => openPast(list),
     readOnly: ()=> !!cur && reading,
     ...(EMU ? { test: {
       firebase, createBook, inviteLink, openBook, goPersonal, upload, keysBetween, leaveShared, removeKeeper, forgetKeeper, allow,

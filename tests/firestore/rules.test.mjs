@@ -67,17 +67,27 @@ await t('bob joins with the code', assertSucceeds(setDoc(doc(Bo, 'books', B, 'me
 await t('a guest cannot pass as a Google member', assertFails(setDoc(doc(G, 'books', B, 'members', 'gina'), member('Gina', CODE, false))));
 await t('a guest joins with the code', assertSucceeds(setDoc(doc(G, 'books', B, 'members', 'gina'), member('Gina', CODE, true))));
 await t('a guest writes her ink', assertSucceeds(setDoc(doc(G, 'books', B, 'ink', '1_gina'), ink('gina', 1, 'Hi'))));
-await t('a guest cannot touch alice ink', assertFails(setDoc(doc(G, 'books', B, 'ink', '1_alice'), ink('gina', 1, ''))));
+await t('a guest cannot write alice ink as her own', assertFails(setDoc(doc(G, 'books', B, 'ink', '1_alice'), ink('gina', 1, ''))));
 await t('bob reads the book', assertSucceeds(getDoc(doc(Bo, 'books', B))));
 await t('bob reads the ink', assertSucceeds(getDocs(collection(Bo, 'books', B, 'ink'))));
 await t('bob reads the invite', assertSucceeds(getDoc(doc(Bo, 'books', B, 'invite', 'code'))));
 
 // ink belongs to its hand
 await t('bob writes his ink', assertSucceeds(setDoc(doc(Bo, 'books', B, 'ink', '1_bob'), ink('bob', 1, 'His'))));
-await t('bob cannot overwrite alice ink', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('bob', 1, ''))));
-await t('bob cannot write ink as alice', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, ''))));
-await t('bob cannot update alice ink', assertFails(updateDoc(doc(Bo, 'books', B, 'ink', '1_alice'), { s: '' })));
+await t('bob cannot pass his doc off as alice ink', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('bob', 1, ''))));
+await t('bob cannot change alice ink unmarked', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi'))));
+await t('bob cannot mark his change as alice', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi', { by: 'alice' }))));
+await t('bob changes alice ink, marked as his', assertSucceeds(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi', { by: 'bob' }))));
+await t('a guest changes bob ink, marked as hers', assertSucceeds(setDoc(doc(G, 'books', B, 'ink', '1_bob'), ink('bob', 1, 'Hi', { by: 'gina' }))));
 await t('bob cannot delete alice ink', assertFails(deleteDoc(doc(Bo, 'books', B, 'ink', '1_alice'))));
+const past = (n, t, by, extra = {}) => ({ n, t, a: '0:' + t.length, h: ['alice'], f: null, c: false, by, at: serverTimestamp(), ...extra });
+await t('bob keeps a page as it was', assertSucceeds(setDoc(doc(Bo, 'books', B, 'past', 'p1'), past(1, 'Mine', 'bob'))));
+await t('the past is signed by its writer', assertFails(setDoc(doc(Bo, 'books', B, 'past', 'p2'), past(1, 'Mine', 'alice'))));
+await t('the past is never rewritten', assertFails(setDoc(doc(Bo, 'books', B, 'past', 'p1'), past(1, 'Other', 'bob'))));
+await t('the past cannot be deleted by a keeper', assertFails(deleteDoc(doc(Bo, 'books', B, 'past', 'p1'))));
+await t('a guest reads the past', assertSucceeds(getDocs(collection(G, 'books', B, 'past'))));
+await t('eve cannot read the past', assertFails(getDocs(collection(E, 'books', B, 'past'))));
+await t('eve cannot keep a past', assertFails(setDoc(doc(E, 'books', B, 'past', 'p3'), past(1, 'x', 'eve'))));
 await t('bob cannot hide his doc under another page id', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '2_bob'), ink('bob', 1, 'x'))));
 await t('no page past 99', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '100_bob'), ink('bob', 100, 'x'))));
 await t('keys cannot outgrow the letters', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '3_bob'), ink('bob', 3, 'ab', { k: 'x'.repeat(100) }))));
@@ -119,6 +129,8 @@ await t('k1 sees she only reads', assertSucceeds(getDoc(doc(K1, 'books', B, 'acc
 await t('k2 cannot see it', assertFails(getDoc(doc(K2, 'books', B, 'access', 'k1'))));
 await t('k1 still reads the book', assertSucceeds(getDocs(collection(K1, 'books', B, 'ink'))));
 await t('k1 cannot write', assertFails(setDoc(doc(K1, 'books', B, 'ink', '1_k1'), ink('k1', 1, 'x'))));
+await t('k1 cannot change alice ink', assertFails(setDoc(doc(K1, 'books', B, 'ink', '1_alice'), ink('alice', 1, '', { by: 'k1' }))));
+await t('k1 cannot keep a past', assertFails(setDoc(doc(K1, 'books', B, 'past', 'k1p'), past(1, 'x', 'k1'))));
 await t('k1 cannot let herself write', assertFails(deleteDoc(doc(K1, 'books', B, 'access', 'k1'))));
 await t('k1 cannot change it either', assertFails(setDoc(doc(K1, 'books', B, 'access', 'k1'), access('read', 'Other'))));
 await t('k1 still changes her name', assertSucceeds(updateDoc(doc(K1, 'books', B, 'members', 'k1'), { name: 'Kira' })));
@@ -181,6 +193,7 @@ await t('bob joins a3', assertSucceeds((async ()=>{
   await setDoc(doc(A, 'books', A3, 'invite', 'code'), { code: CODE });
   await setDoc(doc(Bo, 'books', A3, 'members', 'bob'), member('Dima', CODE));
   await setDoc(doc(Bo, 'books', A3, 'ink', '1_bob'), ink('bob', 1, 'His'));
+  await setDoc(doc(Bo, 'books', A3, 'past', 'bp'), past(1, 'His', 'bob'));
 })()));
 await t('bob cannot delete the book', assertFails(deleteDoc(doc(Bo, 'books', A3))));
 await t('bob cannot delete the invite', assertFails(deleteDoc(doc(Bo, 'books', A3, 'invite', 'code'))));
@@ -194,6 +207,7 @@ await t('alice cannot count down for a book she does not own', assertFails((asyn
   await b.commit();
 })()));
 await t('alice deletes the ink in her book', assertSucceeds(deleteDoc(doc(A, 'books', A3, 'ink', '1_bob'))));
+await t('alice deletes the past of her book', assertSucceeds(deleteDoc(doc(A, 'books', A3, 'past', 'bp'))));
 await t('alice deletes the book in one batch', assertSucceeds((async ()=>{
   const b = writeBatch(A);
   b.delete(doc(A, 'books', A3, 'members', 'bob'));

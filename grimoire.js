@@ -31,7 +31,7 @@ import {
   clamp, lerp, smooth, mulberry32, fbm, upsample, cv, normalFromHeight, tex,
   setMaxAniso, makeSpriteCanvas, makeRayAlpha, crackCanvas, fieldFromCanvas
 } from './textures.js?v=4';
-import { createShelf, sharingOn } from './shared.js?v=27';
+import { createShelf, sharingOn } from './shared.js?v=28';
 
 const T0 = performance.now();
 /* ?film: the opening film is shot from this very scene, one frame at a time (film.js).
@@ -2792,8 +2792,7 @@ function toast(msg, ms){
 }
 let saveTm = 0;
 /* every browser that writes in the book is one hand with its own mark; each
-   letter keeps the mark of the hand that wrote it, so a hand can only ever
-   erase or delete its own ink and never another's */
+   letter keeps the mark of the hand that wrote it, whoever erases or moves it */
 const HAND_KEY = 'liber-arcanum.hand';
 const BROWSER_HAND = (()=>{
   let h = null;
@@ -2812,8 +2811,6 @@ function handsOf(n){
   if(!pg.a || pg.a.length !== pg.t.length) pg.a = Array(pg.t.length).fill(HAND);
   return pg.a;
 }
-const hasMine = n => !!pages[n].t && handsOf(n).includes(HAND);
-const hasOthers = n => !!pages[n].t && handsOf(n).some(h => h !== HAND);
 /* hands are stored once per book, each page as runs of [hand, letters] */
 function packHands(a, list){
   const runs = [];
@@ -3150,12 +3147,11 @@ function onQuillInput(){
   if(!writing || composing) return;
   const n = writing.n, v = quill.value;
   const sp = editSpan(pages[n].t, v, lastGood.a, lastGood.b, quill.selectionEnd), was = handsOf(n);
-  if(was.slice(sp.at, sp.at + sp.del).some(h => h !== HAND)){ refuseStroke('ANOTHER HAND WROTE THIS · IT STAYS'); return; }
   const hands = was.slice(0, sp.at).concat(Array(sp.ins).fill(HAND), was.slice(sp.at + sp.del));
   const lay = layoutText(v, pageFont(n), textBox(n));
   if(!lay.ok){
     const res = pour(n, v, quill.selectionEnd, hands);
-    if(!res || res.blocked){ refuseStroke(res ? 'NO ROOM · ANOTHER HAND WROTE BELOW' : 'THE BOOK IS FULL'); return; }
+    if(!res){ refuseStroke('THE BOOK IS FULL'); return; }
     trackBirths(n, pages[n].t, v);
     applyPour(n, res);
     lastWritten = writing ? writing.n : n;
@@ -4564,17 +4560,6 @@ function pour(n, v, caret, hv){
     const cut = lay.lines[bad].start;
     const m = page + 1;
     if(cut <= 0 || m >= 2*N) return null;
-    /* another hand's ink is never pushed on to the next page: what came over
-       from the page before goes past this one, to the next */
-    if(hands.slice(cut).some(h => h !== HAND)){
-      if(!inc) return { blocked: true };
-      const nextT = pages[m].t, sep = joinSep(inc.t, nextT), mv = moves[moves.length - 1];
-      mv.to = m; mv.count = inc.t.length + sep.length;
-      if(cp === page) cp = m;
-      hands = inc.h.concat(sep ? [inc.h[inc.h.length - 1]] : [], handsOf(m));
-      page = m; text = inc.t + sep + nextT;
-      continue;
-    }
     let keep = text.slice(0, cut), kh = hands.slice(0, cut);
     if(keep.endsWith('\n')){ keep = keep.slice(0, -1); kh = kh.slice(0, -1); }
     const moved = text.slice(cut), nextT = pages[m].t;
@@ -4638,47 +4623,31 @@ function quillTo(m, idx){
 }
 
 /* ---------------- a page wiped clean, and the ink called back ---------------- */
-/* only the ink of this hand goes; what another hand wrote on the page
-   settles back and writes itself in again once the vapour is gone */
+/* the whole page goes, whoever wrote it; in a shared book the page is kept
+   in its history first, so any keeper can bring it back later */
 function erasePages(list){
   if(readOnly()){ toast('YOU CAN ONLY READ THIS BOOK', 2200); return; }
   const now = performance.now(), gone = [];
-  let kept = 0;
   list.forEach(n=>{
     if(n < 1 || n >= 2*N || !pages[n].t) return;
-    if(!hasMine(n)){ kept++; return; }
     const pg = pages[n], hands = handsOf(n);
     const e = pageEntry(n);
     burning.add(n);
     paintPage(n, now);
-    const stag = Math.min(0.07, 0.9/Math.max(1, e.lay.lines.length));
-    let left = '';
-    const lh = [];
-    for(let i=0;i<pg.t.length;){
-      let j = i;
-      while(j < pg.t.length && (hands[j] === HAND) === (hands[i] === HAND)) j++;
-      if(hands[i] === HAND) addVapor(n, pg.t, e.lay, i, j, stag);
-      else{ left += pg.t.slice(i, j); lh.push(...hands.slice(i, j)); }
-      i = j;
-    }
-    gone.push({ n, t: pg.t, a: hands.slice(), f: pg.f, c: pg.c, left });
-    pg.t = left; pg.a = lh;
-    if(left){
-      kept++;
-      const after = now + (VAPOR_T + stag*e.lay.lines.length)*1000, step = Math.min(14, 1200/left.length);
-      pg.born = Array.from({length: left.length}, (_, i)=> after + i*step);
-    }else{ pg.born = null; pg.c = false; }
+    addVapor(n, pg.t, e.lay, 0, pg.t.length, Math.min(0.07, 0.9/Math.max(1, e.lay.lines.length)));
+    gone.push({ n, t: pg.t, a: hands.slice(), f: pg.f, c: pg.c, left: '' });
+    pg.t = ''; pg.a = []; pg.born = null; pg.c = false;
     if(writing && writing.n === n){
-      quill.value = left; quill.setSelectionRange(left.length, left.length);
-      lastGood = { v: left, a: left.length, b: left.length };
+      quill.value = ''; quill.setSelectionRange(0, 0);
+      lastGood = { v: '', a: 0, b: 0 };
     }
     paintPage(n, now);
   });
-  if(!gone.length){ toast(kept ? 'ONLY ANOTHER HAND\'S INK IS HERE' : 'NOTHING TO ERASE', 1800); return; }
+  if(!gone.length){ toast('NOTHING TO ERASE', 1800); return; }
   lastErase = { pages: gone, at: now };
   sfx.erase();
   saveSoon(true);
-  toast(kept ? 'YOUR INK IS ERASED · THE OTHER HAND\'S STAYS' : `ERASED · ${MOD}Z BRINGS IT BACK`, 2800);
+  toast(`ERASED · ${MOD}Z BRINGS IT BACK`, 2800);
 }
 /* the ink comes back and writes itself in, letter by letter */
 function restoreErased(){
@@ -4693,7 +4662,7 @@ function restoreErased(){
     const step = Math.min(14, 1500/Math.max(1, p.t.length));
     pg.t = p.t; pg.a = p.a; pg.f = p.f; pg.c = p.c; pg.vapor = null;
     let j = 0;
-    pg.born = p.a.map(h => h === HAND ? now + 120 + (j++)*step : 0);
+    pg.born = p.a.map(()=> now + 120 + (j++)*step);
     if(writing && writing.n === p.n){
       quill.value = pg.t; quill.setSelectionRange(pg.t.length, pg.t.length);
       lastGood = { v: pg.t, a: pg.t.length, b: pg.t.length };
@@ -4706,7 +4675,7 @@ function restoreErased(){
   return true;
 }
 /* one page at a time, never the whole book: the page under the quill, else
-   the one page of the open spread that has this hand's ink on it */
+   the one page of the open spread that has writing on it */
 function eraseTargets(){
   if(writing) return [writing.n];
   if(!st.open) return [];
@@ -4714,13 +4683,13 @@ function eraseTargets(){
 }
 function eraseHere(){
   if(!writing && !st.open){ toast('OPEN THE BOOK FIRST', 1400); return; }
-  const list = eraseTargets(), mine = list.filter(hasMine);
-  if(mine.length === 2){
-    if(mine.includes(lastWritten)) return erasePages([lastWritten]);
+  const list = eraseTargets();
+  if(list.length === 2){
+    if(list.includes(lastWritten)) return erasePages([lastWritten]);
     toast('CHOOSE THE PAGE IN THE ⋯ MENU', 2000);
     return;
   }
-  erasePages(mine.length ? mine : list);
+  erasePages(list);
 }
 
 /* ---------------- the book turns itself to a page ---------------- */
@@ -4915,7 +4884,7 @@ const SPELLS = [
   foot.textContent = 'When a page is full, the words run on to the next page by themselves';
   card.appendChild(foot);
   const foot2 = document.createElement('p'); foot2.className = 'foot';
-  foot2.textContent = 'Everything you write is kept on its own. You can erase only your own ink, one page at a time; what another hand wrote stays';
+  foot2.textContent = 'In a shared book anyone can erase or change any page. Each page keeps its history in the ⋯ menu, so whatever was erased can be brought back';
   card.appendChild(foot2);
 })();
 function openSpells(){ closeSeek(); closeMenu(); spellsEl.hidden = false; if(writing) quill.blur(); }
@@ -4944,8 +4913,10 @@ btnBook.addEventListener('click', ()=> toggleBook());
 const btnMore = document.getElementById('btnMore');
 const menuEl = document.getElementById('menu');
 const menuBtn = act => menuEl.querySelector(`[data-act="${act}"]`);
-/* one erase line per page of the open spread that has this hand's writing on it */
-const eraseLabel = n => hasOthers(n) ? `Erase my part of page ${n + 1}` : `Erase page ${n + 1}`;
+/* one erase line per page of the open spread that has writing on it */
+const eraseLabel = n => `Erase page ${n + 1}`;
+/* the pages whose history the menu opens: the one under the quill, else the open spread */
+const historyPages = ()=> writing ? [writing.n] : st.open ? [2*st.k - 1, 2*st.k].filter(n => n >= 1 && n < 2*N) : [];
 function menuView(name){
   menuEl.querySelectorAll('.view').forEach(v=>{ v.hidden = v.dataset.view !== name; });
 }
@@ -4955,7 +4926,7 @@ function openMenu(){
   const share = menuBtn('share');
   share.hidden = !sharingOn;
   share.querySelector('span').textContent = shelf ? shelf.note() : 'Send the book to a friend';
-  const list = readOnly() ? [] : eraseTargets().filter(hasMine);
+  const list = readOnly() ? [] : eraseTargets();
   [menuBtn('erase'), menuBtn('erase2')].forEach((b, i)=>{
     const n = list[i];
     b.hidden = n === undefined;
@@ -4963,6 +4934,7 @@ function openMenu(){
     if(n !== undefined) b.textContent = eraseLabel(n);
   });
   menuBtn('restore').hidden = readOnly() || !lastErase || performance.now() - lastErase.at > 60000;
+  menuBtn('history').hidden = !shelf || !shelf.shared() || !historyPages().length;
   menuBtn('files').querySelector('span').textContent = !shelf || shelf.kept() ? 'Download or restore the book' : 'Back it up to keep it safe';
   menuEl.querySelector('.menu-note').textContent = shelf ? shelf.status() : 'Saves automatically';
   menuEl.hidden = false;
@@ -4989,7 +4961,7 @@ menuEl.addEventListener('click', e=>{
   }
   closeMenu();
   const page = ()=> erasePages([+b.dataset.page]);
-  ({ erase: page, erase2: page, restore: restoreErased, exportText, saveCopy: ()=> saveCopy(false), openCopy: ()=> copyPicker.click(), replay: replayOpening, spells: openSpells, share: ()=> shelf && shelf.open() })[b.dataset.act]();
+  ({ erase: page, erase2: page, restore: restoreErased, exportText, saveCopy: ()=> saveCopy(false), openCopy: ()=> copyPicker.click(), replay: replayOpening, spells: openSpells, share: ()=> shelf && shelf.open(), history: ()=> shelf && shelf.history(historyPages()) })[b.dataset.act]();
 });
 addEventListener('pointerdown', e=>{
   if(!menuEl.hidden && !menuEl.contains(e.target) && !btnMore.contains(e.target)) closeMenu();

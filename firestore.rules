@@ -2,7 +2,9 @@ rules_version = '2';
 // Liber Arcanum shared books. Published in Firebase console > Firestore Database > Rules.
 // A book is read and written only by its members. One joins with the invite code the owner made,
 // signed in with Google or as a guest (an anonymous account kept by the browser).
-// Each member writes only the ink docs named after their own uid, so nobody can erase another's ink.
+// Each hand's letters of a page are one ink doc named after that hand's uid. Any keeper who writes may
+// change any hand's doc, marking it with their own uid in 'by', and keeps the page as it was in 'past'
+// first, so whatever was erased or changed can be brought back.
 // Any number of people join with one link. The owner can let a keeper only read, or send them away
 // for good: books/{book}/access/{uid} says so, and only the owner writes it. She can let them back in.
 // Anyone signed in makes books, a guest too, at most three at a time; deleting one frees its place.
@@ -143,16 +145,35 @@ service cloud.firestore {
       match /ink/{id} {
         allow read: if isMember(book);
         allow create, update: if canWrite(book)
-          && request.resource.data.keys().hasOnly(['uid', 'dev', 'n', 's', 'k', 'f', 'c', 'at'])
-          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'dev', 'n', 's', 'k', 'f', 'c', 'at', 'by'])
+          && request.resource.data.uid is string && request.resource.data.uid.size() >= 1 && request.resource.data.uid.size() <= 128
+          && request.resource.data.get('by', request.auth.uid) == request.auth.uid
+          && (request.resource.data.uid == request.auth.uid || 'by' in request.resource.data)
           && request.resource.data.n is int && request.resource.data.n >= 1 && request.resource.data.n < 100
-          && id == string(request.resource.data.n) + '_' + request.auth.uid
+          && id == string(request.resource.data.n) + '_' + request.resource.data.uid
           && request.resource.data.s is string && request.resource.data.s.size() <= 6000
           && request.resource.data.k is string && request.resource.data.k.size() <= request.resource.data.s.size() * 24 + 24
           && (request.resource.data.f == null || (request.resource.data.f is string && request.resource.data.f.size() <= 32))
           && request.resource.data.dev is string && request.resource.data.dev.size() <= 32
           && request.resource.data.c is bool;
         // a hand empties its own ink rather than deleting it; only deleting the whole book removes ink
+        allow delete: if isOwner(book);
+      }
+
+      // a page as it was before someone changed another hand's ink: its letters, and for each run
+      // of letters the hand that wrote it ('a' is index:count pairs into 'h'). Kept until the book goes
+      match /past/{id} {
+        allow read: if isMember(book);
+        allow create: if canWrite(book)
+          && request.resource.data.keys().hasOnly(['n', 't', 'a', 'h', 'f', 'c', 'by', 'at'])
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.at == request.time
+          && request.resource.data.n is int && request.resource.data.n >= 1 && request.resource.data.n < 100
+          && request.resource.data.t is string && request.resource.data.t.size() <= 20000
+          && request.resource.data.a is string && request.resource.data.a.size() <= 60000
+          && request.resource.data.h is list && request.resource.data.h.size() <= 60
+          && (request.resource.data.f == null || (request.resource.data.f is string && request.resource.data.f.size() <= 32))
+          && request.resource.data.c is bool;
         allow delete: if isOwner(book);
       }
     }

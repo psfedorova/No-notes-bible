@@ -282,12 +282,12 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .spells .foot{ margin-top:14px; text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; }
 .spells .close{
   position:absolute; top:12px; right:12px; width:30px; height:30px; border-radius:50%;
-  border:1px solid var(--gold-line); background:transparent; color:#e6c47a; font-size:16px; cursor:pointer;
+  border:1px solid var(--gold-line); background:transparent; color:var(--gold); font-size:16px; cursor:pointer;
   transition:color .25s, box-shadow .25s;
 }
 .spells .close:hover{ color:#ffe6ae; box-shadow:0 0 12px rgba(236,192,102,.4); }
 /* the shelf of books: one's own and the shared ones */
-.shelf .card{ width:min(440px, 100%); }
+.shelf .card{ width:min(440px, 100%); color:var(--gold); }
 .shelf h2{ padding:0 34px; }
 .shelf .list{ display:flex; flex-direction:column; gap:6px; margin:16px 0 12px; }
 .shelf .book{
@@ -302,7 +302,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .acts{ display:flex; flex-direction:column; gap:8px; margin-top:12px; }
 .shelf .btn{
   min-height:46px; padding:6px 18px; border-radius:23px; border:1px solid var(--gold-line); background:transparent;
-  color:#ffe6ae; font:600 17px var(--text-font); cursor:pointer;
+  color:var(--gold); font:600 17px var(--text-font); cursor:pointer;
 }
 .shelf .btn.main{ border-color:var(--hairline); background:linear-gradient(180deg, rgba(240,200,120,.14), rgba(240,200,120,.04)); }
 .shelf .btn:hover, .shelf .btn:focus-visible{ box-shadow:0 0 12px rgba(236,192,102,.35); outline:none; }
@@ -311,7 +311,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .btn.minor:hover, .shelf .btn.minor:focus-visible{ box-shadow:none; color:var(--gold); }
 .shelf input[type=text]{
   width:100%; height:48px; margin-top:14px; padding:0 14px; border-radius:12px; border:1px solid var(--gold-line);
-  background:rgba(0,0,0,.25); color:#ffe6ae; font:500 18px var(--text-font); outline:none;
+  background:rgba(0,0,0,.25); color:var(--gold); font:500 18px var(--text-font); outline:none;
 }
 .shelf input[type=text]::placeholder{ color:rgba(240,226,192,.4); }
 .shelf input[type=text]:focus{ box-shadow:0 0 12px rgba(236,192,102,.3); }
@@ -324,17 +324,17 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   font-size:15px; color:var(--gold-dim); user-select:all; -webkit-user-select:all;
 }
 .shelf .linkbox .copy{
-  flex:none; min-width:84px; height:38px; padding:0 16px; border-radius:19px; border:1px solid var(--gold-line);
-  background:transparent; color:var(--gold); font:600 16px var(--text-font); cursor:pointer;
-  transition:border-color .25s, color .25s, background-color .25s;
+  flex:none; min-width:84px; height:38px; padding:0 16px 0 18px; border:0; border-left:1px solid var(--gold-line); border-radius:0 19px 19px 0;
+  background:transparent; color:var(--gold); font:600 17px var(--text-font); cursor:pointer;
+  transition:color .25s, background-color .25s;
 }
-@media (hover:hover){ .shelf .linkbox .copy:hover{ border-color:var(--hairline); color:#ffe6ae; } }
+@media (hover:hover){ .shelf .linkbox .copy:hover{ background:rgba(255,210,120,.08); } }
 .shelf .linkbox .copy:focus-visible{ outline:1px solid var(--hairline); outline-offset:2px; }
 /* the link is in hand: the button says so plainly for a moment */
-.shelf .linkbox .copy.done{ border-color:var(--hairline); background:rgba(240,200,120,.1); color:#ffe6ae; }
+.shelf .linkbox .copy.done{ background:rgba(240,200,120,.1); }
 /* small buttons for what is done to a keeper, to the book, to the account */
 .shelf .pill{
-  flex:none; min-height:32px; padding:2px 14px; border-radius:16px; border:1px solid rgba(214,164,74,.3);
+  flex:none; min-height:32px; padding:2px 14px; border-radius:16px; border:1px solid var(--gold-line);
   background:transparent; color:var(--gold); font:500 15px var(--text-font); cursor:pointer;
 }
 .shelf .pill:hover, .shelf .pill:focus-visible{ background:rgba(255,210,120,.08); border-color:var(--gold-line); outline:none; }
@@ -367,19 +367,21 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .shelf .opts{ position:absolute; right:0; top:calc(100% - 2px); z-index:3; min-width:220px; display:grid; padding:6px; border-radius:12px; border:1px solid var(--gold-line); background:#23261a; box-shadow:0 8px 24px rgba(0,0,0,.5); }
 .shelf .opts.up{ top:auto; bottom:calc(100% - 2px); }
 .shelf .menu-p .opts:not(.placed){ visibility:hidden; }
-.shelf .opts button{ padding:9px 12px; border:0; border-radius:8px; background:none; color:#ffe6ae; font:500 16px var(--text-font); text-align:left; cursor:pointer; }
+.shelf .opts button{ padding:9px 12px; border:0; border-radius:8px; background:none; color:var(--gold); font:500 16px var(--text-font); text-align:left; cursor:pointer; }
 .shelf .opts button:hover, .shelf .opts button:focus-visible{ background:rgba(255,210,120,.08); outline:none; }
 .shelf .opts button.on{ color:var(--gold-dim); cursor:default; }
 .shelf .opts button.on::after{ content:' ✓'; color:var(--gold); }
 .shelf .opts button.danger{ color:#eaa48c; }
 .shelf .people .pill{ flex:none; }
-.shelf .pill.danger.sure{ background:rgba(234,164,140,.12); border-color:rgba(234,164,140,.6); }
 .shelf .opts hr{ margin:4px 8px; border:0; border-top:1px solid rgba(214,164,74,.2); }
 /* the book's own tools fold away under Book settings */
 .shelf .more{ margin-top:22px; }
 .shelf .more > summary{ list-style:none; display:flex; justify-content:center; align-items:center; gap:8px; min-height:32px; cursor:pointer; font-style:italic; font-size:15px; color:var(--gold-dim); }
 .shelf .tools{ display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:10px; }
-.shelf .who{ display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:6px 10px; margin-top:16px; font-style:italic; color:var(--gold-dim); font-size:15px; }
+.shelf .acct{ margin-top:22px; padding-top:18px; border-top:1px solid rgba(214,164,74,.18); }
+.shelf .who{ display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:8px 10px; font-style:italic; color:var(--gold-dim); font-size:15px; }
+.shelf .acct .hint{ margin-top:10px; }
+.shelf .acts.quiet{ margin-top:2px; }
 .shelf .who .pill{ font-style:normal; }
 .shelf .body h2:empty{ display:none; }
 
@@ -449,6 +451,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   .shelf.invite{ --fs-s:14px; --fs-m:17px; --fs-l:38px; }
   .shelf.invite .btn.main{ padding:0 18px; white-space:nowrap; }
 }
+@media (max-width:420px){ .shelf .who > span{ flex-basis:100%; text-align:center; } }
 @media (max-width:420px){ .shelf h2{ padding:0 24px; letter-spacing:2px; font-size:16px; } .shelf .pick > summary h2{ margin-right:-2px; } .shelf .card{ padding:22px 20px 18px; } }
 @keyframes fadein{ from{ opacity:0; } to{ opacity:1; } }
 
@@ -684,6 +687,7 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
     <button role="menuitem" data-act="erase" hidden>Erase this page</button>
     <button role="menuitem" data-act="erase2" hidden>Erase this page</button>
     <button role="menuitem" data-act="restore" hidden>Undo erase</button>
+    <button role="menuitem" data-act="history" hidden>Page history</button>
     <button role="menuitem" data-act="files" class="two more">Files<span>Download or restore the book</span></button>
     <button role="menuitem" data-act="replay">Intro</button>
     <button role="menuitem" data-act="spells" class="fine">Shortcuts</button>
@@ -720,6 +724,6 @@ window.addEventListener('unhandledrejection', e=>{
   p.textContent += 'Promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
 });
 </script>
-<script type="module" src="./grimoire.js?v=112"></script>
+<script type="module" src="./grimoire.js?v=113"></script>
 </body>
 </html>
