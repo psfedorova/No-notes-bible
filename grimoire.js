@@ -402,7 +402,7 @@ const beamMotes = (()=>{
 })();
 
 /* post: bloom for the gilt and the magic, then a warm grade */
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(VW*DPR, VH*DPR, { type: THREE.HalfFloatType, samples: HI_RES ? 4 : 0, depthTexture: new THREE.DepthTexture(VW*DPR, VH*DPR) }));
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(VW*DPR, VH*DPR, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(VW*DPR, VH*DPR) }));
 /* the second target's clone shares the first's depth source, so the beam would read the
    depth the pass is drawing into; without MSAA in between, Safari draws nothing then */
 composer.renderTarget2.depthTexture = new THREE.DepthTexture(VW*DPR, VH*DPR);
@@ -462,6 +462,20 @@ const matGold = new THREE.MeshPhysicalMaterial({
 });
 /* the fore edge of aged leaves, slightly uneven from leaf to leaf (vertex colours) */
 const matLeafEdge = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.82, metalness:0.05, envMapIntensity:0.8 });
+/* each leaf here is as thick as a few sheets of paper, so its cut face shows them: fine
+   seams across it, each sheet a shade of its own. Where a pixel spans several sheets the
+   seams melt into their mean tone instead of shimmering */
+matLeafEdge.onBeforeCompile = sh=>{
+  sh.vertexShader = 'attribute float aEdge; varying float vEdge;\n' + sh.vertexShader
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdge = aEdge;');
+  sh.fragmentShader = 'varying float vEdge;\n' + sh.fragmentShader
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      { float a = vEdge*5.0, w = fwidth(a), f = fract(a), d = min(f, 1.0 - f);
+        float seam = 1.0 - smoothstep(0.0, 0.08 + 1.5*w, d);
+        float tone = fract(sin(floor(a)*91.7 + vColor.r*613.0)*43758.5);
+        float fade = 1.0 - smoothstep(0.25, 0.6, w);
+        diffuseColor.rgb *= mix(0.94, 1.0 + 0.06*(tone - 0.5) - 0.2*seam, fade); }`);
+};
 const matLining = new THREE.MeshStandardMaterial({ color:0x3a2a18, roughness:1, metalness:0, side:THREE.DoubleSide });
 
 /* ============================================================================
@@ -2357,9 +2371,11 @@ for(let i=0;i<N;i++){
     uv[(A_CNT+k)*2] = 1 - m/M;   uv[(A_CNT+k)*2+1] = r/R;
   }
   const rnd = mulberry32(900 + i*31);
-  /* hand-cut leaves: no two are quite the same size, so the edges are uneven */
-  const len = PW*(1 - 0.011*rnd());
-  const yb = -PH/2 + 0.009*(rnd()-0.35), yt = PH/2 - 0.009*(rnd()-0.35);
+  /* trimmed leaves: no two are quite the same size, but within a fraction of a leaf's
+     thickness, so the edges read as one cut face of fine lines rather than a saw of
+     corners, each leaf here being far thicker than paper */
+  const len = PW*(1 - 0.0015*rnd());
+  const yb = -PH/2 + 0.0015*(rnd()-0.35), yt = PH/2 - 0.0015*(rnd()-0.35);
   const tint = 0.84 + rnd()*0.2;
   /* the gutter: a page darkens as it runs down into the sewing, on both sides of
      every leaf, so the spread reads as bound into the spine and not laid beside it */
@@ -2374,6 +2390,9 @@ for(let i=0;i<N;i++){
   g.setAttribute('normal', new THREE.BufferAttribute(nrm,3));
   g.setAttribute('uv', new THREE.BufferAttribute(uv,2));
   g.setAttribute('color', new THREE.BufferAttribute(col,3));
+  const across = new Float32Array(V_CNT);
+  for(let v=2*A_CNT;v<V_CNT;v++) across[v] = (v - 2*A_CNT) % 2;
+  g.setAttribute('aEdge', new THREE.BufferAttribute(across,1));
   g.setIndex(leafIndex.list);
   g.addGroup(0, leafIndex.nTop, 0);
   g.addGroup(leafIndex.nTop, leafIndex.nBot, 1);
@@ -5879,7 +5898,8 @@ async function nearField(){
   const SWAY = { fern_02: 1.0, grass_medium_02: 1.4, celandine_01: 0.6, periwinkle_plant: 0.6 };
   const grp = new THREE.Group();
   grp.name = 'near';
-  const _m = new THREE.Matrix4(), _c = new THREE.Color();
+  const _m = new THREE.Matrix4(), _c = new THREE.Color(), _v = new THREE.Vector3();
+  const stones = [];
   await Promise.all([...byAsset].map(async ([a, items])=>{
     /* a plant that still will not come is left out rather than losing the whole book */
     const gl = await retry(()=>gltfLoader.loadAsync(`assets/plants/${a}/${a}_1k.gltf`)).catch(e=>{ console.warn('Plant left out:', a, e); return null; });
@@ -5922,6 +5942,12 @@ async function nearField(){
         _m.fromArray(it.m); im.setMatrixAt(i, _m);
         const k = (plant ? 0.78 : 0.82) + (plant ? 0.32 : 0.22)*(it.s ?? 1);
         im.setColorAt(i, _c.setRGB(k, k, k));
+        if(!plant){
+          if(!src.geometry.boundingSphere) src.geometry.computeBoundingSphere();
+          const bs = src.geometry.boundingSphere;
+          _v.copy(bs.center).applyMatrix4(_m);
+          stones.push([_v.x, _v.z, bs.radius*_m.getMaxScaleOnAxis()*0.8]);
+        }
       });
       im.instanceMatrix.needsUpdate = true;
       if(im.instanceColor) im.instanceColor.needsUpdate = true;
@@ -5931,8 +5957,117 @@ async function nearField(){
       grp.add(im);
     });
   }));
+  if(data.ground) grp.add(grassField(data.ground, stones));
   grp.rotation.y = FOREST_YAW;
   scene.add(grp);
+}
+
+/* grass round the boulder: thin blades in clumps, rooted on the floor the forest render
+   shows and coloured by it where they stand, so they rise out of the moss in its own
+   light and shade. Where that floor is bare earth, water or hidden from the capture
+   point no blade grows, and at the near field's edge they shorten and thin out into
+   the picture. Built in the forest's own frame (the group turns it by FOREST_YAW) */
+function grassField(G, stones){
+  const N = HI_RES ? 56000 : 16000, SEG = HI_RES ? 5 : 3;
+  const R1 = 32, R2 = 58;
+  const half = G.size/2, step = G.size/(G.n - 1);
+  const hAt = (x, z)=>{
+    const fx = clamp((x + half)/step, 0, G.n - 1.001), fz = clamp((z + half)/step, 0, G.n - 1.001);
+    const j = fx|0, i = fz|0, u = fx - j, v = fz - i, H = G.h, n = G.n;
+    return lerp(lerp(H[i*n + j], H[i*n + j + 1], u), lerp(H[(i + 1)*n + j], H[(i + 1)*n + j + 1], u), v);
+  };
+  const hh = (x, z)=>{ const s = Math.sin(x*127.1 + z*311.7)*43758.5453; return s - Math.floor(s); };
+  const vnz = (x, z)=>{ const i = Math.floor(x), j = Math.floor(z), a = smooth(x - i), b = smooth(z - j);
+    return lerp(lerp(hh(i, j), hh(i + 1, j), a), lerp(hh(i, j + 1), hh(i + 1, j + 1), a), b); };
+  const sstep = (a, b, x)=> smooth(clamp((x - a)/(b - a), 0, 1));
+  const footAt = (x, z)=>{ const k = Math.floor((Math.atan2(z, x)/(2*Math.PI) + 1)*ROCK_FOOT_N) % ROCK_FOOT_N;
+    return Math.max(rockFoot[k], rockFoot[(k + 1) % ROCK_FOOT_N]); };
+  const CELL = 6, cells = new Map(), key = (i, j)=> i*4096 + j;
+  stones.forEach(s=>{
+    for(let i=Math.floor((s[0] - s[2])/CELL);i<=Math.floor((s[0] + s[2])/CELL);i++)
+      for(let j=Math.floor((s[1] - s[2])/CELL);j<=Math.floor((s[1] + s[2])/CELL);j++){
+        const k = key(i, j); if(!cells.has(k)) cells.set(k, []); cells.get(k).push(s);
+      }
+  });
+  const underStone = (x, z)=>{ const c = cells.get(key(Math.floor(x/CELL), Math.floor(z/CELL)));
+    return !!c && c.some(s=> (x - s[0])**2 + (z - s[1])**2 < s[2]*s[2]); };
+  const rnd = mulberry32(2718), root = new Float32Array(N*4), blade = new Float32Array(N*4);
+  let n = 0;
+  for(let tries=0; n < N && tries < N*14; tries++){
+    const r = R2*Math.sqrt(rnd()), a = rnd()*2*Math.PI, x = r*Math.cos(a), z = r*Math.sin(a);
+    const edge = 1 - sstep(R1, R2, r);
+    const dense = sstep(0.4, 0.72, vnz(x*0.16, z*0.16)*0.65 + vnz(x*0.5 + 7.3, z*0.5 + 1.9)*0.35);
+    if(rnd() > edge*(0.1 + 0.9*dense)) continue;
+    if(r < footAt(x, z) + 0.15 || underStone(x, z)) continue;
+    const tall = (0.45 + 0.55*dense)*(0.5 + 0.5*edge);
+    root[n*4] = x; root[n*4 + 1] = hAt(x, z) - 0.05; root[n*4 + 2] = z; root[n*4 + 3] = rnd();
+    blade[n*4] = rnd()*2*Math.PI;
+    blade[n*4 + 1] = (0.55 + 1.25*rnd()*rnd())*tall;
+    blade[n*4 + 2] = 0.05 + 0.05*rnd();
+    blade[n*4 + 3] = 0.1 + 0.7*rnd()*rnd();
+    n++;
+  }
+  const ig = new THREE.InstancedBufferGeometry();
+  const pos = [], idx = [];
+  for(let s=0;s<=SEG;s++){ const t = s/SEG; pos.push(-0.5, t, 0, 0.5, t, 0); }
+  for(let s=0;s<SEG;s++){ const a = s*2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  ig.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  ig.setIndex(idx);
+  ig.setAttribute('aRoot', new THREE.InstancedBufferAttribute(root.subarray(0, n*4), 4));
+  ig.setAttribute('aBlade', new THREE.InstancedBufferAttribute(blade.subarray(0, n*4), 4));
+  ig.instanceCount = n;
+  const U = backdrop.material.uniforms;
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    uniforms: { uTime: nearTime, tPano: U.tPano, tWater: U.tWater, tDepth: U.tDepth, uNear: U.uNear, uFar: U.uFar,
+      uCap: { value: FOREST_CAP }, uGain: U.uGain, uSun: { value: SUN_DIR }, tHaze: { value: backdrop.picture } },
+    vertexShader: `uniform float uTime, uGain, uNear, uFar; uniform sampler2D tPano, tWater, tDepth; uniform vec3 uCap;
+      attribute vec4 aRoot, aBlade;
+      varying vec3 vCol, vWp; varying float vT; varying vec4 vScr;
+      vec2 eqUv(vec3 q){ return vec2(atan(q.z, q.x)*0.15915494 + 0.5, asin(clamp(q.y, -1.0, 1.0))*0.31830989 + 0.5); }
+      void main(){
+        vec3 r = aRoot.xyz, rel = r - uCap;
+        float L = length(rel);
+        vec2 uv = eqUv(rel/L);
+        vec3 fl = textureLod(tPano, uv, 1.0).rgb;
+        float wet = textureLod(tWater, uv, 0.0).r;
+        float seen = 1.0/(textureLod(tDepth, uv, 0.0).r*(1.0/uNear - 1.0/uFar) + 1.0/uFar);
+        float green = fl.g/max(max(fl.r, fl.b), 1e-4);
+        float keep = smoothstep(0.9, 1.1, green)*(1.0 - smoothstep(0.0, 0.08, wet))*step(L*0.85, seen);
+        float t = position.y, H = aBlade.y*keep, lean = aBlade.w;
+        vec2 f = vec2(cos(aBlade.x), sin(aBlade.x)), sd = vec2(-f.y, f.x);
+        float w = aBlade.z*pow(1.0 - t, 0.6);
+        float g = sin(uTime*1.3 + r.x*0.35 + r.z*0.27)*0.6 + sin(uTime*2.1 + r.x*0.9)*0.25 + sin(uTime*3.7 + aRoot.w*40.0)*0.06;
+        vec2 bend = f*lean*H*t*t + vec2(g, g*0.6)*t*t*H*0.14;
+        vec3 p = r + vec3(sd.x*position.x*w + bend.x, H*t*(1.0 - 0.3*lean*t), sd.y*position.x*w + bend.y);
+        vec4 wp = modelMatrix*vec4(p, 1.0);
+        vWp = wp.xyz;
+        gl_Position = projectionMatrix*viewMatrix*wp;
+        vScr = gl_Position;
+        float lum = dot(fl, vec3(0.3, 0.59, 0.11));
+        vec3 c = max(mix(vec3(lum), fl, 1.3), 0.0)*mix(0.85, 1.15, fract(aRoot.w*7.13));
+        if(fract(aRoot.w*3.7) < 0.12) c = mix(c, lum*vec3(1.3, 1.1, 0.55), 0.6*t);
+        vCol = c*uGain; vT = t;
+      }`,
+    fragmentShader: `uniform vec3 uSun; uniform sampler2D tHaze;
+      varying vec3 vCol, vWp; varying float vT; varying vec4 vScr;
+      void main(){
+        vec3 V = vWp - cameraPosition;
+        float d = length(V);
+        float back = pow(clamp(dot(V/d, uSun), 0.0, 1.0), 3.0);
+        vec3 c = vCol*mix(0.6, 1.12, vT) + vCol*vec3(0.9, 1.15, 0.45)*back*1.3*vT;
+        vec3 haze = textureLod(tHaze, vScr.xy/vScr.w*0.5 + 0.5, 4.0).rgb;
+        c = mix(c, haze, clamp(1.0 - exp(-max(d - 12.0, 0.0)*0.009), 0.0, 0.5));
+        gl_FragColor = vec4(c, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`
+  });
+  const mesh = new THREE.Mesh(ig, mat);
+  mesh.name = 'grass';
+  mesh.frustumCulled = false;
+  mesh.userData.noPick = true;
+  return mesh;
 }
 
 async function loadAssets(){
