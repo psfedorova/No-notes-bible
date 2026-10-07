@@ -252,7 +252,7 @@ canvasEl.addEventListener('pointermove', e=>{
     }
     if(!g.force && h && h.type === 'page' && (h.s > PW*0.5 || sideways)) startTurn(h);
     else if(!g.force && h && h.type === 'front' && st.open && h.inner && st.k === 0 && h.outer && !st.flight && !st.riffle) startCover(h);
-    else if(g.force){ g.mode = 'orbit'; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
+    else if(g.force || st.open){ g.mode = 'orbit'; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
     else { g.mode = 'rot'; rotating = true; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
     document.body.classList.add('grabbing');
   }

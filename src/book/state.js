@@ -4,6 +4,7 @@ import { N, PH, R, ZB } from '../core/config.js';
 import { setShadowDirty } from '../scene/renderer.js';
 import { EP_X0, JOINT_H } from './paper.js';
 import { blankMat } from './print.js';
+import { matLeafStack } from './materials.js';
 import { pageCache, pageEntry, pages, trimCache } from './pages.js';
 import { frontGrp } from './boards.js';
 import { backGrp } from './sapphire.js';
@@ -156,6 +157,8 @@ function updateVisibility(){
       const er = pageEntry(2*i), ev = pageEntry(2*i+1);
       keep.add(2*i); keep.add(2*i+1);
       mats[0] = er.mat; mats[1] = ev.mat;
+    }else if(open){
+      mats[0] = matLeafStack; mats[1] = matLeafStack;
     }else{
       mats[0] = blankMat[0]; mats[1] = blankMat[1];
     }

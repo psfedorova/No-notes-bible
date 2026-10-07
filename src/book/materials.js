@@ -30,8 +30,18 @@ matLeafEdge.onBeforeCompile = sh=>{
         float fade = 1.0 - smoothstep(0.25, 0.6, w);
         diffuseColor.rgb *= mix(0.94, 1.0 + 0.06*(tone - 0.5) - 0.2*seam, fade); }`);
 };
+/* a leaf deep in an open stack shows only the strip of it that runs out past the leaf
+   above: that strip is the edge of the paper, each sheet a shade of its own, not the
+   page painted on it stretched across the strip */
+const matLeafStack = new THREE.MeshStandardMaterial({ color: 0xb39769, vertexColors: true, roughness: 0.85, metalness: 0, envMapIntensity: 0.8 });
+matLeafStack.onBeforeCompile = sh=>{
+  sh.vertexShader = 'attribute float aTint; varying float vTint;\n' + sh.vertexShader
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTint = aTint;');
+  sh.fragmentShader = 'varying float vTint;\n' + sh.fragmentShader
+    .replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb *= vTint;');
+};
 const matLining = new THREE.MeshStandardMaterial({ color:0x3a2a18, roughness:1, metalness:0, side:THREE.DoubleSide });
 
 export {
-  matCoverBack, matCoverFront, matGold, matLeafEdge, matLeatherEdge, matLining
+  matCoverBack, matCoverFront, matGold, matLeafEdge, matLeafStack, matLeatherEdge, matLining
 };

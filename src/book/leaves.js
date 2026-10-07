@@ -64,6 +64,7 @@ for(let i=0;i<N;i++){
   const across = new Float32Array(V_CNT);
   for(let v=2*A_CNT;v<V_CNT;v++) across[v] = (v - 2*A_CNT) % 2;
   g.setAttribute('aEdge', new THREE.BufferAttribute(across,1));
+  g.setAttribute('aTint', new THREE.BufferAttribute(new Float32Array(V_CNT).fill(0.84 + (tint - 0.84)*1.1), 1));
   g.setIndex(leafIndex.list);
   g.addGroup(0, leafIndex.nTop, 0);
   g.addGroup(leafIndex.nTop, leafIndex.nBot, 1);
