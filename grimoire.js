@@ -42,8 +42,9 @@ const intro = !FILM && window.__intro || null;
 if(intro) document.documentElement.classList.add('settling');
 const easeIO = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
 const easeSine = t => 0.5 - 0.5*Math.cos(Math.PI*t);
-/* a leaf is lifted briskly and comes down slowly on its cushion of air */
-const easeFlip = t => 1 - Math.pow(1 - easeSine(t), 1.35);
+/* a leaf is lifted gently by its corner and still falling when its back reaches the
+   stack: the fore edge then comes down last, on its cushion of air */
+const easeFlip = t => t*t*(3 - 2*t) + 0.55*t*t*(t - 1);
 const easeIn2 = t => t*t;
 const easeOut2 = t => 1 - (1 - t)*(1 - t);
 /* frame-rate independent smoothing toward a goal */
@@ -2382,7 +2383,7 @@ for(let i=0;i<N;i++){
   mesh.receiveShadow = true;
   mesh.userData = { grab:'leaf', leaf:i };
   bookRoot.add(mesh);
-  leaves.push({ i, mesh, geo:g, pos, nrm, sig:'', a0:0, len, ds: len/M, yb, yt, flt: 9 });
+  leaves.push({ i, mesh, geo:g, pos, nrm, sig:'', a0:0, len, ds: len/M, yb, yt, flt: 9, float: 0, floatLeft: false });
 }
 
 /* rest shape: angle phi0*g(s/ell), g = 1 - smoothstep, so the leaf leaves its
@@ -2455,23 +2456,51 @@ function restParams(C, i, left, H){
      the one below it, instead of their ramps crossing and flickering through each other */
   const thick = (left ? C.sigma : N - C.sigma)*LT;
   const ell = clamp(0.45 + RAMP*Math.max(thick, Math.abs(rise)), 0.45, 0.8*PW);
-  /* a leaf that has just landed shivers once before it lies still */
-  const t = leaves[i].flt, flutter = t < 0.75 ? 0.08*Math.exp(-t*6)*Math.abs(Math.sin(t*16)) : 0;
-  return { phi0: solvePhi(rise/ell), ell, fan: FAN*clamp(q,0,1)*C.b*C.b + flutter, left, theta: C.theta };
+  /* a leaf that has just landed comes down last at its fore edge, on the air caught
+     under it, and gives a small shiver as that air goes */
+  const L = leaves[i], t = L.flt, live = t < FLOAT_T;
+  const flutter = live ? 0.03*Math.exp(-t*7)*Math.abs(Math.sin(t*16)) : 0;
+  const float = live && left === L.floatLeft ? L.float*Math.pow(1 - t/FLOAT_T, 2.2) : 0;
+  return { phi0: solvePhi(rise/ell), ell, fan: FAN*clamp(q,0,1)*C.b*C.b + flutter, float, left, theta: C.theta };
+}
+const FLOAT_T = 0.75;
+/* a leaf touching down: whatever its fore edge still trails by is the air under it */
+function land(L, lag, to){
+  L.flt = 0;
+  L.floatLeft = to === 1;
+  L.float = Math.max(0, to === 1 ? -lag : lag);
 }
 function restAngle(P, s){
   const fanW = smooth(clamp((s/PW - 0.62)/0.38, 0, 1));
-  const beta = P.phi0*gFn(s/P.ell) + P.fan*fanW;
+  const beta = P.phi0*gFn(s/P.ell) + P.fan*fanW + P.float*bendLag(s/PW);
   return P.left ? P.theta - beta : beta;
 }
-/* a leaf in flight: blend of its two rest shapes plus a curl along the arc,
-   held between the two rests so it can never cut into either stack */
-function flightAngle(PR, PL, p, curl, s){
-  const aR = restAngle(PR, s), aL = restAngle(PL, s);
-  const a = lerp(aR, aL, p) + curl*Math.pow(s/PW, 1.3);
-  return clamp(a, Math.min(aR,aL), Math.max(aR,aL));
+/* a leaf in flight: blend of its two rest shapes, bent the way paper bends. A hand
+   at the corner lifts it there first (lead: flat by the spine, curling up to the
+   hand); flying free, the air holds the fore edge back (lag: bent mostly near
+   the sewing, as a cantilever is); and wherever it is not upright it droops
+   under its own weight (sag). Held between the two rests so it can never cut
+   into either stack */
+const TWIST = 0.55;                // how far the lifted corner runs ahead of the other
+const SAG = 0.30;                  // fore-edge droop of a leaf held level, free in the air
+const AIR = 0.20;                  // how far the air holds the fore edge back, per rad/s of swing
+const LAG_MAX = 1.0;
+const bendLead = u => Math.pow(u, 1.6);
+const bendLag = u => 0.35*(8*u/3 - 2*u*u + u*u*u*u/3) + 0.65*u;
+const bendSag = u => 1 - (1-u)*(1-u)*(1-u);
+function flightAngleFn(PR, PL, air, yN){
+  const p = air.p;
+  const tw = air.gy*yN;
+  const lead = air.lead*(1 + TWIST*tw), lag = air.lag*(1 - 0.3*TWIST*tw);
+  const aMid = lerp(restAngle(PR, PW*0.5), restAngle(PL, PW*0.5), p);
+  /* by the stacks the leaf is borne on the air pressed out from under it */
+  const sag = -SAG*air.sagK*Math.cos(aMid)*Math.sqrt(Math.sin(Math.PI*clamp(p, 0, 1)));
+  return s=>{
+    const aR = restAngle(PR, s), aL = restAngle(PL, s), u = s/PW;
+    const a = lerp(aR, aL, p) + lead*bendLead(u) + lag*bendLag(u) + sag*bendSag(u);
+    return clamp(a, Math.min(aR,aL), Math.max(aR,aL));
+  };
 }
-const TWIST = 0.55;
 const _X = Array.from({length:R+1}, ()=>new Float32Array(M+1));
 const _Z = Array.from({length:R+1}, ()=>new Float32Array(M+1));
 const _A = Array.from({length:R+1}, ()=>new Float32Array(M+1));
@@ -2547,7 +2576,7 @@ function pagePointWorld(n, px, py){
 const st = {
   theta: 0,           // front board angle, 0 closed .. PI open
   k: 0,               // leaves lying on the left
-  flight: null,       // { j, p, dragging, curl, vel, gy, anim }
+  flight: null,       // { j, p, dragging, lead, lag, sagK, vel, gy, anim, settle }
   riffle: null,       // a long jump: several leaves in the air at once
   open: false,
   zoom: 1, camD: 14,
@@ -2567,13 +2596,13 @@ function currentSigma(){
   return st.flight ? st.flight.j + st.flight.p : st.k;
 }
 
-const _rfAir = { p:0, curl:0, gy:-0.85 };
+const _rfAir = { p:0, lead:0, lag:0, gy:-0.85, sagK:1 };
 function layout(force){
   const fl = st.flight;
   const sigma = currentSigma();
-  const fluttering = leaves.reduce((a, L)=> L.flt < 0.75 ? a + L.flt : a, 0);
+  const fluttering = leaves.reduce((a, L)=> L.flt < FLOAT_T ? a + L.flt : a, 0);
   const rf = st.riffle;
-  const sig = `${st.theta.toFixed(5)}|${sigma.toFixed(5)}|${fl ? fl.curl.toFixed(4)+','+fl.gy.toFixed(3) : ''}|${rf ? rf.tau.toFixed(5) : ''}|${fluttering.toFixed(3)}`;
+  const sig = `${st.theta.toFixed(5)}|${sigma.toFixed(5)}|${fl ? fl.lead.toFixed(4)+','+fl.lag.toFixed(4)+','+fl.sagK.toFixed(3)+','+fl.gy.toFixed(3) : ''}|${rf ? rf.tau.toFixed(5) : ''}|${fluttering.toFixed(3)}`;
   if(!force && sig === lastSig) return;
   lastSig = sig;
   shadowDirty = true;
@@ -2590,7 +2619,7 @@ function layout(force){
     if(rf){
       const m = rf.fwd ? i - rf.k0 : rf.k0 - 1 - i;
       if(m >= 0 && m < rf.d){
-        if(rf.p[m] > 0 && rf.p[m] < 1){ air = _rfAir; air.p = rf.p[m]; air.curl = rf.curl[m]; }
+        if(rf.p[m] > 0 && rf.p[m] < 1){ air = _rfAir; air.p = rf.p[m]; air.lead = rf.lead[m]; air.lag = rf.lag[m]; }
         else left = rf.p[m] >= 1;
       }else left = i < rf.k0;
     }
@@ -2598,15 +2627,14 @@ function layout(force){
       const PR = restParams(C, i, false, _H), PL = restParams(C, i, true, _H);
       for(let r=0;r<=R;r++){
         const yN = -1 + 2*r/R;
-        const cr = air.curl*(1 + TWIST*air.gy*yN);
-        integrate(_H.x, _H.z, s=>flightAngle(PR, PL, air.p, cr, s), _X[r], _Z[r], _A[r], L.ds);
+        integrate(_H.x, _H.z, flightAngleFn(PR, PL, air, yN), _X[r], _Z[r], _A[r], L.ds);
       }
       writeLeaf(L, true);
       L.sig = '';
       L.a0 = _A[R>>1][0];
     }else{
       const P = restParams(C, i, left, _H);
-      const s2 = `${_H.x.toFixed(5)},${_H.z.toFixed(5)},${P.phi0.toFixed(5)},${P.ell.toFixed(4)},${P.fan.toFixed(4)},${left?C.theta.toFixed(5):'r'}`;
+      const s2 = `${_H.x.toFixed(5)},${_H.z.toFixed(5)},${P.phi0.toFixed(5)},${P.ell.toFixed(4)},${P.fan.toFixed(4)},${P.float.toFixed(4)},${left?C.theta.toFixed(5):'r'}`;
       if(force || s2 !== L.sig){
         integrate(_H.x, _H.z, s=>restAngle(P, s), _X[0], _Z[0], _A[0], L.ds);
         writeLeaf(L, false);
@@ -2729,10 +2757,62 @@ function uiInsets(){
   const bar = document.querySelector('.ui.bar'), pg = document.getElementById('pager');
   const rb = bar ? bar.getBoundingClientRect() : null, rp = pg && !pg.hidden ? pg.getBoundingClientRect() : null;
   const top = rb && rb.height ? rb.bottom : 0, bot = rp && rp.height ? VH - rp.top : 0;
-  const r = { vw: VW, vh: VH, v: clamp(Math.max(top, bot) + 10, 18, VH*0.2), s: clamp(VW*0.03, 8, 18) };
+  const r = { vw: VW, vh: VH, v: clamp(Math.max(top, bot) + 10, 18, VH*0.2), s: clamp(VW*0.03, 8, 18), top, bot };
   if(rp && rp.height) uiIn = r;
   return r;
 }
+/* the part of the screen the keyboard leaves free, in canvas px */
+function visibleBand(){
+  const vv = window.visualViewport;
+  if(!vv) return { top: 0, h: VH };
+  const top = clamp(vv.offsetTop, 0, VH - 1);
+  return { top, h: clamp(vv.height, 1, VH - top) };
+}
+
+/* ---------------- one page at a time ----------------
+   A phone held upright reads the tome as a reader holds a big book close: the eye
+   stays over one page, the pager counts pages, and the next page is either the
+   other side of the spread (the eye moves over) or the back of the leaf (it turns) */
+/* judged on the screen's full height for its width: the keyboard coming up must not
+   change how the book is read */
+let tallW = 0, tallH = 0;
+function onePage(){
+  if(VW !== tallW){ tallW = VW; tallH = VH; }
+  tallH = Math.max(tallH, VH);
+  return VW/tallH < 0.8;
+}
+const sideOf = n => n % 2 ? -1 : 1;
+const pageMid = {};
+/* the spread the book will lie open at once the leaves in the air and the ones
+   asked for after them are down */
+function landingSpread(){
+  let k = st.riffle ? st.riffle.k1 : st.k;
+  const fl = st.flight;
+  if(fl && !fl.dragging){
+    const to = fl.anim ? fl.anim.to : fl.settle ? fl.settle.to : null;
+    if(to !== null) k = to === 1 ? fl.j + 1 : fl.j;
+  }
+  if(seek.goal !== null) k = seek.goal;
+  for(const d of queue) k = clamp(k + d, 0, N);
+  return k;
+}
+function shownPage(){
+  const k = landingSpread();
+  if(k <= 0) return 0;
+  if(k >= N) return 2*N - 1;
+  return st.focusSide > 0 ? 2*k : 2*k - 1;
+}
+function stepPage(d){
+  if(st.riffle || !st.open) return;
+  const n = shownPage(), m = clamp(n + d, 0, 2*N - 1);
+  if(m === n) return;
+  if(writing && m >= 1){ quillTo(m); refreshUI(); return; }
+  if(writing) exitWriting();
+  st.focusSide = sideOf(m); st.focusTo = 1;
+  if(spreadOf(m) !== landingSpread()) flip(d);
+  refreshUI();
+}
+const pageStep = d => onePage() ? stepPage(d) : flip(d);
 /* what the camera frames: it follows the board while the book opens, but a
    book being shut is watched from where the reader sits, as a person would;
    only once the board is down and still do the view and the tome ease back */
@@ -3093,7 +3173,7 @@ function exitWriting(keepFocus){
   if(!writing) return;
   const n = writing.n;
   writing = null;
-  if(!keepFocus){ quill.blur(); st.focusTo = 0; }
+  if(!keepFocus){ quill.blur(); if(!onePage()) st.focusTo = 0; }
   paintPage(n);
   saveNow(true);
   st.bob = 1;
@@ -3980,11 +4060,25 @@ function pickAt(cx, cy){
   ray.setFromCamera(ndc, camera);
   const hits = ray.intersectObjects(pickables(), false);
   if(!hits.length) return null;
-  const h = hits[0], o = h.object, ud = o.userData;
+  let h = hits[0];
+  const o = h.object, ud = o.userData;
   if(ud.grab === 'leaf'){
-    const i = ud.leaf, mi = h.face ? h.face.materialIndex : 2;
-    const L = leaves[i];
     const open = st.open && Math.abs(st.theta-OPEN) < 1e-3 && !st.flight && !st.riffle;
+    /* by the fore edge the ray can meet the open leaf's cut edge or the underside of
+       the facing one first: the open page a hair further along is what was meant, and
+       failing that the edge stands for that page's edge */
+    if(open){
+      const isTop = x => x.object.userData.grab === 'leaf' && x.face &&
+        ((x.object.userData.leaf === st.k && x.face.materialIndex === 0) || (x.object.userData.leaf === st.k-1 && x.face.materialIndex === 1));
+      const top = hits.find(x => x.distance < h.distance + 0.25 && isTop(x));
+      if(top) h = top;
+      else{
+        const right = ud.leaf >= st.k, j = right ? st.k : st.k-1;
+        if(j >= 0 && j < N) return { type:'page', n: right ? 2*j : 2*j+1, leaf:j, side: right ? 'right' : 'left', uv:{ x: right ? 1 : 0, y: h.uv ? h.uv.y : 0.5 }, s: leaves[j].len, y: h.uv ? h.uv.y : 0.5 };
+      }
+    }
+    const i = h.object.userData.leaf, mi = h.face ? h.face.materialIndex : 2;
+    const L = leaves[i];
     if(open && mi === 0 && i === st.k) return { type:'page', n:2*i, leaf:i, side:'right', uv:h.uv, s: h.uv.x*L.len, y: h.uv.y };
     if(open && mi === 1 && i === st.k-1) return { type:'page', n:2*i+1, leaf:i, side:'left', uv:h.uv, s:(1-h.uv.x)*L.len, y: h.uv.y };
     return { type:'book' };
@@ -4003,11 +4097,11 @@ function flightPointAt(fl, p, sG, yN){
   const C = layoutCtx(fl.j + p, st.theta);
   hingeOf(C, fl.j, _H);
   const PR = restParams(C, fl.j, false, _H), PL = restParams(C, fl.j, true, _H);
-  const cr = fl.curl*(1 + TWIST*fl.gy*yN);
+  const angleAt = flightAngleFn(PR, PL, { p, lead: fl.lead, lag: fl.lag, gy: fl.gy, sagK: fl.sagK }, yN);
   let x = _H.x, z = _H.z;
   const steps = Math.max(1, Math.round(sG/leaves[fl.j].ds));
   const ds = sG/steps;
-  for(let m=0;m<steps;m++){ const a = flightAngle(PR, PL, p, cr, (m+0.5)*ds); x += Math.cos(a)*ds; z += Math.sin(a)*ds; }
+  for(let m=0;m<steps;m++){ const a = angleAt((m+0.5)*ds); x += Math.cos(a)*ds; z += Math.sin(a)*ds; }
   _tmpV.set(x, yN*PH/2, z);
   return bookRoot.localToWorld(_tmpV);
 }
@@ -4105,7 +4199,14 @@ canvasEl.addEventListener('pointermove', e=>{
     const back = e.clientX > g.sx;
     if(!g.force && h && h.type === 'page' && sideways && (h.side === 'left') !== back){
       g.mode = 'swept';
-      flip(back ? -1 : 1);
+      pageStep(back ? -1 : 1);
+      return;
+    }
+    /* one page at a time a sideways sweep anywhere goes on through the book, as on a
+       phone it always does; only the page under the finger can be held as it turns */
+    if(!g.force && onePage() && st.open && sideways && !(h && h.type === 'page')){
+      g.mode = 'swept';
+      stepPage(back ? -1 : 1);
       return;
     }
     if(!g.force && h && h.type === 'page' && (h.s > PW*0.5 || sideways)) startTurn(h);
@@ -4210,7 +4311,7 @@ addEventListener('gestureend', e=>e.preventDefault());
 function startTurn(h){
   if(writing){ resumeWriting = true; exitWriting(true); }
   const right = h.side === 'right';
-  st.flight = { j: right ? st.k : st.k-1, p: right ? 0 : 1, dragging:true, curl:0, vel:0,
+  st.flight = { j: right ? st.k : st.k-1, p: right ? 0 : 1, dragging:true, lead:0, lag:0, sagK:0.35, vel:0,
                 gy: clamp(h.y*2-1, -1, 1), sG: clamp(h.s, PW*0.4, PW), yN: clamp(h.y*2-1, -1, 1), anim:null, settle:null };
   st.flight.goal = st.flight.p;
   g.mode = 'turn';
@@ -4220,10 +4321,16 @@ function endTurn(cancelled){
   const fl = st.flight;
   if(!fl || !fl.dragging) return;
   fl.dragging = false;
-  let to = fl.goal > 0.5 ? 1 : 0;
+  /* held close over one page the finger cannot carry the leaf past the spine, so a
+     fifth of the way over is already a turn */
+  const from = fl.j < st.k ? 1 : 0, need = onePage() ? 0.2 : 0.5;
+  let to = Math.abs(fl.goal - from) > need ? 1 - from : from;
   if(!cancelled){ if(fl.vel > 1.2) to = 1; else if(fl.vel < -1.2) to = 0; }
   else to = fl.j < st.k ? 1 : 0;
   fl.settle = glideFrom(fl.p, fl.vel, to, Math.max(0.32, 0.9*Math.abs(to - fl.p)));
+  /* one page at a time the eye goes with the leaf to the page it uncovered */
+  if(onePage() && (to === 1) !== (fl.j < st.k)){ st.focusSide = to === 1 ? -1 : 1; st.focusTo = 1; }
+  refreshUI();
 }
 function startCover(h){
   if(writing) exitWriting();
@@ -4248,7 +4355,7 @@ function click(hit){
   if(!st.open){ writePose(); return; }
   if(hit.type === 'page' && st.open){
     /* a click by the fore edge of a square book turns the leaf; the title page is only leaned in to */
-    if(hit.s > PW*EDGE_TURN && atHome() && !spinAnim){ flip(hit.side === 'right' ? 1 : -1); return; }
+    if(hit.s > PW*EDGE_TURN && atHome() && !spinAnim){ pageStep(hit.side === 'right' ? 1 : -1); return; }
     if(hit.n === 0){ if(writing) exitWriting(); st.focusSide = 1; st.focusTo = 1; return; }
     const e = pageEntry(hit.n);
     if(!e.lay) paintPage(hit.n);
@@ -4282,7 +4389,7 @@ function writePose(n, idx){
     resumeWriting = true; flip(1);
     return;
   }
-  if(n === undefined) n = nextWritablePage();
+  if(n === undefined) n = onePage() ? shownPage() : nextWritablePage();
   st.focusSide = n % 2 === 0 ? 1 : -1;
   st.focusTo = 1;
   if(writing && writing.n === n){
@@ -4416,7 +4523,9 @@ function animateFlight(to){
 function landFlight(to){
   const fl = st.flight;
   st.k = to === 1 ? fl.j + 1 : fl.j;
-  leaves[fl.j].flt = 0;
+  /* turned in a hurry the next leaf is already on its way down: no air is left
+     under this one for it to land on */
+  land(leaves[fl.j], fl.lag*clamp(2 - flightPace(), 0, 1), to);
   st.flight = null;
   sfx.settle();
   saveSoon(true);
@@ -4433,11 +4542,11 @@ function flip(dir, magic){
   if(writing && !(magic && seek.keepQuill)){ resumeWriting = !magic; exitWriting(true); }
   if(st.flight){ if(queue.length < 8) queue.push(dir); return; }
   if(dir > 0 && st.k < N){
-    st.flight = { j: st.k, p:0, dragging:false, curl:0, vel:0, gy:-0.85, sG:PW, yN:-1, anim:null, settle:null };
+    st.flight = { j: st.k, p:0, dragging:false, lead:0, lag:0, sagK:1, vel:0, gy:-0.85, sG:PW, yN:-1, anim:null, settle:null };
     animateFlight(1);
     magic && flightPace() > 2 ? sfx.flick() : sfx.page();
   }else if(dir < 0 && st.k > 0){
-    st.flight = { j: st.k-1, p:1, dragging:false, curl:0, vel:0, gy:-0.85, sG:PW, yN:-1, anim:null, settle:null };
+    st.flight = { j: st.k-1, p:1, dragging:false, lead:0, lag:0, sagK:1, vel:0, gy:-0.85, sG:PW, yN:-1, anim:null, settle:null };
     animateFlight(0);
     magic && flightPace() > 2 ? sfx.flick() : sfx.page();
   }
@@ -4462,17 +4571,18 @@ function stepFlight(dt){
     fl.vel = (fl.p - prev)/Math.max(dt, 1e-3);
     if(k >= 1){ landFlight(a.to); return; }
   }
-  /* the pulled fore edge leads; let go, the leaf leads while it rises and
-     trails once it is falling past the vertical, as paper does in air */
+  /* the hand leads with the corner it holds, and a turn by itself is lifted by an
+     unseen one that lets go a third of the way over; free, the air holds the fore
+     edge back the harder the faster the leaf swings. Both follow on a spring, so
+     the bend builds and lets go the way paper does, never in a snap */
   const dir = Math.abs(fl.vel) > 0.05 ? Math.sign(fl.vel) : (fl.j < st.k ? -1 : 1);
   const prog = dir > 0 ? fl.p : 1 - fl.p;
-  const target = fl.dragging ? 0.55*Math.sin(Math.PI*fl.p)*dir : 0.5*Math.sin(2*Math.PI*prog)*dir;
-  fl.c0 = lerp(fl.c0 ?? fl.curl, target, 1 - Math.exp(-dt*10));
-  /* the curl lags its target, so over the last stretch it is drawn out to nothing:
-     the leaf comes down flat and lands without snapping out of a twist */
-  const envT = fl.dragging ? 1 : smooth(clamp((1 - prog)/0.25, 0, 1));
-  fl.env = fl.env === undefined ? envT : lerp(fl.env, envT, 1 - Math.exp(-dt*18));
-  fl.curl = fl.c0*fl.env;
+  const lead = fl.dragging ? 0.55*Math.sin(Math.PI*fl.p)*dir
+             : fl.anim ? 0.75*dir*(1 - smooth(clamp(prog/0.4, 0, 1))) : 0;
+  const lag = fl.dragging ? 0 : -LAG_MAX*Math.tanh(AIR*Math.PI*fl.vel/LAG_MAX);
+  sdamp(fl, 'lead', lead, 0.09, dt);
+  sdamp(fl, 'lag', lag, 0.12, dt);
+  sdamp(fl, 'sagK', fl.dragging ? 0.35 : 1, 0.2, dt);
 }
 
 /* ============================================================================
@@ -4752,7 +4862,7 @@ function startRiffle(k1){
   if(writing && !seek.keepQuill) exitWriting(true);
   const k0 = st.k, d = Math.abs(k1 - k0);
   st.riffle = { k0, k1, d, fwd: k1 > k0, W: Math.min(3.4, 1.2 + d*0.28), t: 0, dur: 0.9 + 0.42*Math.sqrt(d),
-    tau: 0, p: new Float32Array(d).fill(k1 > k0 ? 0 : 1), curl: new Float32Array(d), lifted: 0, landed: 0, tick: 0, shown: k0,
+    tau: 0, p: new Float32Array(d).fill(k1 > k0 ? 0 : 1), lead: new Float32Array(d), lag: new Float32Array(d), lifted: 0, landed: 0, tick: 0, shown: k0,
     warm: [2*k1 - 1, 2*k1, 2*k1 - 2, 2*k1 + 1, 2*k1 - 3, 2*k1 - 4, 2*k1 + 2, 2*k1 + 3].filter(n => n >= 0 && n < 2*N && !pageCache.has(n)) };
   sfx.page();
 }
@@ -4768,13 +4878,15 @@ function stepRiffle(dt){
   for(let m=0;m<rf.d;m++){
     const u = clamp((rf.tau - m)/rf.W, 0, 1), q = easeSine(u);
     rf.p[m] = rf.fwd ? q : 1 - q;
-    /* the fore edge leads while the leaf rises and trails as it falls */
-    rf.curl[m] = 0.42*Math.sin(2*Math.PI*q)*dir;
+    /* the fore edge leads while the leaf is lifted, then trails it through the air
+       and is still up when the leaf's back is down */
+    rf.lead[m] = 0.5*dir*Math.sin(Math.PI*clamp(q/0.35, 0, 1));
+    rf.lag[m] = -0.6*dir*Math.pow(Math.sin(Math.PI*clamp((q - 0.1)/1.1, 0, 1)), 0.8);
     if(u > 0 && m >= rf.lifted){
       rf.lifted = m + 1;
       if(rf.tick <= 0){ m ? sfx.flick() : sfx.page(); rf.tick = 0.07; }
     }
-    if(u >= 1 && m >= rf.landed){ rf.landed = m + 1; leaves[riffleLeaf(rf, m)].flt = 0; }
+    if(u >= 1 && m >= rf.landed){ rf.landed = m + 1; land(leaves[riffleLeaf(rf, m)], m === rf.d - 1 ? rf.lag[m] : 0, rf.fwd ? 1 : 0); }
   }
   const shown = Math.round(currentSigma());
   if(shown !== rf.shown && document.activeElement !== seekIn){ rf.shown = shown; seekIn.value = spreadLabel(shown); }
@@ -4802,6 +4914,8 @@ function arrive(){
 function turnToPage(P){
   const n = clamp(Math.round(P) - 1, 0, 2*N - 1);
   const resume = writing && n >= 1 ? { n, idx: pages[n].t.length } : null;
+  st.focusSide = sideOf(n);
+  if(onePage()) st.focusTo = 1;
   if(writing && spreadOf(n) !== st.k) exitWriting(true);
   seekSpread(spreadOf(n), { resume });
   if(seek.goal === st.k && st.open && !coverAnim && !st.flight && !st.riffle) arrive();
@@ -4904,8 +5018,8 @@ const btnPrev = document.getElementById('btnPrev');
 const btnNext = document.getElementById('btnNext');
 const btnWrite = document.getElementById('btnWrite');
 const btnBook = document.getElementById('btnBook');
-btnPrev.addEventListener('click', ()=> flip(-1));
-btnNext.addEventListener('click', ()=> flip(1));
+btnPrev.addEventListener('click', ()=> pageStep(-1));
+btnNext.addEventListener('click', ()=> pageStep(1));
 btnWrite.addEventListener('click', ()=> writing ? exitWriting() : writePose());
 btnBook.addEventListener('click', ()=> toggleBook());
 
@@ -4985,15 +5099,16 @@ showSound();
 
 function refreshUI(){
   pagerEl.hidden = !st.open;
-  btnPrev.disabled = st.k === 0;
-  btnNext.disabled = st.k === N;
+  const one = onePage(), n = one ? shownPage() : 0;
+  btnPrev.disabled = one ? n === 0 : st.k === 0;
+  btnNext.disabled = one ? n === 2*N - 1 : st.k === N;
   btnWrite.classList.toggle('on', !!writing);
   document.body.classList.toggle('quill-up', !!writing);
   btnBook.classList.toggle('open', st.open);
   const bookAct = st.open ? 'Close the book' : 'Open the book';
   btnBook.title = `${bookAct} (O)`;
   btnBook.setAttribute('aria-label', bookAct);
-  if(document.activeElement !== seekIn) seekIn.value = spreadLabel(st.k);
+  if(document.activeElement !== seekIn) seekIn.value = one ? `${n + 1}` : spreadLabel(st.k);
   btnWrite.title = writing ? 'Set the quill down' : readOnly() ? 'You can only read this book' : 'Lay the book open and write';
 }
 
@@ -5017,11 +5132,11 @@ document.addEventListener('keydown', e=>{
     e.preventDefault();
     if(!st.open) seekSpread(homeSpread(), { flourish: false });
     else if(e.shiftKey) seekSpread(st.k + 5);
-    else flip(1);
+    else pageStep(1);
   }
   else if(e.key === 'ArrowLeft' || e.key === 'PageUp'){
     e.preventDefault();
-    if(st.open) e.shiftKey ? seekSpread(st.k - 5) : flip(-1);
+    if(st.open) e.shiftKey ? seekSpread(st.k - 5) : pageStep(-1);
   }
   else if(e.key === 'Home'){ e.preventDefault(); seekSpread(0); }
   else if(e.key === 'End'){ e.preventDefault(); seekSpread(N); }
@@ -5914,7 +6029,7 @@ function update(dt){
   if(writeOnOpen && !coverAnim && st.open && st.theta >= OPEN - 1e-3){ writeOnOpen = false; writePose(); }
   stepFlight(dt);
   stepRiffle(dt);
-  for(const L of leaves) if(L.flt < 0.75) L.flt += dt;
+  for(const L of leaves) if(L.flt < FLOAT_T) L.flt += dt;
   if(spinAnim){
     spinAnim.t += dt;
     const k = Math.min(1, spinAnim.t/spinAnim.dur);
@@ -5974,17 +6089,59 @@ function update(dt){
      writing it leans in over the page, looking down on it like a reader */
   /* the camera watches the board swing over and leans in only once it is down */
   const opening = coverAnim && coverAnim.to === OPEN && st.theta < OPEN*0.8;
+  /* one page at a time, the eye comes down over a page as soon as the book lies open */
+  const one = onePage();
+  if(one !== st.onePage){ st.onePage = one; refreshUI(); }
+  if(!one || !st.open) st.paged = false;
+  else if(!st.paged && !coverAnim && !camBlend && st.theta > OPEN - 1e-3){
+    st.paged = true; st.focusTo = 1;
+    const h = homePage();
+    st.focusSide = st.k === 0 ? 1 : st.k === N ? -1 : spreadOf(h) === st.k ? sideOf(h) : st.focusSide;
+    refreshUI();
+  }
   sdamp(st, 'focus', opening ? 0 : st.focusTo, 0.55, dt);
   const fz = smooth(clamp(st.focus, 0, 1));
+  const fitW = 2*Math.tan(camera.fov*Math.PI/360), ui = uiInsets();
+  const fitWide = PW/(fitW*(VW/VH)*(1 - 2*ui.s/VW));
+  let pageD = Math.max(PH/(fitW*(1 - 2*ui.v/VH)), fitWide);
   /* writing, the book lies square to the eye: the page under the quill is
      looked straight down on, centred, whole between the buttons and the pager */
   if(writing && atHome()){
-    const c = pagePointWorld(writing.n, PAGE_W/2, PAGE_H/2).p;
+    let c = pagePointWorld(writing.n, PAGE_W/2, PAGE_H/2).p;
+    if(one){
+      /* on a phone the page keeps the whole width of the screen, and when the keyboard
+         leaves too little of it for the whole page, the line being written is kept in
+         the middle of what is left, as a writer slides the sheet up the desk */
+      pageD = fitWide;
+      const vis = visibleBand(), top = Math.max(vis.top, ui.top + 6);
+      const h = Math.max(40, vis.top + vis.h - (vis.h > VH*0.9 ? ui.bot : 6) - top);
+      const perPx = 2*pageD*Math.tan(camera.fov*Math.PI/360)/VH;
+      const e = pageCache.get(writing.n), half = h*perPx/2/PH*PAGE_H;
+      let py = PAGE_H/2;
+      if(half < PAGE_H/2 && e && e.lay){
+        const lay = e.lay, cy = caretXY(lay, clamp(quill.selectionEnd, 0, pages[writing.n].t.length)).y - lay.size*0.35;
+        py = clamp(cy, half, PAGE_H - half);
+      }
+      c = pagePointWorld(writing.n, PAGE_W/2, py).p;
+      /* centred in the free band, not in the screen: the eye moves towards the reader */
+      _bc.set(0, -1, 0).applyQuaternion(camera.quaternion).setY(0);
+      const sh = (VH/2 - (top + h/2))*perPx/Math.max(1e-3, _bc.length());
+      _bc.normalize();
+      c = { x: c.x + _bc.x*sh, z: c.z + _bc.z*sh };
+    }
+    _bc.set(fz*c.x, floatGrp.position.y, fz*c.z);
+  }else if(one && st.open){
+    /* the middle of the page as it lies, taken while nothing is in the air, so a leaf
+       going over does not drag the eye with it */
+    pageD = fitWide;
+    if(!st.flight && !st.riffle && st.theta > OPEN - 1e-3) for(const sd of [-1, 1]){
+      const n = sd > 0 ? 2*st.k : 2*st.k - 1;
+      if(n >= 0 && n < 2*N){ const c = pagePointWorld(n, PAGE_W/2, PAGE_H/2).p; pageMid[sd] = { x: c.x, z: c.z }; }
+    }
+    const c = pageMid[st.focusSide] || { x: st.focusSide*(XJ_O + PW*0.5), z: 0.12 };
     _bc.set(fz*c.x, floatGrp.position.y, fz*c.z);
   }else _bc.set(fz*st.focusSide*(XJ_O + PW*0.5), floatGrp.position.y, fz*0.12);
   sdamp(camTarget, 'x', _bc.x, 0.4, dt); sdamp(camTarget, 'y', _bc.y, 0.3, dt); sdamp(camTarget, 'z', _bc.z, 0.4, dt);
-  const fitW = 2*Math.tan(camera.fov*Math.PI/360), ui = uiInsets();
-  const pageD = Math.max(PH/(fitW*(1 - 2*ui.v/VH)), PW/(fitW*(VW/VH)*(1 - 2*ui.s/VW)));
   st.zoom = Math.min(st.zoom, Math.max(1, CAM_REACH/fitDistance()));
   sdamp(st, 'camD', lerp(Math.min(fitDistance()*st.zoom, CAM_REACH), pageD, fz), 0.45, dt);
   if(st.camEl === undefined) st.camEl = camElevation();
