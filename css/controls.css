@@ -1,0 +1,135 @@
+/* the controls over the scene: the round buttons at the top, the pager at the
+   bottom, the toast and the menu behind the three dots */
+
+.ui{ position:fixed; z-index:10; }
+.bar{ top:calc(18px + env(safe-area-inset-top)); right:calc(18px + env(safe-area-inset-right)); display:flex; gap:10px; }
+.rune{
+  width:44px; height:44px; border-radius:50%;
+  border:1px solid var(--hairline);
+  background:var(--face-lite);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  color:#e6c47a; font-size:20px; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; font-family:var(--ui-font);
+  box-shadow:var(--lift);
+  transition:color .25s, box-shadow .25s, opacity .25s;
+}
+.rune svg{ transition:filter .25s; }
+.rune:hover, .rune:focus-visible{ color:#ffe6ae; outline:none; box-shadow:0 0 14px rgba(236,192,102,.3), var(--lift); }
+.rune:hover svg, .rune:focus-visible svg{ filter:drop-shadow(0 0 6px rgba(255,200,110,.8)); }
+.rune.on{
+  color:#ffe6ae;
+  box-shadow:inset 0 0 14px rgba(255,206,110,.35), 0 0 16px rgba(236,192,102,.45), var(--lift);
+}
+.rune[disabled]{ opacity:.35; pointer-events:none; }
+.rune[hidden]{ display:none; }
+#btnSound .ico-off, #btnSound.muted .ico-on{ display:none; }
+#btnSound.muted .ico-off{ display:block; }
+#btnSound.muted{ opacity:.62; }
+#btnBook .ico-close, #btnBook.open .ico-open{ display:none; }
+#btnBook.open .ico-close{ display:block; }
+
+/* pagination: a gilt label like the ones on an old spine, rounded ends and one hairline */
+.pager{
+  bottom:calc(18px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+  height:58px; padding:0 6px;
+  display:flex; align-items:center;
+  filter:drop-shadow(0 6px 14px rgba(0,0,0,.45));
+  animation:fadein .4s ease-out;
+}
+.pager[hidden]{ display:none; }
+/* the buttons come once the book has settled after the opening */
+.bar{ transition:opacity .5s; }
+.settling .bar, .settling .pager{ opacity:0; pointer-events:none; }
+.pager{ transition:opacity .4s; }
+body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
+.pager::after, .pager .fillet{
+  content:''; position:absolute; z-index:0; pointer-events:none; border-radius:999px;
+}
+.pager .fillet{ display:none; }
+.pager::after{ inset:0; border:1px solid var(--hairline); background:var(--face-lite); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+.pager > button, .pageno{ position:relative; z-index:1; }
+.pager > button{
+  width:48px; height:48px; flex-shrink:0; padding:0; border:0; background:transparent;
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+  color:#e6c47a; transition:color .25s, opacity .25s;
+}
+.pager > button svg{ width:24px; height:24px; fill:currentColor; transition:transform .25s, filter .25s; }
+.pager > button:hover, .pager > button:focus-visible{ color:#ffe6ae; outline:none; }
+.pager > button:hover svg, .pager > button:focus-visible svg{ filter:drop-shadow(0 0 6px rgba(255,200,110,.8)); }
+#btnPrev:hover svg, #btnPrev:focus-visible svg{ transform:translateX(-2px); }
+#btnNext:hover svg, #btnNext:focus-visible svg{ transform:translateX(2px); }
+.pager > button[disabled]{ opacity:.3; pointer-events:none; }
+.pageno{
+  min-width:120px; display:flex; flex-direction:column; align-items:center; gap:1px;
+  font:600 10px var(--ui-font); letter-spacing:3px; color:var(--gold-dim); white-space:nowrap;
+  text-shadow:0 1px 3px #000; cursor:text;
+}
+.pageno input{
+  width:5ch; height:26px; padding:0; border:0; border-bottom:1px solid transparent; border-radius:0; background:transparent;
+  color:#ffe6ae; font:italic 600 24px/1 var(--text-font); letter-spacing:0; text-align:center;
+  text-shadow:0 0 10px rgba(255,200,110,.3), 0 1px 3px #000;
+  outline:none; caret-color:var(--gold); user-select:text; -webkit-user-select:text;
+  transition:border-color .25s, text-shadow .25s;
+}
+.pageno:hover input{ text-shadow:0 0 14px rgba(255,200,110,.6), 0 1px 3px #000; }
+.pageno input:focus{ border-bottom-color:rgba(240,212,147,.7); text-shadow:0 0 14px rgba(255,200,110,.6), 0 1px 3px #000; }
+.pageno input::placeholder{ color:rgba(240,214,150,.35); font-size:18px; }
+
+
+.pageno.seeking input{ color:#ffe2a6; text-shadow:0 0 12px rgba(255,200,110,.85); animation:candle 1.2s ease-in-out infinite; }
+
+
+.toast{
+  bottom:84px; left:50%; transform:translateX(-50%);
+  font-family:var(--ui-font); font-weight:600; color:rgba(242,214,146,.95);
+  font-size:14px; letter-spacing:3px; opacity:0; pointer-events:none;
+  transition:opacity .5s; text-shadow:0 0 10px rgba(255,200,90,.5), 0 1px 3px #000;
+  white-space:nowrap;
+}
+.toast.show{ opacity:1; }
+/* above the loading circle and an invitation over it, so what the card says is seen */
+.toast{ z-index:37; }
+
+
+/* the menu behind the three dots: actions that otherwise live on keys */
+.menu{
+  top:calc(72px + env(safe-area-inset-top)); right:calc(18px + env(safe-area-inset-right)); min-width:230px; padding:8px;
+  display:flex; flex-direction:column; gap:2px;
+  border-radius:18px; border:1px solid transparent;
+  background:var(--face) padding-box, var(--gilt) border-box;
+  box-shadow:0 10px 30px rgba(0,0,0,.55);
+  animation:fadein .2s ease-out;
+}
+.menu[hidden]{ display:none; }
+.menu button{
+  height:46px; padding:0 16px; border:0; border-radius:11px; background:transparent; text-align:left;
+  color:rgba(240,226,192,.92); font:500 18px var(--text-font); cursor:pointer;
+}
+.menu button:hover, .menu button:focus-visible{ background:rgba(255,210,120,.1); color:#ffe6ae; outline:none; }
+.menu button[disabled]{ opacity:.35; pointer-events:none; }
+.menu hr{ margin:4px 10px; border:0; border-top:1px solid var(--gold-line); opacity:.6; }
+.menu .view{ display:flex; flex-direction:column; gap:2px; }
+.menu .two{ display:flex; flex-direction:column; justify-content:center; gap:1px; height:56px; }
+.menu .two span{ max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-style:italic; font-size:14px; color:var(--gold-dim); }
+.menu .more{ position:relative; padding-right:36px; }
+.menu .more::after, .menu .back::before{
+  content:''; position:absolute; top:50%; width:7px; height:7px; margin-top:-4px;
+  border:solid currentColor; border-width:1.5px 1.5px 0 0; opacity:.6;
+}
+.menu .more::after{ right:18px; transform:rotate(45deg); }
+.menu .back{ position:relative; padding-left:38px; color:var(--gold-dim); font-style:italic; }
+.menu .back::before{ left:18px; transform:rotate(-135deg); }
+.menu [hidden]{ display:none; }
+.menu-note{ max-width:240px; margin:4px 16px 6px; color:var(--gold-dim); font:italic 500 14px var(--text-font); }
+@media (pointer:coarse){ .menu .fine{ display:none; } }
+
+
+@media (max-width:640px){
+  .bar{ top:calc(12px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); gap:7px; }
+  .rune{ width:40px; height:40px; font-size:18px; position:relative; }
+  /* the finger is given the 44 px a phone expects, the button keeps its size */
+  .rune::after{ content:''; position:absolute; inset:-3px; border-radius:50%; }
+  .pager{ bottom:calc(12px + env(safe-area-inset-bottom)); }
+  .menu{ top:calc(62px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); }
+}

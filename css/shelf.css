@@ -1,0 +1,104 @@
+/* the Share card: the open book, its link and keepers, one's other books
+   (src/sharing/shelf.js) */
+
+/* the shelf of books: one's own and the shared ones */
+.shelf .card{ width:min(440px, 100%); color:var(--gold); }
+.shelf h2{ padding:0 34px; }
+.shelf .list{ display:flex; flex-direction:column; gap:6px; margin:16px 0 12px; }
+.shelf .book{
+  display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:56px;
+  padding:8px 16px; border-radius:12px; border:1px solid rgba(214,164,74,.18); background:rgba(255,210,120,.04);
+  color:inherit; font:500 18px var(--text-font); text-align:left; cursor:pointer;
+}
+.shelf .book small{ display:block; margin-top:1px; font-style:italic; font-size:14px; color:var(--gold-dim); }
+.shelf .book.on{ border-color:var(--gold-line); background:rgba(255,210,120,.09); }
+.shelf .book:hover, .shelf .book:focus-visible{ background:rgba(255,210,120,.1); outline:none; }
+.shelf .tick{ color:var(--gold); font-size:18px; }
+.shelf .acts{ display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+.shelf .btn{
+  min-height:46px; padding:6px 18px; border-radius:23px; border:1px solid var(--gold-line); background:transparent;
+  color:var(--gold); font:600 17px var(--text-font); cursor:pointer;
+}
+.shelf .btn.main{ border-color:var(--hairline); background:linear-gradient(180deg, rgba(240,200,120,.14), rgba(240,200,120,.04)); }
+.shelf .btn:hover, .shelf .btn:focus-visible{ box-shadow:0 0 12px rgba(236,192,102,.35); outline:none; }
+.shelf .btn[disabled]{ opacity:.5; pointer-events:none; }
+.shelf .btn.minor{ min-height:36px; border:0; color:var(--gold-dim); font:italic 500 15px var(--text-font); text-decoration:underline; }
+.shelf .btn.minor:hover, .shelf .btn.minor:focus-visible{ box-shadow:none; color:var(--gold); }
+.shelf input[type=text]{
+  width:100%; height:48px; margin-top:14px; padding:0 14px; border-radius:12px; border:1px solid var(--gold-line);
+  background:rgba(0,0,0,.25); color:var(--gold); font:500 18px var(--text-font); outline:none;
+}
+.shelf input[type=text]::placeholder{ color:rgba(240,226,192,.4); }
+.shelf input[type=text]:focus{ box-shadow:0 0 12px rgba(236,192,102,.3); }
+.shelf .linkbox{
+  display:flex; align-items:center; gap:8px; min-height:46px; margin:14px 0 4px; padding:4px 4px 4px 16px;
+  border-radius:23px; border:1px solid var(--gold-line); background:rgba(0,0,0,.25);
+}
+.shelf .linkbox .url{
+  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:15px; color:var(--gold-dim); user-select:all; -webkit-user-select:all;
+}
+.shelf .linkbox .copy{
+  flex:none; min-width:84px; height:38px; padding:0 16px 0 18px; border:0; border-left:1px solid var(--gold-line); border-radius:0 19px 19px 0;
+  background:transparent; color:var(--gold); font:600 17px var(--text-font); cursor:pointer;
+  transition:color .25s, background-color .25s;
+}
+@media (hover:hover){ .shelf .linkbox .copy:hover{ background:rgba(255,210,120,.08); } }
+.shelf .linkbox .copy:focus-visible{ outline:1px solid var(--hairline); outline-offset:2px; }
+/* the link is in hand: the button says so plainly for a moment */
+.shelf .linkbox .copy.done{ background:rgba(240,200,120,.1); }
+/* small buttons for what is done to a keeper, to the book, to the account */
+.shelf .pill{
+  flex:none; min-height:32px; padding:2px 14px; border-radius:16px; border:1px solid var(--gold-line);
+  background:transparent; color:var(--gold); font:500 15px var(--text-font); cursor:pointer;
+}
+.shelf .pill:hover, .shelf .pill:focus-visible{ background:rgba(255,210,120,.08); border-color:var(--gold-line); outline:none; }
+.shelf .pill.danger{ color:#eaa48c; border-color:rgba(234,164,140,.35); }
+.shelf .pill.danger:hover, .shelf .pill.danger:focus-visible{ background:rgba(234,164,140,.08); border-color:rgba(234,164,140,.6); }
+/* the open book's name is the title; a tap on it lists the other books */
+.shelf .pick{ text-align:center; }
+.shelf .pick > summary{ list-style:none; display:inline-flex; align-items:center; gap:10px; cursor:pointer; }
+.shelf .pick > summary::-webkit-details-marker, .shelf .more > summary::-webkit-details-marker, .shelf .menu-p > summary::-webkit-details-marker{ display:none; }
+.shelf .pick > summary h2{ padding:0; text-transform:uppercase; }
+.shelf .pick .list{ text-align:left; margin:14px 0 8px; }
+/* the chevron hangs off the title: the summary is padded by its width on the left too, so the words stay centred */
+.shelf .pick > summary, .shelf .more > summary{ --chev:10px; --chev-gap:9px; padding-left:calc(var(--chev) + var(--chev-gap)); gap:var(--chev-gap); }
+.shelf .pick > summary h2{ margin-right:-5px; }
+.shelf .chev{ flex:none; display:block; width:var(--chev, 10px); height:var(--chev, 10px); color:var(--gold-dim); transition:transform .2s; }
+.shelf .chev svg{ display:block; width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+.shelf details[open] > summary .chev{ transform:rotate(180deg); }
+.shelf .plus{ position:relative; display:inline-block; width:.62em; height:.62em; margin-right:.32em; }
+.shelf .plus::before, .shelf .plus::after{ content:''; position:absolute; left:50%; top:50%; width:100%; height:1.5px; margin:-.75px 0 0 -50%; background:currentColor; border-radius:1px; }
+.shelf .plus::after{ transform:rotate(90deg); }
+/* people: one Change button each, its choices open under the row */
+.shelf .people{ margin-top:8px; }
+.shelf .people .row{ position:relative; display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px dashed rgba(214,164,74,.16); }
+.shelf .people .row:last-child{ border-bottom:0; }
+.shelf .people .name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:17px; }
+.shelf .people .name small{ display:block; font-style:italic; font-size:14px; color:var(--gold-dim); }
+.shelf .menu-p{ flex:none; }
+.shelf .menu-p > summary{ list-style:none; display:inline-flex; align-items:center; }
+.shelf .menu-p[open] > summary{ background:rgba(255,210,120,.08); border-color:var(--gold-line); }
+.shelf .opts{ position:absolute; right:0; top:calc(100% - 2px); z-index:3; min-width:220px; display:grid; padding:6px; border-radius:12px; border:1px solid var(--gold-line); background:#23261a; box-shadow:0 8px 24px rgba(0,0,0,.5); }
+.shelf .opts.up{ top:auto; bottom:calc(100% - 2px); }
+.shelf .menu-p .opts:not(.placed){ visibility:hidden; }
+.shelf .opts button{ padding:9px 12px; border:0; border-radius:8px; background:none; color:var(--gold); font:500 16px var(--text-font); text-align:left; cursor:pointer; }
+.shelf .opts button:hover, .shelf .opts button:focus-visible{ background:rgba(255,210,120,.08); outline:none; }
+.shelf .opts button.on{ color:var(--gold-dim); cursor:default; }
+.shelf .opts button.on::after{ content:' ✓'; color:var(--gold); }
+.shelf .opts button.danger{ color:#eaa48c; }
+.shelf .people .pill{ flex:none; }
+.shelf .opts hr{ margin:4px 8px; border:0; border-top:1px solid rgba(214,164,74,.2); }
+/* the book's own tools fold away under Book settings */
+.shelf .more{ margin-top:22px; }
+.shelf .more > summary{ list-style:none; display:flex; justify-content:center; align-items:center; gap:8px; min-height:32px; cursor:pointer; font-style:italic; font-size:15px; color:var(--gold-dim); }
+.shelf .tools{ display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.shelf .acct{ margin-top:22px; padding-top:18px; border-top:1px solid rgba(214,164,74,.18); }
+.shelf .who{ display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:8px 10px; font-style:italic; color:var(--gold-dim); font-size:15px; }
+.shelf .acct .hint{ margin-top:10px; }
+.shelf .acts.quiet{ margin-top:2px; }
+.shelf .who .pill{ font-style:normal; }
+.shelf .body h2:empty{ display:none; }
+
+@media (max-width:420px){ .shelf .who > span{ flex-basis:100%; text-align:center; } }
+@media (max-width:420px){ .shelf h2{ padding:0 24px; letter-spacing:2px; font-size:16px; } .shelf .pick > summary h2{ margin-right:-2px; } .shelf .card{ padding:22px 20px 18px; } }

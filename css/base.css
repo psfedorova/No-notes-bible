@@ -1,0 +1,64 @@
+/* the page itself: colour and type tokens, the canvas the book is drawn on, the
+   hidden quill that takes the keyboard, and the error strip */
+
+:root{
+  --gold:#f0d493;
+  --gold-dim:rgba(240,214,150,.66);
+  --gold-line:rgba(214,164,74,.45);
+  --night:#080a07;
+  --ui-font:'Cormorant SC','Cormorant Garamond',serif;
+  --text-font:'Cormorant Garamond',serif;
+  --gilt:linear-gradient(180deg, #f3d995, #a8782f 55%, #e2bd72);
+  --face:radial-gradient(120% 140% at 50% 0%, #2f3419, #11130b 70%);
+  /* the controls: one gilt hairline over a dark face the scene shows faintly through */
+  --face-lite:radial-gradient(120% 140% at 50% 0%, rgba(30,34,18,.66), rgba(9,11,6,.6) 70%);
+  --hairline:rgba(226,189,114,.78);
+  --lift:0 6px 18px rgba(0,0,0,.45);
+}
+*{ margin:0; padding:0; box-sizing:border-box; }
+/* a tap shows the control's own response, not the browser's grey flash */
+html{ -webkit-tap-highlight-color:transparent; }
+html,body{ height:100%; overflow:hidden; background:var(--night); }
+body{
+  font-family:var(--text-font);
+  user-select:none; -webkit-user-select:none;
+  touch-action:none;
+  cursor:grab;
+}
+body.grabbing{ cursor:grabbing; }
+body.cur-turn{ cursor:grab; }
+body.cur-text{ cursor:text; }
+body.cur-pointer{ cursor:pointer; }
+
+#gl{ position:fixed; inset:0; width:100%; height:100%; display:block; z-index:1; }
+
+#vignette{
+  position:fixed; inset:0; pointer-events:none; z-index:5;
+  background: radial-gradient(125% 95% at 50% 46%, transparent 58%, rgba(9,7,3,.36) 100%);
+  animation: candle 6s ease-in-out infinite;
+}
+@keyframes candle{
+  0%,100%{ opacity:1 } 23%{ opacity:.9 } 41%{ opacity:.97 } 67%{ opacity:.87 } 82%{ opacity:.96 }
+}
+
+/* the real keyboard target: the ink itself is painted into the page texture */
+#quill{
+  position:fixed; left:0; bottom:0; z-index:0;
+  width:2400px; height:24px;
+  opacity:0; pointer-events:none;
+  font-size:16px; line-height:24px;
+  border:0; outline:none; resize:none; overflow:hidden;
+  white-space:pre; background:transparent; color:transparent; caret-color:transparent;
+}
+
+
+.film .ui, .film #intro{ display:none !important; }
+.film #vignette{ animation:none; opacity:.94; }
+#err{
+  position:fixed; left:0; right:0; bottom:0; z-index:40; display:none;
+  padding:10px 14px; background:rgba(60,10,10,.9); color:#ffd9c9;
+  font:12px/1.5 ui-monospace,monospace; white-space:pre-wrap; max-height:40%; overflow:auto;
+}
+
+
+@keyframes fadein{ from{ opacity:0; } to{ opacity:1; } }

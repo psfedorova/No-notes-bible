@@ -1,0 +1,69 @@
+/* the invitation a friend's link opens: a leaf of the book's own paper with the
+   rules, the vow and a signature */
+
+/* the invitation: a leaf of the book's story, a magic circle at the head, written in brown ink */
+.shelf.locked .close{ display:none; }
+.shelf .hint{ margin:6px 0 0; text-align:center; font-style:italic; color:var(--gold-dim); font-size:14px; }
+.shelf.over{ z-index:36; }
+.shelf.invite{ --fs-s:15px; --fs-m:19px; --fs-l:44px; --gap:28px; --gap-act:36px; --ink:#3b2612; --ink-rule:rgba(59,38,18,.5); --flourish:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-90 -10 180 20'%3E%3Cg fill='none' stroke='%236b4b2a' stroke-width='.9' stroke-linecap='round'%3E%3Cpath d='M-80 0H-17M17 0H80'/%3E%3Cpath d='M-7 0C-10 -1 -12 -5 -15 -5S-19 -2 -16.5 -1.2 -14 -3 -15 -3.6'/%3E%3Cpath d='M-7 0C-10 1 -12 5 -15 5S-19 2 -16.5 1.2 -14 3 -15 3.6'/%3E%3Cpath d='M7 0C10 -1 12 -5 15 -5S19 -2 16.5 -1.2 14 -3 15 -3.6'/%3E%3Cpath d='M7 0C10 1 12 5 15 5S19 2 16.5 1.2 14 3 15 3.6'/%3E%3C/g%3E%3Cg fill='%236b4b2a'%3E%3Cpath d='M0 -7 2.4 0 0 7 -2.4 0Z'/%3E%3Cpath d='M-84 0-78 -1.8V1.8ZM84 0 78 -1.8V1.8Z'/%3E%3C/g%3E%3C/svg%3E"); }
+.shelf.invite .card{
+  display:flex; flex-direction:column; aspect-ratio:470/630;
+  width:min(470px, 100%); padding:40px 58px 60px; border:0; border-radius:2px;
+  background:#e6d2a6 center/100% 100% no-repeat; color:var(--ink);
+  box-shadow:0 26px 70px rgba(0,0,0,.7), 0 3px 8px rgba(0,0,0,.45);
+  animation:invite .8s cubic-bezier(.2,.7,.2,1);
+}
+/* one sheet for the invitation and the vow alike, so taking it never resizes the card */
+.shelf.invite .card > .body{ margin:auto 0; }
+@keyframes invite{ from{ opacity:0; transform:translateY(18px) rotate(-1.2deg) scale(.97); } to{ opacity:1; transform:none; } }
+.shelf.invite h2{ padding:16px 0 0; color:var(--ink); font:600 var(--fs-s) var(--text-font); letter-spacing:6px; text-transform:uppercase; text-shadow:none; }
+.shelf.invite h2::after{ content:''; display:block; width:170px; height:18px; margin:8px auto 0; background:var(--flourish) center/contain no-repeat; }
+.shelf.invite .script{ margin:0 0 12px; text-align:center; font:400 var(--fs-l)/1.15 'Great Vibes', cursive; color:var(--ink); }
+.shelf.invite .line{ text-align:center; font-style:italic; font-size:var(--fs-m); color:var(--ink); }
+.shelf.invite .title{ margin:2px 0 4px; text-align:center; font:600 var(--fs-m)/1.3 var(--text-font); color:var(--ink); overflow-wrap:anywhere; }
+.shelf.invite .orn{ width:150px; height:16px; margin:var(--gap) auto calc(var(--gap) - 4px); background:var(--flourish) center/contain no-repeat; }
+.shelf.invite .rules{ list-style:none; display:flex; flex-direction:column; gap:7px; margin:0; padding:0; }
+.shelf.invite .rules li{ text-align:center; font-size:var(--fs-m); }
+.shelf.invite .rules b{ margin-right:.5em; font:italic 500 var(--fs-s) var(--text-font); color:var(--ink); }
+.shelf.invite .vow{ margin:18px 0 0; text-align:center; font:italic 500 var(--fs-m)/1.5 var(--text-font); color:var(--ink); }
+.shelf.invite .vow .amen{ margin-top:14px; font:600 var(--fs-s) var(--text-font); font-style:normal; letter-spacing:6px; text-transform:uppercase; color:var(--ink); }
+.shelf.invite .vow .amen::after{ content:''; display:block; width:150px; height:16px; margin:10px auto 0; background:var(--flourish) center/contain no-repeat; }
+.shelf.invite .sign{ margin-top:16px; text-align:center; }
+.shelf.invite .sign input[type=text], .shelf.invite .sign .name{
+  display:block; width:80%; height:auto; margin:0 auto; padding:0 0 2px; border:0; border-bottom:1px solid var(--ink-rule); border-radius:0;
+  background:transparent; box-shadow:none; text-align:center; font:400 var(--fs-l)/1.2 'Great Vibes', cursive; color:var(--ink); caret-color:var(--ink);
+}
+.shelf.invite .sign input[type=text]:focus{ border-bottom-color:var(--ink); }
+.shelf.invite .sign input[type=text]::placeholder{ color:rgba(59,38,18,.3); }
+.shelf.invite .sign .cap{ margin-top:6px; font:600 var(--fs-s) var(--text-font); letter-spacing:2.5px; text-transform:uppercase; color:var(--ink); }
+.shelf.invite .acts{ margin-top:var(--gap-act); align-items:center; gap:4px; }
+/* the button speaks the book's own button language, the pager's and the Share card's:
+   a dark face with rounded ends, one gilt hairline, gold letters. On the pale card it
+   is plainly the thing to press. It never grows: the gilt only warms under the pointer */
+.shelf.invite .btn.main{
+  min-width:min(270px, 100%); min-height:50px; padding:0 36px; border:1px solid var(--hairline); border-radius:999px;
+  background:var(--face); color:var(--gold); font:500 var(--fs-m) var(--text-font);
+  text-shadow:0 1px 2px rgba(0,0,0,.6); box-shadow:0 4px 10px rgba(40,24,8,.35);
+  cursor:pointer; transition:color .25s, box-shadow .25s, transform .08s;
+}
+.shelf.invite .btn.main:hover, .shelf.invite .btn.main:focus-visible{ color:#ffe6ae; box-shadow:0 0 0 1px rgba(236,192,102,.35), 0 4px 14px rgba(40,24,8,.4); }
+.shelf.invite .btn.main:focus-visible{ outline:1px solid rgba(59,38,18,.6); outline-offset:3px; }
+.shelf.invite .btn.main:active{ transform:translateY(1px); box-shadow:0 2px 5px rgba(40,24,8,.35); }
+/* the card's magic (src/sharing/invite-magic.js): the letters and their light are drawn over the card
+   while the text itself waits unseen, and the ornaments follow the words */
+.shelf.invite .card canvas.magic{ position:absolute; left:0; top:0; z-index:2; pointer-events:none; }
+.shelf.invite .card canvas.magic.glow{ filter:blur(1.5px); mix-blend-mode:screen; }
+.shelf.invite .body.ghost *{ color:transparent; text-shadow:none; }
+.shelf.invite .body .orn, .shelf.invite .body h2::after, .shelf.invite .body .amen::after, .shelf.invite .body .sign, .shelf.invite .body .acts{ transition:opacity .7s ease, filter .7s ease; }
+.shelf.invite .body.leaving, .shelf.invite .body.arriving{ pointer-events:none; }
+.shelf.invite .body.leaving .orn, .shelf.invite .body.leaving h2::after, .shelf.invite .body.leaving .acts{ opacity:0; filter:drop-shadow(0 0 6px rgba(255,214,140,.9)); }
+.shelf.invite .body.arriving h2::after, .shelf.invite .body.arriving .amen::after, .shelf.invite .body.arriving .sign, .shelf.invite .body.arriving .acts{ opacity:0; }
+.shelf.invite .btn.minor{ color:var(--ink); font-size:var(--fs-s); }
+.shelf.invite .btn.minor:hover, .shelf.invite .btn.minor:focus-visible{ text-decoration-thickness:2px; }
+@media (prefers-reduced-motion:reduce){ .shelf.invite .card{ animation:none; } }
+@media (max-width:420px){
+  .shelf.invite .card{ padding:28px 34px 48px; aspect-ratio:358/570; }
+  .shelf.invite{ --gap:22px; --gap-act:28px; }
+  .shelf.invite{ --fs-s:14px; --fs-m:17px; --fs-l:38px; }
+  .shelf.invite .btn.main{ padding:0 18px; white-space:nowrap; }
+}

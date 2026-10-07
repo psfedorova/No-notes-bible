@@ -1,0 +1,33 @@
+/* the cards that open over the book: the shortcuts card here; the Share card
+   (shelf.css) and the invitation (invitation.css) build on it */
+
+/* the list of spells */
+.spells{
+  inset:0; z-index:30; display:flex; align-items:center; justify-content:center; padding:16px;
+  background:rgba(5,7,4,.5); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+  animation:fadein .35s ease-out;
+}
+.spells[hidden]{ display:none; }
+.spells .card{
+  position:relative; width:min(560px, 100%); max-height:calc(100vh - 32px); max-height:calc(100dvh - 32px); overflow:auto;
+  padding:24px 28px 20px; border-radius:18px; border:1px solid transparent;
+  background:var(--face) padding-box, var(--gilt) border-box;
+  box-shadow:0 10px 40px rgba(0,0,0,.6);
+  color:rgba(240,226,192,.92); font-size:17px;
+}
+.spells h2{ font-family:var(--ui-font); font-weight:700; letter-spacing:5px; color:var(--gold); font-size:17px; text-align:center; text-shadow:0 0 14px rgba(255,190,90,.35); }
+.spells .sub{ text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; margin:2px 0 6px; }
+.spells h3{ font-family:var(--ui-font); font-weight:600; letter-spacing:3px; color:var(--gold-dim); font-size:13px; margin:16px 0 4px; text-transform:uppercase; }
+.spells .row{ display:flex; justify-content:space-between; align-items:center; gap:16px; padding:5px 0; border-bottom:1px dashed rgba(214,164,74,.16); }
+.spells .keys{ display:flex; gap:6px; flex-shrink:0; }
+.spells kbd{
+  font-family:var(--ui-font); font-weight:600; font-size:13px; letter-spacing:1px; color:#ffe2a6;
+  padding:2px 9px; border:1px solid var(--gold-line); border-radius:7px; background:rgba(255,210,120,.06); white-space:nowrap;
+}
+.spells .foot{ margin-top:14px; text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; }
+.spells .close{
+  position:absolute; top:12px; right:12px; width:30px; height:30px; border-radius:50%;
+  border:1px solid var(--gold-line); background:transparent; color:var(--gold); font-size:16px; cursor:pointer;
+  transition:color .25s, box-shadow .25s;
+}
+.spells .close:hover{ color:#ffe6ae; box-shadow:0 0 12px rgba(236,192,102,.4); }
