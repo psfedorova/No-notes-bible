@@ -96,13 +96,14 @@ function trackBirths(n, oldV, newV){
   return { at: p, count: ins };
 }
 function onQuillInput(){
-  if(!writing || composing) return;
+  if(!writing) return;
   setPageScroll(0);
   const n = writing.n, v = quill.value;
   const sp = editSpan(pages[n].t, v, lastGood.a, lastGood.b, quill.selectionEnd), was = handsOf(n);
   const hands = was.slice(0, sp.at).concat(Array(sp.ins).fill(HAND), was.slice(sp.at + sp.del));
   const lay = layoutText(v, pageFont(n), textBox(n));
   if(!lay.ok){
+    if(composing) return;
     const res = pour(n, v, quill.selectionEnd, hands);
     if(!res){ refuseStroke('THE BOOK IS FULL'); return; }
     trackBirths(n, pages[n].t, v);

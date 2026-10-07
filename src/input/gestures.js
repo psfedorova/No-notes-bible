@@ -251,8 +251,8 @@ canvasEl.addEventListener('pointermove', e=>{
       return;
     }
     if(!g.force && h && h.type === 'page' && (h.s > PW*0.5 || sideways)) startTurn(h);
-    else if(!g.force && h && h.type === 'front' && (st.open ? (h.inner && st.k === 0) : true) && h.outer && !st.flight && !st.riffle) startCover(h);
-    else if(!g.force && (!h || st.open)){ g.mode = 'orbit'; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
+    else if(!g.force && h && h.type === 'front' && st.open && h.inner && st.k === 0 && h.outer && !st.flight && !st.riffle) startCover(h);
+    else if(g.force){ g.mode = 'orbit'; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
     else { g.mode = 'rot'; rotating = true; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
     document.body.classList.add('grabbing');
   }
@@ -294,15 +294,15 @@ function returnHome(){
   clearTimeout(homeTimer);
   homeTimer = setTimeout(function check(){
     if(g || pinch) return;
-    if(orbit.coast || inertia){ homeTimer = setTimeout(check, 250); return; }
+    if(orbit.coast || inertia){ homeTimer = setTimeout(check, 150); return; }
     orbit.azTo = 0; orbit.elTo = 0;
     const R = resume;
     resume = null;
     if(R && st.open && !writing && !st.flight && !st.riffle && spreadOf(R.n) === st.k){
       writePose(R.n, R.a);
       if(writing && R.b !== R.a){ quill.setSelectionRange(R.a, R.b); onSel(); }
-    }else if(!atHome() && !spinAnim) glideSpin(homeQuat(), 1.6, st.lift < 0.05);
-  }, 1200);
+    }else if(!atHome() && !spinAnim) glideSpin(homeQuat(), 1.4, st.lift < 0.05);
+  }, 700);
 }
 /* the eye leaving the page to look round sets the quill down with it: words typed
    then would land on a page no longer in sight */
@@ -355,12 +355,23 @@ function endPointer(e, cancelled){
 }
 canvasEl.addEventListener('pointerup', e=>endPointer(e, false));
 canvasEl.addEventListener('pointercancel', e=>endPointer(e, true));
-/* scrolling, by a mouse wheel or two fingers on a trackpad, only draws the eye nearer
-   or further; the book and the view are turned by dragging alone */
+/* a mouse wheel draws the eye nearer or further; two fingers on a trackpad look round the
+   forest, and pinching zooms. A wheel moves in whole steps straight up and down, a
+   trackpad sideways too and in fractions, which is how the two are told apart */
+let padUntil = 0;
 canvasEl.addEventListener('wheel', e=>{
   e.preventDefault();
-  const k = e.ctrlKey ? 0.01 : e.deltaMode === 0 && Math.abs(e.deltaY) < 40 ? 0.004 : 0.0012;
-  st.zoom = clamp(st.zoom * Math.exp(e.deltaY*k), 0.3, 3.2);
+  if(e.ctrlKey){ st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.01), 0.3, 3.2); return; }
+  const now = performance.now();
+  if(e.deltaMode === 0 && (e.deltaX !== 0 || !Number.isInteger(e.deltaY))) padUntil = now + 400;
+  if(now >= padUntil){ st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.0012), 0.3, 3.2); return; }
+  if(g && g.mode !== 'pending') return;
+  const k = 0.0045;
+  orbit.coast = false; orbit.vx = orbit.vy = 0;
+  lookAway();
+  orbit.azTo += e.deltaX*k;
+  orbit.elTo -= e.deltaY*k;
+  returnHome();
 }, { passive:false });
 /* Safari reports a trackpad pinch as gesture events, not ctrl+wheel */
 let gestureZoom = 1;

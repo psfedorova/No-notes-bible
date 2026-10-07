@@ -178,9 +178,9 @@ function grassField(G, stones, tufts){
      into the ground, fading within a metre or so, so it sits in the earth and not on it */
   for(let j=0;j<AO_N;j++) for(let i=0;i<AO_N;i++){
     const x = -AO_R + (i + 0.5)*CELL, z = -AO_R + (j + 0.5)*CELL, d = Math.hypot(x, z) - footAt(x, z);
-    if(d > -0.5 && d < 4){ const c = j*AO_N + i; ao[c] = 1 - (1 - ao[c])*(1 - 0.52*Math.exp(-Math.max(0, d)/0.9)); }
+    if(d > -0.5 && d < 2){ const c = j*AO_N + i; ao[c] = 1 - (1 - ao[c])*(1 - 0.3*Math.exp(-Math.max(0, d)/0.45)); }
   }
-  for(let c=0;c<ao.length;c++) ao[c] = Math.min(0.55, 1 - (1 - ao[c])*(1 - 0.4*rim[c]));
+  for(let c=0;c<ao.length;c++) ao[c] = Math.min(0.45, 1 - (1 - ao[c])*(1 - 0.4*rim[c]));
   const aoTex = new THREE.DataTexture(Uint16Array.from(ao, THREE.DataUtils.toHalfFloat), AO_N, AO_N, THREE.RedFormat, THREE.HalfFloatType);
   aoTex.magFilter = aoTex.minFilter = THREE.LinearFilter; aoTex.needsUpdate = true;
   const BU = backdrop.material.uniforms;
@@ -189,13 +189,13 @@ function grassField(G, stones, tufts){
   let n = 0;
   /* the grass grows up against the stone all round its foot, thick and tall there as in
      the shelter of any boulder; blades rooted a little under its edge rise in front of it */
-  for(let c=0, C = HI_RES ? 520 : 300; c<C && n<N; c++){
+  for(let c=0, C = HI_RES ? 300 : 180; c<C && n<N; c++){
     const a = (c + rnd()*0.8)/C*2*Math.PI, ca = Math.cos(a), sa = Math.sin(a);
     const f = footAt(ca, sa);
     if(!(f > 0)) continue;
     const r = f + 0.05 + 0.55*rnd()*rnd(), cx = r*ca, cz = r*sa;
     if(underStone(cx, cz)) continue;
-    const k = 8 + Math.floor(10*rnd()), spread = 0.2 + 0.25*rnd(), tall = 0.95 + 0.4*rnd();
+    const k = 5 + Math.floor(7*rnd()), spread = 0.2 + 0.25*rnd(), tall = 0.6 + 0.3*rnd();
     for(let b=0;b<k && n<N;b++){
       const q = Math.sqrt(rnd()), qa = rnd()*2*Math.PI, x = cx + spread*q*Math.cos(qa), z = cz + spread*q*Math.sin(qa);
       if(Math.hypot(x, z) < footAt(x, z) - 0.12) continue;
