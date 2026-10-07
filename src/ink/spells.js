@@ -149,6 +149,48 @@ function applyPour(n, res){
   }
   saveSoon(true);
 }
+/* room made on a page calls back the words that ran on from it: whole words come back
+   from the head of the next page while they fit, and a page left empty calls in its own
+   run-on in turn; they write themselves in again where they land */
+function pullBack(n){
+  const now = performance.now();
+  let changed = false;
+  for(let p = n; p + 1 < 2*N; p++){
+    const m = p + 1, nx = pages[m], pg = pages[p];
+    if(!nx.c || !nx.t) break;
+    const head = pg.t, t = nx.t;
+    const sep = head && !/\s$/.test(head) && !/^\s/.test(t) ? ' ' : '';
+    const fits = cut => layoutText(head + sep + t.slice(0, cut), pageFont(p), textBox(p)).ok;
+    const ends = [];
+    for(let i=1;i<=t.length;i++) if(i === t.length || /\s/.test(t[i - 1])) ends.push(i);
+    let lo = 0, hi = ends.length;
+    while(lo < hi){ const mid = (lo + hi + 1) >> 1; if(fits(ends[mid - 1])) lo = mid; else hi = mid - 1; }
+    if(!lo) break;
+    const cut = ends[lo - 1], hp = handsOf(p), hm = handsOf(m);
+    const moved = t.slice(0, cut), mh = hm.slice(0, cut);
+    const bornP = (pg.born || []).slice(0, head.length);
+    while(bornP.length < head.length) bornP.push(0);
+    pg.t = head + sep + moved;
+    pg.a = hp.concat(sep ? [mh[0]] : [], mh);
+    pg.born = bornP.concat(Array.from({ length: sep.length + moved.length }, (_, i)=> now + 200 + Math.min(i*11, 480)));
+    nx.t = t.slice(cut); nx.a = hm.slice(cut); nx.born = (nx.born || []).slice(cut);
+    if(!nx.t) nx.c = false;
+    if(spreadOf(m) === st.k || spreadOf(p) === st.k) emitWisps(m, spreadOf(p) === spreadOf(m) ? p : null, 20);
+    [p, m].forEach(q=>{ if(pageCache.has(q)){ burning.add(q); paintPage(q, now); } });
+    changed = true;
+    if(nx.t) break;
+  }
+  if(!changed) return false;
+  if(writing && writing.n === n && quill.value !== pages[n].t){
+    const a = quill.selectionStart, b = quill.selectionEnd;
+    quill.value = pages[n].t;
+    quill.setSelectionRange(a, b);
+    setLastGood({ v: quill.value, a, b });
+  }
+  sfx.flow();
+  saveSoon(true);
+  return true;
+}
 /* the quill moves to page m; on another spread the leaves turn under it */
 function quillTo(m, idx){
   if(m < 1 || m >= 2*N) return false;
@@ -231,6 +273,6 @@ function eraseHere(){
 }
 
 export {
-  applyPour, eraseHere, erasePages, eraseTargets, lastErase, pour, quillTo,
+  applyPour, eraseHere, erasePages, eraseTargets, lastErase, pour, pullBack, quillTo,
   restoreErased, seek, setLastErase, spreadOf, stepWisps, trail
 };

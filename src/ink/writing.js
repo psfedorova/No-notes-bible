@@ -10,7 +10,7 @@ import { HAND, handsOf, saveNow, saveSoon, setLastWritten, shelf } from './stora
 import { toast } from '../ui/toast.js';
 import { emitSmoke, emitSparks } from '../fx/ink-fx.js';
 import { sfx } from '../audio/sound.js';
-import { applyPour, erasePages, lastErase, pour, quillTo, restoreErased } from './spells.js';
+import { applyPour, erasePages, lastErase, pour, pullBack, quillTo, restoreErased } from './spells.js';
 import { openSeek, openSpells } from '../ui/dialogs.js';
 import { refreshUI } from '../ui/controls.js';
 
@@ -132,6 +132,7 @@ function onQuillInput(){
     sfx.burn(ins.at === 0 && !!lay.cap);
     if(/[.!?]/.test(v.charAt(ins.at + ins.count - 1))) sfx.chime();
   }
+  if(cut.del > ins.count) pullBack(n);
   saveSoon(false);
 }
 quill.addEventListener('input', onQuillInput);

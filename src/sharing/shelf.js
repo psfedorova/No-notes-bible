@@ -766,6 +766,9 @@ export function createShelf(api){
       flight = null;
       sending(-1);
       if(!cur || cur.id !== id) return;
+      /* letters typed since this went out are taken into the ink first, or the answer
+         would be laid over the page without them and they would vanish */
+      sync();
       pastQ.splice(0, pasts.length);
       const touched = new Set();
       out.forEach((R, x)=>{
@@ -1078,12 +1081,25 @@ export function createShelf(api){
     await F.signOut(F.au);
     render();
   }
-  /* the creator sees who keeps the book: each can be let only read, or removed,
-     and whoever was removed is let back or forgotten right in the list. A keeper can leave */
+  /* everyone sees who keeps the book; only the creator can let one only read, or remove
+     them, and let back or forget whoever was removed. A keeper can leave */
   function renderKeepers(){
     if(!cur.owner) return;
     if(cur.owner !== user.uid){
       if(reading) body.appendChild(el('p', 'sub', 'You can read this book. Its creator has not let you write in it'));
+      const all = [...names.entries()].sort(([a], [b])=> (b === cur.owner) - (a === cur.owner) || (b === user.uid) - (a === user.uid));
+      if(all.length){
+        const sec = el('div', 'people');
+        sec.appendChild(el('h3', null, `People · ${all.length}`));
+        all.forEach(([uid, name])=>{
+          const row = el('div', 'row'), who = el('span', 'name', name.replace(/ \(guest\)$/, ''));
+          const note = [uid === cur.owner ? 'creator' : '', uid === user.uid ? 'you' : '', guests.has(uid) ? 'guest' : ''].filter(Boolean).join(', ');
+          if(note) who.appendChild(el('small', null, note));
+          row.appendChild(who);
+          sec.appendChild(row);
+        });
+        body.appendChild(sec);
+      }
       const tools = el('div', 'acts quiet');
       tools.appendChild(btn('Leave this book', 'minor', async ()=> show('leave')));
       body.appendChild(tools);
