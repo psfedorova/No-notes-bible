@@ -134,6 +134,21 @@ function rockMaterial(img, skirt){
   m.userData.u = u;
   return m;
 }
+/* the boulder's buried half is never seen (the stone and its moss are cut at the floor),
+   so its triangles are left out of the index: the rock, each shell and the shadow map no
+   longer work them through to throw every pixel away. Placed as it lies in the scene */
+function trimBuried(rock){
+  rock.updateWorldMatrix(true, false);
+  const g = rock.geometry, p = g.attributes.position, ix = g.index, v = new THREE.Vector3();
+  if(!ix) return;
+  const y = new Float32Array(p.count), keep = [];
+  for(let i=0;i<p.count;i++) y[i] = v.fromBufferAttribute(p, i).applyMatrix4(rock.matrixWorld).y;
+  for(let t=0;t<ix.count;t+=3){
+    const a = ix.getX(t), b = ix.getX(t + 1), c = ix.getX(t + 2);
+    if(Math.max(y[a], y[b], y[c]) > GROUND_Y - 0.3) keep.push(a, b, c);
+  }
+  g.setIndex(keep);
+}
 /* shells of moss strands: each a copy of the rock pushed out along its normals,
    keeping only the strands tall enough to reach it, darker toward the roots */
 function mossShells(rock, u, count){
@@ -174,5 +189,5 @@ function mossShells(rock, u, count){
   return grp;
 }
 export {
-  mossShells, rockMaterial, rockTime
+  mossShells, rockMaterial, rockTime, trimBuried
 };

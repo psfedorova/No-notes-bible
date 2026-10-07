@@ -9,7 +9,7 @@ import { backGoldSlot, frontGoldSlot } from '../book/boards.js';
 import { leafHaze, measureRock } from '../scene/forest-life.js';
 import { firstMesh, gltfLoader, loadImage, retry } from './loaders.js';
 import { applyLeather } from '../book/leather.js';
-import { mossShells, rockMaterial } from '../scene/rock.js';
+import { mossShells, rockMaterial, trimBuried } from '../scene/rock.js';
 import { backdrop, decodeDepth, makeBackdrop, measureFoot } from '../scene/forest.js';
 import { nearField } from '../scene/plants.js';
 
@@ -57,6 +57,7 @@ async function loadAssets(){
   rockGrp.position.y = ROCK_TOP;
   rock.position.set(0,0,0); rock.rotation.set(0,0,0);
   rockGrp.add(rock);
+  trimBuried(rock);
   rockGrp.add(mossShells(rock, rock.material.userData.u, HI_RES ? 9 : 4));
   const rockYaw = new THREE.Group();
   rockYaw.rotation.y = FOREST_YAW;

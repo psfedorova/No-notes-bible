@@ -252,10 +252,10 @@ async function nearField(skirtMat){
    bank grows grass down to the water. Where the floor is half earth the tufts thin out
    rather than shrink, and at the near field's edge they shorten and thin out into the
    picture. Built in the forest's own frame (the group turns it by FOREST_YAW) */
-let grassMesh = null, grassSplit = [0, 0];
+let grassPlots = [];
 /* how much of the far grass is drawn, 0..1 (app/loop.js adaptGrass) */
 function setGrassBudget(k){
-  if(grassMesh) grassMesh.geometry.instanceCount = grassSplit[0] + Math.round(grassSplit[1]*k);
+  grassPlots.forEach(([mesh, near, far])=>{ mesh.geometry.instanceCount = near + Math.round(far*k); });
 }
 function grassField(G, stones, tufts){
   const N = HI_RES ? 220000 : 90000, SEG = HI_RES ? 4 : 2, WIDE = HI_RES ? 1 : 1.3;
@@ -368,28 +368,24 @@ function grassField(G, stones, tufts){
   /* out where the grass thins into the picture, each blade is a few pixels and the floor
      between them is already painted as grass: two in five go there, which none near the
      book or the stone does. Those far blades come last, in no order, so a screen that
-     cannot keep up draws fewer of them (setGrassBudget) and the grass near is never touched */
-  const near = [], far = [];
+     cannot keep up draws fewer of them (setGrassBudget) and the grass near is never touched.
+     The field is cut into square plots, each its own mesh, so the plots out of view (behind
+     the eye, beside the frame) are not drawn at all */
+  const PLOT = 24, PN = Math.ceil(2*R2/PLOT), plots = [];
+  for(let i=0;i<PN*PN;i++) plots.push({ near: [], far: [] });
+  const plotOf = i => Math.min(PN - 1, Math.max(0, Math.floor((root[i*4 + 2] + R2)/PLOT)))*PN + Math.min(PN - 1, Math.max(0, Math.floor((root[i*4] + R2)/PLOT)));
+  const far = [];
   for(let i=0;i<n;i++){
     const r = Math.hypot(root[i*4], root[i*4 + 2]);
-    if(r <= R1 + 4) near.push(i);
+    if(r <= R1 + 4) plots[plotOf(i)].near.push(i);
     else if(hh(i*0.37, 5.1) >= 0.4*sstep(R1 + 4, R1 + 14, r)) far.push(i);
   }
   for(let i=far.length - 1;i>0;i--){ const j = Math.floor(rnd()*(i + 1)), t = far[i]; far[i] = far[j]; far[j] = t; }
-  const order = near.concat(far), root2 = new Float32Array(order.length*4), blade2 = new Float32Array(order.length*4);
-  order.forEach((i, o)=>{ root2.set(root.subarray(i*4, i*4 + 4), o*4); blade2.set(blade.subarray(i*4, i*4 + 4), o*4); });
-  root.set(root2); blade.set(blade2);
-  n = order.length;
-  grassSplit = [near.length, far.length];
-  const ig = new THREE.InstancedBufferGeometry();
+  far.forEach(i=>plots[plotOf(i)].far.push(i));
   const pos = [], idx = [];
   for(let s=0;s<=SEG;s++){ const t = s/SEG; pos.push(-0.5, t, 0, 0.5, t, 0); }
   for(let s=0;s<SEG;s++){ const a = s*2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  ig.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  ig.setIndex(idx);
-  ig.setAttribute('aRoot', new THREE.InstancedBufferAttribute(root.subarray(0, n*4), 4));
-  ig.setAttribute('aBlade', new THREE.InstancedBufferAttribute(blade.subarray(0, n*4), 4));
-  ig.instanceCount = n;
+  const tmpl = new THREE.Float32BufferAttribute(pos, 3), tmplIdx = new THREE.Uint16BufferAttribute(idx, 1);
   const U = backdrop.material.uniforms;
   const mat = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
@@ -446,12 +442,32 @@ function grassField(G, stones, tufts){
         #include <colorspace_fragment>
       }`
   });
-  const mesh = new THREE.Mesh(ig, mat);
-  grassMesh = mesh;
-  mesh.name = 'grass';
-  mesh.frustumCulled = false;
-  mesh.userData.noPick = true;
-  return mesh;
+  const field = new THREE.Group();
+  field.name = 'grass';
+  grassPlots = [];
+  plots.forEach(({ near, far: farHere })=>{
+    const order = near.concat(farHere), m = order.length;
+    if(!m) return;
+    const r4 = new Float32Array(m*4), b4 = new Float32Array(m*4);
+    let cx = 0, cy = 0, cz = 0;
+    order.forEach((i, o)=>{ r4.set(root.subarray(i*4, i*4 + 4), o*4); b4.set(blade.subarray(i*4, i*4 + 4), o*4); cx += root[i*4]; cy += root[i*4 + 1]; cz += root[i*4 + 2]; });
+    const c = new THREE.Vector3(cx/m, cy/m, cz/m);
+    let rad = 0;
+    for(let o=0;o<m;o++) rad = Math.max(rad, Math.hypot(r4[o*4] - c.x, r4[o*4 + 1] - c.y, r4[o*4 + 2] - c.z));
+    const ig = new THREE.InstancedBufferGeometry();
+    ig.setAttribute('position', tmpl);
+    ig.setIndex(tmplIdx);
+    ig.setAttribute('aRoot', new THREE.InstancedBufferAttribute(r4, 4));
+    ig.setAttribute('aBlade', new THREE.InstancedBufferAttribute(b4, 4));
+    ig.instanceCount = m;
+    /* a blade stands at most about two units tall and leans or blows a little further */
+    ig.boundingSphere = new THREE.Sphere(c, rad + 4);
+    const mesh = new THREE.Mesh(ig, mat);
+    mesh.userData.noPick = true;
+    field.add(mesh);
+    grassPlots.push([mesh, near.length, farHere.length]);
+  });
+  return field;
 }
 
 export {
