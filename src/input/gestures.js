@@ -288,7 +288,7 @@ canvasEl.addEventListener('pointermove', e=>{
 });
 let rotating = false;
 /* looking round or turning the book is a glance: let go, and once it has coasted to a
-   stop the eye and the book ease back to where the reader sits */
+   stop the eye and the book ease back to where the reader sits, and the writing goes on */
 let homeTimer = 0;
 function returnHome(){
   clearTimeout(homeTimer);
@@ -296,15 +296,22 @@ function returnHome(){
     if(g || pinch) return;
     if(orbit.coast || inertia){ homeTimer = setTimeout(check, 250); return; }
     orbit.azTo = 0; orbit.elTo = 0;
-    if(!atHome() && !spinAnim) glideSpin(homeQuat(), 1.6, st.lift < 0.05);
-  }, 1500);
+    const R = resume;
+    resume = null;
+    if(R && st.open && !writing && !st.flight && !st.riffle && spreadOf(R.n) === st.k){
+      writePose(R.n, R.a);
+      if(writing && R.b !== R.a){ quill.setSelectionRange(R.a, R.b); onSel(); }
+    }else if(!atHome() && !spinAnim) glideSpin(homeQuat(), 1.6, st.lift < 0.05);
+  }, 1200);
 }
 /* the eye leaving the page to look round sets the quill down with it: words typed
    then would land on a page no longer in sight */
 function lookAway(){
   st.focusTo = 0;
-  if(writing) exitWriting();
+  if(writing){ resume = { n: writing.n, a: quill.selectionStart, b: quill.selectionEnd }; exitWriting(); }
 }
+/* the quill set down by a glance round is taken up again where it was once the eye is back */
+let resume = null;
 function liftGate(){ return smooth(clamp(st.lift*1.6, 0, 1)); }
 function endPointer(e, cancelled){
   pointers.delete(e.pointerId);
