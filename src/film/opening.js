@@ -17,7 +17,7 @@ import { nextSmoke, smokeAge, smokeKind, smokeLife, smokePos, smokeSeed, smokeVe
 import { coverAnim } from '../book/turning.js';
 import { seekSpread } from '../book/seek.js';
 import { refreshUI } from '../ui/controls.js';
-import { frame, liveFov, onResize, update } from '../app/loop.js';
+import { frame, liveFov, onResize, setStory, update } from '../app/loop.js';
 
 /* the title page's ornament, gilt and lettering catch a light that runs out from the
    middle of the sheet (reach 0..1) and leaves them glowing warm (amt fades it) */
@@ -363,7 +363,28 @@ function takeOver(mode, poses){
   }, mode === 'open' ? 1300 : 1500);
 }
 
+/* the opening played live, on the scene itself: the story (film/capture.js) runs on the
+   frame loop's time and hands the eye to the live camera over its last second, then the
+   book turns to the page last written on. Cut short, the book opens at once and the eye
+   eases from wherever the story had it to the reader's place */
+function playLive(L){
+  setStory(dt=>L.tick(dt));
+  L.done = how=>{
+    setStory(null);
+    if(how === 'skip'){
+      startCamBlend({ pos: camera.position.toArray(), quat: camera.quaternion.toArray(), fov: camera.fov, aspect: camera.aspect }, 0);
+      camBlend.d = 1.4;
+      for(const ev of BLEND_EVENTS) addEventListener(ev, hurryBlend, { capture: true, passive: true });
+    }else settle();
+    refreshUI();
+    if(intro.end) intro.end();
+    setTimeout(()=>{ if(homeSpread() !== st.k) seekSpread(homeSpread()); }, how === 'skip' ? 1800 : 900);
+  };
+  if(intro.started) intro.started(L);
+  refreshUI();
+}
+
 export {
-  camBlend, pagePuff, pageShine, settled, stepCamBlend, takeOver, titleBurn,
+  camBlend, pagePuff, pageShine, playLive, settled, stepCamBlend, takeOver, titleBurn,
   titleBurnPlan, titleReveal
 };

@@ -4,6 +4,7 @@ import { clamp, cv, fbm, lerp, smooth, mulberry32, makeSpriteCanvas } from '../l
 import { damp, sdamp } from '../core/easing.js';
 import { CH, CVR, CW, N, OPEN, PAGE_H, PAGE_W, T, ZB } from '../core/config.js';
 import { scene } from '../scene/renderer.js';
+import { softCard } from '../scene/soft.js';
 import { bookRoot, spinGrp } from '../scene/rig.js';
 import { pagePointWorld } from '../book/leaves.js';
 import { st } from '../book/state.js';
@@ -180,9 +181,7 @@ function puffTexture(S, seed){
 const puffTex = [0, 1, 2, 3].map(k => puffTexture(128, 4100 + k*17));
 const puffs = [];
 for(let i=0;i<28;i++){
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex[i % puffTex.length], color: 0xcabda6, transparent: true, opacity: 0, depthWrite: false }));
-  sp.visible = false;
-  scene.add(sp);
+  const sp = softCard(puffTex[i % puffTex.length], 0xcabda6, 0.5);
   puffs.push({ sp, age: 1, life: 1, v: new THREE.Vector3(), size: 1, grow: 1, spin: 0, peak: 0 });
 }
 let puffAt = 0;
@@ -192,8 +191,8 @@ function emitPuff(x, y, z, vx, vz){
   P.v.set(vx, 0.06 + Math.random()*0.12, vz);
   P.age = 0; P.life = 1.8 + Math.random()*1.4;
   P.size = 0.6 + Math.random()*0.5; P.grow = 2.4 + Math.random()*1.8;
-  P.spin = (Math.random() - 0.5)*0.5; P.sp.material.rotation = Math.random()*6.28;
-  P.peak = 0.34 + Math.random()*0.18;
+  P.spin = (Math.random() - 0.5)*0.5; P.sp.material.uniforms.uRot.value = Math.random()*6.28;
+  P.peak = 0.4 + Math.random()*0.18;
   P.sp.visible = true;
 }
 function stepPuffs(dt){
@@ -206,8 +205,8 @@ function stepPuffs(dt){
     P.sp.position.addScaledVector(P.v, dt);
     const s = P.size*(1 + P.grow*(1 - Math.exp(-P.age*2.0)));
     P.sp.scale.set(s, s, 1);
-    P.sp.material.rotation += P.spin*dt;
-    P.sp.material.opacity = P.peak*Math.min(1, P.age/0.07)*Math.pow(1 - k, 1.5);
+    P.sp.material.uniforms.uRot.value += P.spin*dt;
+    P.sp.material.uniforms.uOp.value = P.peak*Math.min(1, P.age/0.07)*Math.pow(1 - k, 1.5);
   }
 }
 /* the closed book in world space: corners of its footprint on the rock */
@@ -221,7 +220,7 @@ function emitDustPuff(){
     bookRoot.localToWorld(_dc);
     const v = new THREE.Vector3(lx - CW/2, ly, 0).normalize().transformDirection(bookRoot.matrixWorld);
     const sp = 0.7 + Math.random()*0.8;
-    emitPuff(_dc.x + v.x*0.15, _dc.y + 0.12, _dc.z + v.z*0.15, v.x*sp, v.z*sp);
+    emitPuff(_dc.x + v.x*0.15, _dc.y + 0.22, _dc.z + v.z*0.15, v.x*sp, v.z*sp);
   }
   for(let i=0;i<36;i++){
     const side = i % 4, t = Math.random();
@@ -239,11 +238,10 @@ function emitDustPuff(){
    of the sun on the page, not an orange lamp inside the book */
 const innerGlow = new THREE.PointLight(0xffdcb0, 0, 6, 1.6);
 scene.add(innerGlow);
-const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-  map: (()=>{ const t = new THREE.CanvasTexture(makeSpriteCanvas(128)); t.colorSpace = THREE.SRGBColorSpace; return t; })(),
-  color: 0xffe2bc, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true }));
+const glowTex = new THREE.CanvasTexture(makeSpriteCanvas(128));
+glowTex.colorSpace = THREE.SRGBColorSpace;
+const glowSprite = softCard(glowTex, 0xffe2bc, 0.8, true);
 glowSprite.scale.set(5, 5, 1);
-scene.add(glowSprite);
 const _gp = new THREE.Vector3();
 
 function stepMagic(dt){
@@ -263,7 +261,7 @@ function stepMagic(dt){
   innerGlow.position.copy(_gp);
   innerGlow.intensity = gl*3.2;
   glowSprite.position.copy(_gp);
-  glowSprite.material.opacity = gl*0.14;
+  glowSprite.material.uniforms.uOp.value = gl*0.14;
   glowSprite.visible = gl > 0.003;
 }
 

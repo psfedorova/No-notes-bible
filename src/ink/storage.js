@@ -235,9 +235,9 @@ copyPicker.addEventListener('change', async ()=>{
   if(now && shelf){
     const yes = await shelf.ask({
       title: 'RESTORE FROM A FILE',
-      text: `The backup takes the place of your private book, which has ${now} written ${now === 1 ? 'page' : 'pages'} now. Back it up first if you want to keep it`,
+      text: `It replaces your private book, ${now} written ${now === 1 ? 'page' : 'pages'}`,
       yes: 'Replace my private book', no: 'Cancel',
-      extra: { label: 'Back up my private book first', fn: ()=> saveCopy(true) },
+      extra: { label: 'Back it up first', fn: ()=> saveCopy(true) },
     });
     if(!yes) return;
   }

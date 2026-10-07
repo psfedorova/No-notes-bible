@@ -4,6 +4,7 @@ import { cv } from '../lib/textures.js';
 import { GROUND_Y, HI_RES, VH, VW } from '../core/config.js';
 import { camera, DPR, FOREST_YAW, renderer, SUN_DIR } from './renderer.js';
 import { shed } from '../assets/loaders.js';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 /* the forest all round: built in Blender (blender/build_forest.py) and rendered as a
    360 panorama from 1 m over the boulder, with its distance from that point for every
@@ -30,7 +31,46 @@ function measureFoot(rock, grp){
     rockFoot[k] = Math.max(rockFoot[k], Math.hypot(v.x, v.z));
   }
 }
+/* the depth pictures are decoded in a worker (assets/depth-worker.js), so neither the
+   loading circle nor a book already in the reader's hands stalls while a 6k one is read;
+   a browser without a worker canvas does it here, as before */
+let depthWorker = null, depthJobs = 0;
+const depthWaits = new Map();
+function inWorker(url, smooth){
+  if(!depthWorker){
+    depthWorker = new Worker(new URL('../assets/depth-worker.js', import.meta.url), { type: 'module' });
+    depthWorker.onmessage = e=>{ const w = depthWaits.get(e.data.id); depthWaits.delete(e.data.id); if(w) e.data.error ? w.rej(new Error(e.data.error)) : w.res(e.data); };
+    depthWorker.onerror = e=>{ depthWaits.forEach(w=>w.rej(new Error('depth worker: ' + (e.message || 'failed')))); depthWaits.clear(); };
+  }
+  const id = ++depthJobs;
+  return new Promise((res, rej)=>{
+    depthWaits.set(id, { res, rej });
+    depthWorker.postMessage({ id, url: new URL(url, location.href).href, smooth, band: HI_RES ? 4194304 : 1048576 });
+  });
+}
+function depthTexture(out, w, h, smooth){
+  const t = new THREE.DataTexture(out, w, h, THREE.RedFormat, THREE.HalfFloatType);
+  /* the forest's own layer is read nearest, not filtered: a leaf against the sky must not
+     blend into a surface halfway between. The layer behind only fills the strips a near
+     trunk uncovers, and is read filtered, so what shows there is stretched smoothly over
+     its own edges instead of breaking into blocks */
+  t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter; t.needsUpdate = true;
+  return t;
+}
+function softTexture(out, W, H){
+  const t = new THREE.DataTexture(out, W, H, THREE.RedFormat, THREE.HalfFloatType);
+  t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
+  return shed(t);
+}
 async function decodeDepth(url, smooth){
+  if(typeof OffscreenCanvas !== 'undefined' && typeof Worker !== 'undefined'){
+    try{
+      const r = await inWorker(url, smooth);
+      const t = depthTexture(r.data, r.w, r.h, smooth);
+      if(r.soft) t.userData.soft = softTexture(r.soft.data, r.soft.W, r.soft.H);
+      return shed(t);
+    }catch(e){ if(/Could not load/.test(e.message)) throw e; }
+  }
   const res = await fetch(url);
   if(!res.ok) throw new Error('Could not load ' + url + ' (' + res.status + ')');
   const blob = await res.blob();
@@ -54,12 +94,7 @@ async function decodeDepth(url, smooth){
     const src = (h - 1 - y)*w, dst = y*w;
     for(let i=0;i<w;i++) out[dst + i] = THREE.DataUtils.toHalfFloat(q[src + i]/65535);
   }
-  const t = new THREE.DataTexture(out, w, h, THREE.RedFormat, THREE.HalfFloatType);
-  /* the forest's own layer is read nearest, not filtered: a leaf against the sky must not
-     blend into a surface halfway between. The layer behind only fills the strips a near
-     trunk uncovers, and is read filtered, so what shows there is stretched smoothly over
-     its own edges instead of breaking into blocks */
-  t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter; t.needsUpdate = true;
+  const t = depthTexture(out, w, h, smooth);
   if(!smooth) t.userData.soft = softDepth(q, w, h, Math.max(1, Math.round(w/768)));
   return shed(t);
 }
@@ -81,9 +116,7 @@ function softDepth(q, w, h, k){
   }
   const out = new Uint16Array(W*H);
   for(let i=0;i<W*H;i++) out[i] = THREE.DataUtils.toHalfFloat(a[i]);
-  const t = new THREE.DataTexture(out, W, H, THREE.RedFormat, THREE.HalfFloatType);
-  t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
-  return shed(t);
+  return softTexture(out, W, H);
 }
 function makeBackdrop(pano, depth, water, back, backDepth){
   const tex = (im, srgb)=>{ const t = new THREE.Texture(im); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -92,24 +125,46 @@ function makeBackdrop(pano, depth, water, back, backDepth){
     side: THREE.BackSide, depthWrite: false, depthTest: false,
     uniforms: {
       tPano: { value: tex(pano, true) }, tDepth: { value: depth }, tWater: { value: tex(water, false) },
-      tBack: { value: tex(back, true) }, tBackDepth: { value: backDepth }, tSoft: { value: depth.userData.soft },
+      tBack: { value: back ? tex(back, true) : null }, tBackDepth: { value: backDepth }, tSoft: { value: depth.userData.soft }, uBackOn: { value: back ? 1 : 0 },
+      tPanoWas: { value: null }, uSwap: { value: 1 }, tDetail: { value: null }, uDetail: { value: 0 },
       uCam: { value: new THREE.Vector3() }, uCap: { value: FOREST_CAP }, uYaw: { value: new THREE.Vector2(Math.cos(FOREST_YAW), Math.sin(FOREST_YAW)) }, uTime: { value: 0 }, uGain: { value: FOREST_GAIN*FOREST_EXPOSURE },
       uNear: { value: DEPTH_NEAR }, uFar: { value: DEPTH_FAR }, uSun: { value: SUN_DIR }, uFoot: { value: rockFoot },
       tGround: { value: null }, uGround: { value: new THREE.Vector4(0, 0, 0, 0) },
-      tAO: { value: null }, uAO: { value: new THREE.Vector2(0, 0) } },
+      tAO: { value: null }, uAO: { value: new THREE.Vector2(0, 0) }, tHeld: { value: null }, uHeldOn: { value: 0 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position = p.xyww; }',
     fragmentShader: `#define MARCH_STEPS ${HI_RES ? 112 : 60}
-      uniform sampler2D tPano, tDepth, tWater, tBack, tBackDepth, tSoft; uniform vec2 uYaw;
-      vec3 unyaw(vec3 v){ return vec3(uYaw.x*v.x - uYaw.y*v.z, v.y, uYaw.y*v.x + uYaw.x*v.z); } uniform vec3 uCam, uCap, uSun; uniform float uTime, uGain, uNear, uFar;
+      uniform sampler2D tPano, tDepth, tWater, tBack, tBackDepth, tSoft, tPanoWas, tDetail; uniform vec2 uYaw;
+      vec3 unyaw(vec3 v){ return vec3(uYaw.x*v.x - uYaw.y*v.z, v.y, uYaw.y*v.x + uYaw.x*v.z); } uniform vec3 uCam, uCap, uSun; uniform float uTime, uGain, uNear, uFar, uBackOn, uSwap, uDetail;
       uniform float uFoot[${ROCK_FOOT_N}];
-      uniform sampler2D tGround, tAO; uniform vec4 uGround; uniform vec2 uAO;
+      uniform sampler2D tGround, tAO, tHeld; uniform vec4 uGround; uniform vec2 uAO; uniform float uHeldOn;
+      /* the near stones are drawn in 3D; the render only hid them from its camera, so where
+         they stood it kept the floor in their shade, black, and through the water their
+         sunk parts, pale. Seen from beside the capture point those lay on the floor and the
+         water as dark slabs and white wedges: they take the colour of what lies round them */
+      float heldAt(vec2 u){ return uHeldOn > 0.5 ? 1.0 - textureLod(tHeld, u, 0.0).a : 0.0; }
+      /* only what is far darker or paler than the water or ground round it is filled: the
+         rest within a stone's outline is the ground behind it, which the render kept */
+      float heldOdd(vec2 u, out vec3 f){
+        float h = heldAt(u);
+        if(h <= 0.0) return 0.0;
+        vec4 s = vec4(0.0);
+        for(int L=2;L<10;L++){ s = textureLod(tHeld, u, float(L)); if(s.a > 0.45) break; }
+        f = s.rgb/max(s.a, 1e-4);
+        float r = dot(textureLod(tPano, u, 1.0).rgb, vec3(0.3, 0.59, 0.11))/max(dot(f, vec3(0.3, 0.59, 0.11)), 1e-5);
+        return h*max(1.0 - smoothstep(0.3, 0.55, r), smoothstep(1.5, 2.1, r));
+      }
+      vec3 unheld(vec3 c, vec2 u){ vec3 f; float k = heldOdd(u, f); return k > 0.0 ? mix(c, f, k) : c; }
       varying vec3 vDir;
       float h21(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
       float vn(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0 - 2.0*f);
         return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), u.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), u.x), u.y); }
       vec2 eqUv(vec3 q){ return vec2(atan(q.z, q.x)*0.15915494 + 0.5, asin(clamp(q.y, -1.0, 1.0))*0.31830989 + 0.5); }
       float unpack(float inv){ return 1.0/(inv*(1.0/uNear - 1.0/uFar) + 1.0/uFar); }
-      float distF(vec3 q){ vec2 u = eqUv(q); float a = textureLod(tDepth, u, 0.0).r, w = smoothstep(0.14, 0.42, q.y);
+      /* the far wood is read from the soft surface too, not only the crown overhead: a
+         few metres off the capture point each texel of the sharp one would stand out as
+         a block of leaves and sky, and that far off the soft one hardly bends */
+      float distF(vec3 q){ vec2 u = eqUv(q); float a = textureLod(tDepth, u, 0.0).r;
+        float w = max(smoothstep(0.14, 0.42, q.y), smoothstep(120.0, 300.0, unpack(a)));
         if(w > 0.0) a = mix(a, textureLod(tSoft, u, 0.0).r, w);
         return unpack(a); }
       float distB(vec3 q){ return unpack(textureLod(tBackDepth, eqUv(q), 0.0).r); }
@@ -137,7 +192,7 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         /* the layer behind only fills what a near thing hid, never with open sky, and
            fades in rather than switching, so no hard-edged patch shows */
         float wBack = 0.0;
-        if(gap > 0.04){ MARCH(distB, d, o, tAlt, gapAlt); if(gapAlt < gap && tAlt < 2500.0) wBack = smoothstep(0.04, 0.16, gap - gapAlt); }
+        if(uBackOn > 0.5 && gap > 0.04){ MARCH(distB, d, o, tAlt, gapAlt); if(gapAlt < gap && tAlt < 2500.0) wBack = smoothstep(0.04, 0.16, gap - gapAlt); }
         vec3 P = o + t*d, q = normalize(P);
         vec2 uv = eqUv(q);
         vec2 uvB = eqUv(normalize(o + (wBack > 0.0 ? tAlt : t)*d));
@@ -161,6 +216,9 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         /* read with the same gradients: along the seam an implicit fetch drops to the
            coarsest mip, the whole stream averaged, and a line of sun glints ran over the grass */
         vec4 wf = textureGrad(tWater, uv, gx/soft, gy/soft);
+        /* a stone in the stream leaves a hole in the water's own pass too: it runs on there */
+        vec3 hf; float held = heldOdd(uv, hf);
+        if(held > 0.0){ vec4 wc = textureLod(tWater, uv, 5.5); wf = mix(wf, vec4(1.0, wc.gba), held*smoothstep(0.25, 0.55, wc.r)); }
         vec3 col;
         if(wf.r > 0.02){
           /* running water: ripples of three sizes carried downstream bend what shows
@@ -170,6 +228,7 @@ function makeBackdrop(pano, depth, water, back, backDepth){
              still moves in its long swells and never boils into glitter up close. Two
              patterns slide at different speeds in each size, so the surface keeps changing
              instead of scrolling past like a belt, and slow bands of light drift down it */
+          float wr = smoothstep(0.02, 0.35, wf.r);
           vec3 W = P + uCap;
           vec2 fl = normalize(wf.gb*2.0 - 1.0 + 1e-4), fr = vec2(-fl.y, fl.x);
           vec2 p = W.xz, s = vec2(dot(p, fl), dot(p, fr));
@@ -186,21 +245,24 @@ function makeBackdrop(pano, depth, water, back, backDepth){
               gs += vec2((vn(cc + vec2(E, 0.0)) - h0)*k*0.6, (vn(cc + vec2(0.0, E)) - h0)*k)/E*A*c*0.5;
             }
           }
-          vec2 slope = (fl*gs.x + fr*gs.y)*wf.r;
+          vec2 slope = (fl*gs.x + fr*gs.y)*wr;
           vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
           vec3 q2 = normalize(P + vec3(slope.x, 0.0, slope.y)*4.0);
-          col = textureGrad(tPano, eqUv(q2), gx, gy).rgb;
+          col = unheld(textureGrad(tPano, eqUv(q2), gx, gy).rgb, eqUv(q2));
           vec3 R = reflect(d, n); R.y = abs(R.y);
           vec3 refl = textureLod(tPano, eqUv(R), 2.5).rgb;
           float F = 0.03 + 0.97*pow(1.0 - max(dot(-d, n), 0.0), 5.0);
-          col = mix(col, max(col, refl), clamp(F, 0.0, 0.6)*wf.r);
+          col = mix(col, max(col, refl), clamp(F, 0.0, 0.6)*wr);
           float band = vn(vec2((s.x - uTime*2.6)*0.07, s.y*0.22) + 3.1)*0.6 + vn(vec2((s.x - uTime*1.7)*0.16, s.y*0.4) + 8.7)*0.4;
-          col *= 1.0 + (band - 0.5)*0.32*wf.r;
+          col *= 1.0 + (band - 0.5)*0.32*wr;
           float sr = max(dot(R, unyaw(uSun)), 0.0), calm = 1.0/(1.0 + 2.0*fw);
-          col += vec3(1.0, 0.94, 0.82)*(pow(sr, 600.0)*3.0*calm + pow(sr, 40.0)*0.06)*wf.r;
+          col += vec3(1.0, 0.94, 0.82)*(pow(sr, 600.0)*3.0*calm + pow(sr, 40.0)*0.06)*wr;
         }else{
           col = textureGrad(tPano, uv, gx, gy).rgb;
+          /* the sharper forest is crossfaded in over the first one, never cut in */
+          if(uSwap < 1.0) col = mix(textureGrad(tPanoWas, uv, gx, gy).rgb, col, uSwap);
           if(wBack > 0.0) col = mix(col, textureGrad(tBack, uvB, gx*2.0, gy*2.0).rgb, wBack);
+          col = unheld(col, uv);
           /* the floor under the boulder's foot, black in the render, shows as a crack where
              the stone's cut meets it: there it takes the moss a step further out, deep in the
              stone's shade. Outside the foot the render's own shadow and occlusion are kept */
@@ -227,17 +289,34 @@ function makeBackdrop(pano, depth, water, back, backDepth){
             float hue = (fs.g - fs.b)/max(fs.r - fs.b, 1e-3);
             float grassy = onFloor*(1.0 - smoothstep(uGround.z, uGround.w, rg))
               *max(smoothstep(0.45, 0.75, hue), smoothstep(0.02, 0.15, textureLod(tWater, uv, 5.0).r));
+            /* the colour taken wide and soft, so none of the render's plants lies there as a
+               ghost, and the grain of the ground laid back on it from the moss itself, so
+               the floor between the blades is earth and moss, not a smear */
             vec3 base = vec3(0.0);
             for(int k=0;k<8;k++){
-              float a = float(k)*0.785398 + 0.4, r = k < 4 ? 0.9 : 1.8;
-              base += textureGrad(tPano, eqUv(normalize(P + vec3(cos(a)*r, 0.0, sin(a)*r))), gx*2.0, gy*2.0).rgb;
+              float a = float(k)*0.785398 + 0.4, r = k < 4 ? 1.6 : 3.2;
+              base += textureGrad(tPano, eqUv(normalize(P + vec3(cos(a)*r, 0.0, sin(a)*r))), gx*6.0, gy*6.0).rgb;
             }
             base *= 1.0/8.0;
-            col = mix(col, base, grassy*${HI_RES ? '0.75' : '0.5'});
+            if(uDetail > 0.0){
+              float dl = dot(texture2D(tDetail, Wg.xz*0.45).rgb, vec3(0.3, 0.59, 0.11));
+              base *= mix(1.0, clamp(dl/uDetail, 0.35, 1.9), 0.75);
+            }
+            col = mix(col, base, grassy*${HI_RES ? '1.0' : '0.85'});
             if(uAO.y > 0.0) col *= 1.0 - textureLod(tAO, (Wg.xz + uAO.x)/uAO.y, 0.0).r*onFloor;
           }
         }
-        gl_FragColor = vec4(col*uGain, 1.0);
+        /* how far the eye is from a trunk or a bush that stands up off the floor, kept with
+           the picture: the dome lays it in the depth, so a fern growing behind a trunk is
+           hidden by it instead of showing through. The floor keeps none, or it would cut
+           off the grass and ferns rooted in it */
+        float zFar = 0.0;
+        { float tz = wBack > 0.5 ? tAlt : t;
+          vec3 Wz = o + tz*d + uCap;
+          vec2 gz = (Wz.xz/max(uGround.y, 1.0) + 0.5)*(uGround.x - 1.0)/max(uGround.x, 1.0) + 0.5/max(uGround.x, 1.0);
+          float fz = uGround.x > 0.0 && abs(Wz.x) < uGround.y*0.5 && abs(Wz.z) < uGround.y*0.5 ? textureLod(tGround, gz, 0.0).r : ${GROUND_Y.toFixed(2)};
+          if(tz < 350.0 && wf.r <= 0.02 && Wz.y > fz + 5.0) zFar = tz; }
+        gl_FragColor = vec4(col*uGain, zFar);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`
@@ -250,10 +329,18 @@ function makeBackdrop(pano, depth, water, back, backDepth){
   marchScene.add(march);
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
   const dome = new THREE.Mesh(march.geometry, new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false, depthTest: false,
-    uniforms: { tLow: { value: rt.texture } },
-    vertexShader: 'varying vec4 vClip; void main(){ vClip = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position = vClip.xyww; }',
-    fragmentShader: 'uniform sampler2D tLow; varying vec4 vClip; void main(){ gl_FragColor = vec4(texture2D(tLow, vClip.xy/vClip.w*0.5 + 0.5).rgb, 1.0); }'
+    side: THREE.BackSide, depthWrite: true, depthTest: true, depthFunc: THREE.AlwaysDepth,
+    uniforms: { tLow: { value: rt.texture }, uProj: { value: camera.projectionMatrix } },
+    vertexShader: 'varying vec4 vClip; varying vec3 vDir; void main(){ vDir = position; vClip = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position = vClip.xyww; }',
+    fragmentShader: `uniform sampler2D tLow; uniform mat4 uProj; varying vec4 vClip; varying vec3 vDir;
+      void main(){
+        vec2 s = vClip.xy/vClip.w*0.5 + 0.5;
+        gl_FragColor = vec4(texture2D(tLow, s).rgb, 1.0);
+        ivec2 sz = textureSize(tLow, 0);
+        float z = texelFetch(tLow, clamp(ivec2(s*vec2(sz)), ivec2(0), sz - 1), 0).a;
+        vec4 c = uProj*viewMatrix*vec4(cameraPosition + normalize(vDir)*z, 1.0);
+        gl_FragDepth = z > 0.0 ? clamp(c.z/c.w*0.5 + 0.5, 0.0, 1.0) : 1.0;
+      }`
   }));
   dome.renderOrder = -10;
   dome.frustumCulled = false;
@@ -261,6 +348,75 @@ function makeBackdrop(pano, depth, water, back, backDepth){
   backdrop = {
     material: m,
     picture: rt.texture,
+    /* laid in once the book is shown: the layer behind the near trunks, then on a
+       computer the 6k forest and its depth in place of the 4k ones */
+    /* the grain of the ground between the blades: a seamless moss picture, and its mean
+       brightness, so it only shades the floor's own colour up and down */
+    setDetail(img){
+      const c = document.createElement('canvas'); c.width = c.height = 1;
+      const x = c.getContext('2d'); x.drawImage(img, 0, 0, 1, 1);
+      const d = x.getImageData(0, 0, 1, 1).data, lin = v => Math.pow(v/255, 2.2);
+      const t = new THREE.Texture(img); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.anisotropy = 8; t.needsUpdate = true;
+      m.uniforms.tDetail.value = shed(t);
+      m.uniforms.uDetail.value = lin(d[0])*0.3 + lin(d[1])*0.59 + lin(d[2])*0.11;
+    },
+    /* where the near stones (plants.js) rise out of the floor and the water, as the
+       capture point saw them, grown by a few texels for their sunk parts the water bent
+       into view, and the picture with them taken out, in mips: alpha is what is left, so
+       a coarser mip divided by its alpha is the colour round a stone */
+    setHeld(stones, floorGeo){
+      const W = HI_RES ? 2048 : 1024, H = W/2;
+      const cube = new THREE.WebGLCubeRenderTarget(W/2);
+      const cam = new THREE.CubeCamera(0.5, 400, cube);
+      cam.position.set(0, FOREST_CAP.y, 0);
+      const sc = new THREE.Scene();
+      sc.background = new THREE.Color(0);
+      const white = new THREE.MeshBasicMaterial({ color: 0xffffff }), black = new THREE.MeshBasicMaterial({ color: 0 });
+      stones.forEach(({ geo, m: mx })=>{ const o = new THREE.Mesh(geo, white); o.matrixAutoUpdate = false; o.matrix.copy(mx); sc.add(o); });
+      const floor = new THREE.Mesh(floorGeo, black);
+      floor.position.y = -0.2;
+      sc.add(floor);
+      sc.updateMatrixWorld(true);
+      const rtH = new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, depthBuffer: false, generateMipmaps: true,
+        minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping });
+      const q = new FullScreenQuad(new THREE.ShaderMaterial({
+        uniforms: { tCube: { value: cube.texture }, tPano: { value: m.uniforms.tPano.value }, tWater: { value: m.uniforms.tWater.value }, uTexel: { value: new THREE.Vector2(1/W, 1/H) } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: `uniform samplerCube tCube; uniform sampler2D tPano, tWater; uniform vec2 uTexel; varying vec2 vUv;
+          vec3 dirAt(vec2 u){ float lon = (u.x - 0.5)*6.2831853, lat = (u.y - 0.5)*3.1415927; return vec3(cos(lat)*cos(lon), sin(lat), cos(lat)*sin(lon)); }
+          void main(){
+            float h = 0.0;
+            for(int j=-8;j<=2;j++) for(int i=-3;i<=3;i++) h = max(h, textureCube(tCube, dirAt(vUv + vec2(i, j)*uTexel)).r*smoothstep(4.5, 2.5, length(vec2(i, j < 0 ? float(j)*0.5 : float(j)))));
+            /* in the stream only the water round a stone is taken, not its bank */
+            float w = (1.0 - h)*mix(1.0, smoothstep(0.3, 0.7, texture2D(tWater, vUv).r), smoothstep(0.2, 0.4, textureLod(tWater, vUv, 5.0).r));
+            gl_FragColor = vec4(texture2D(tPano, vUv).rgb*w, w);
+          }`
+      }));
+      const prev = renderer.getRenderTarget();
+      cam.update(renderer, sc);
+      renderer.setRenderTarget(rtH);
+      q.render(renderer);
+      renderer.setRenderTarget(prev);
+      cube.dispose(); q.material.dispose(); q.dispose(); white.dispose(); black.dispose();
+      m.uniforms.tHeld.value = rtH.texture; m.uniforms.uHeldOn.value = 1;
+    },
+    setBack(img, depth){
+      m.uniforms.tBack.value = tex(img, true); m.uniforms.tBackDepth.value = depth; m.uniforms.uBackOn.value = 1;
+    },
+    setPano(img, depth){
+      const U = m.uniforms, was = U.tPano.value, old = [U.tDepth.value, U.tSoft.value];
+      U.tPanoWas.value = was; U.tPano.value = tex(img, true); U.tDepth.value = depth; U.tSoft.value = depth.userData.soft;
+      old.forEach(t=>t && t.dispose());
+      const t0 = performance.now();
+      U.uSwap.value = 0;
+      const fade = ()=>{
+        U.uSwap.value = Math.min(1, (performance.now() - t0)/1200);
+        if(U.uSwap.value < 1) requestAnimationFrame(fade); else { U.tPanoWas.value = null; was.dispose(); }
+      };
+      requestAnimationFrame(fade);
+      return U.tPano.value;
+    },
     draw(){
       const pr = backdropPR(), w = Math.max(1, Math.round(VW*pr)), h = Math.max(1, Math.round(VH*pr));
       if(rt.width !== w || rt.height !== h) rt.setSize(w, h);

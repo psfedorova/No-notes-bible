@@ -94,6 +94,7 @@
 .shelf .more > summary{ list-style:none; display:flex; justify-content:center; align-items:center; gap:8px; min-height:32px; cursor:pointer; font-style:italic; font-size:15px; color:var(--gold-dim); }
 .shelf .tools{ display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:10px; }
 .shelf .acct{ margin-top:22px; padding-top:18px; border-top:1px solid rgba(214,164,74,.18); }
+.shelf .acct.bare{ margin-top:14px; padding-top:0; border-top:0; }
 .shelf .who{ display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:8px 10px; font-style:italic; color:var(--gold-dim); font-size:15px; }
 .shelf .acct .hint{ margin-top:10px; }
 .shelf .acts.quiet{ margin-top:2px; }

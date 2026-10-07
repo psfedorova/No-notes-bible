@@ -4,16 +4,14 @@ import { cv, normalFromHeight } from '../lib/textures.js';
 import { GROUND_Y } from '../core/config.js';
 import { SUN_DIR } from './renderer.js';
 import { shed } from '../assets/loaders.js';
+import { NOISE_GLSL, noiseTex } from '../lib/noise.js';
 
 /* the boulder: weathered granite under a thick cushion of moss that lies on its
    crown and runs down its flanks in tongues, as in the reference. Both stones are
    painted textures laid on triplanar (the rock has no UVs); the moss is given
    depth by shells of strands standing off the surface */
 const MOSS_GLSL = `
-  float h31(vec3 p){ p = fract(p*0.3183099 + 0.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x + p.y + p.z)); }
-  float vn3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0 - 2.0*f);
-    return mix(mix(mix(h31(i), h31(i + vec3(1,0,0)), f.x), mix(h31(i + vec3(0,1,0)), h31(i + vec3(1,1,0)), f.x), f.y),
-               mix(mix(h31(i + vec3(0,0,1)), h31(i + vec3(1,0,1)), f.x), mix(h31(i + vec3(0,1,1)), h31(i + vec3(1,1,1)), f.x), f.y), f.z); }
+  ${NOISE_GLSL}
   float mossMask(vec3 p, vec3 n){
     float up = smoothstep(-0.05, 0.75, n.y);
     float big = vn3(p*0.32) + 0.5*vn3(p*0.75 + 11.0);
@@ -74,7 +72,7 @@ function rockMaterial(img, skirt){
     tGranite: { value: rockTex(img.granite, true) }, tGraniteN: { value: heightNormal(img.granite, 1.4) },
     tStone: { value: rockTex(img.stone, true) }, tStoneN: { value: rockTex(img.stoneNor, false) }, sScale: { value: 0.085 },
     tMoss: { value: rockTex(img.moss, true) }, tMossN: { value: heightNormal(img.moss, 3.0) },
-    gScale: { value: 0.3 }, mScale: { value: 0.7 }, uSunDir: { value: SUN_DIR }, uTime: rockTime
+    gScale: { value: 0.3 }, mScale: { value: 0.7 }, uSunDir: { value: SUN_DIR }, uTime: rockTime, tNoise: { value: noiseTex }
   };
   const m = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 1.3 });
   if(skirt) m.defines = { SKIRT: '' };
@@ -94,7 +92,10 @@ function rockMaterial(img, skirt){
         /* the lower half of the boulder is buried: cut at the floor, or it hangs below the
            forest's ground as a dark skirt that slides over the moss as one walks round */
         if(vWp.y < ${GROUND_Y.toFixed(2)}) discard;
-        float mm = mossMask(vWp, Nw);
+        /* a ledge of the stone just over the floor, facing the sky, holds the moss the
+           floor round it holds: bare, it lay there as a flat grey slab seen from above */
+        float ledge = smoothstep(0.5, 0.8, Nw.y)*(1.0 - smoothstep(${(GROUND_Y + 0.7).toFixed(2)}, ${(GROUND_Y + 1.5).toFixed(2)}, vWp.y));
+        float mm = max(mossMask(vWp, Nw), ledge*smoothstep(0.25, 0.5, vn3(vWp*1.6 + 5.0) + 0.2));
         #endif
         /* the scanned stone gives the boulder its lichen, stains and cracks at the scale of
            the whole rock; the granite's grain is laid over it for the eye that comes close */
@@ -117,7 +118,7 @@ function rockMaterial(img, skirt){
         { float rise = 0.35 + 0.45*vn3(vWp*0.9 + 3.0) + 0.25*(vn3(vWp*4.0) - 0.5);
           float soil = 1.0 - smoothstep(${GROUND_Y.toFixed(2)} + rise*0.45, ${GROUND_Y.toFixed(2)} + rise, vWp.y);
           vec3 earth = mix(vec3(0.075, 0.062, 0.042), vec3(0.11, 0.12, 0.06), vn3(vWp*2.3 + 1.0));
-          diffuseColor.rgb = mix(diffuseColor.rgb, earth, soil*0.85); }
+          diffuseColor.rgb = mix(diffuseColor.rgb, earth, soil*0.85*(1.0 - ledge)); }
         #endif`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.82, 0.97, mm);')
       .replace('#include <lights_fragment_end>', MOSS_LIT('smoothstep(0.3, 0.8, mm)'))
@@ -152,14 +153,17 @@ function mossShells(rock, u, count){
       sh.fragmentShader = `uniform sampler2D tMoss; uniform float mScale, uT, uTime; uniform vec3 uSunDir; varying vec3 vWp; varying vec3 vWn; varying float vBed;` + MOSS_GLSL + sh.fragmentShader
         .replace('#include <lights_fragment_end>', MOSS_LIT('0.6 + 0.6*uT'))
         .replace('#include <map_fragment>', `
-          vec3 Nw = normalize(vWn), Wt = triW(Nw);
-          float mm = mossMask(vWp, Nw);
-          if(vWp.y < ${GROUND_Y.toFixed(2)}) discard;
+          /* the cheap tests first: most of a high shell is thrown away by its strands
+             before the moss mask has to be worked out */
+          if(vBed < 0.15 || vWp.y < ${GROUND_Y.toFixed(2)}) discard;
           vec3 sp = vWp*70.0;
           float strand = vn3(sp) *0.65 + vn3(sp*2.3 + 5.0)*0.35;
+          if(strand < 0.32 + uT*0.42) discard;
           /* cushions: the strands stand tall in clumps and lie low between them */
-          float clump = vn3(vWp*3.2 + 9.0);
-          if(vBed < 0.15 || strand < 0.32 + uT*0.42 || mm < 0.3 + uT*0.55 || clump < uT*0.7 - 0.05) discard;
+          if(vn3(vWp*3.2 + 9.0) < uT*0.7 - 0.05) discard;
+          vec3 Nw = normalize(vWn);
+          if(mossMask(vWp, Nw) < 0.3 + uT*0.55) discard;
+          vec3 Wt = triW(Nw);
           vec3 mos = mossTone(tri(tMoss, vWp*mScale, Wt).rgb, vWp);
           diffuseColor.rgb *= mos*(0.55 + 0.6*uT);`);
     };
@@ -169,7 +173,6 @@ function mossShells(rock, u, count){
   }
   return grp;
 }
-
 export {
   mossShells, rockMaterial, rockTime
 };

@@ -42,11 +42,12 @@ for(let i=0;i<N;i++){
     uv[(A_CNT+k)*2] = 1 - m/M;   uv[(A_CNT+k)*2+1] = r/R;
   }
   const rnd = mulberry32(900 + i*31);
-  /* trimmed leaves: no two are quite the same size, but within a fraction of a leaf's
-     thickness, so the edges read as one cut face of fine lines rather than a saw of
-     corners, each leaf here being far thicker than paper */
+  /* trimmed leaves: no two are quite as wide, but within a fraction of a leaf's
+     thickness, so the fore edge reads as one cut face of fine lines rather than a saw
+     of corners. Head and tail are cut flush, as a book block is, or each leaf's sliver
+     of page peeping past the one above would stripe them */
   const len = PW*(1 - 0.0015*rnd());
-  const yb = -PH/2 + 0.0015*(rnd()-0.35), yt = PH/2 - 0.0015*(rnd()-0.35);
+  const yb = -PH/2, yt = PH/2;
   const tint = 0.84 + rnd()*0.2, warm = 0.92 + rnd()*0.1;
   /* the gutter: a page darkens as it runs down into the sewing, on both sides of
      every leaf, so the spread reads as bound into the spine and not laid beside it */
@@ -204,6 +205,10 @@ function integrate(hx, hz, angleAt, X, Z, A, ds){
     Z[m+1] = Z[m] + Math.sin(a)*ds;
   }
 }
+/* a leaf's cut edges reach the whole of its share of the stack, half a pitch each way,
+   so the edges of neighbouring leaves meet: an open book's head and tail read as one cut
+   face of fine lines, not a comb of slivers with the dark between them showing through */
+const LW = LT*0.5;
 function writeLeaf(L, vary){
   const pos = L.pos, nrm = L.nrm;
   const set = (arr, v, x, y, z)=>{ arr[v*3]=x; arr[v*3+1]=y; arr[v*3+2]=z; };
@@ -219,22 +224,22 @@ function writeLeaf(L, vary){
     const ex = Math.cos(A[M]), ez = Math.sin(A[M]);
     const nxE = -Math.sin(A[M]), nzE = Math.cos(A[M]);
     let v = leafIndex.fore + r*2;
-    set(pos, v,   X[M]+nxE*LH, y, Z[M]+nzE*LH); set(nrm, v,   ex, 0, ez);
-    set(pos, v+1, X[M]-nxE*LH, y, Z[M]-nzE*LH); set(nrm, v+1, ex, 0, ez);
+    set(pos, v,   X[M]+nxE*LW, y, Z[M]+nzE*LW); set(nrm, v,   ex, 0, ez);
+    set(pos, v+1, X[M]-nxE*LW, y, Z[M]-nzE*LW); set(nrm, v+1, ex, 0, ez);
     const sx = Math.cos(A[0]), sz = Math.sin(A[0]);
     const nx0 = -Math.sin(A[0]), nz0 = Math.cos(A[0]);
     v = leafIndex.spn + r*2;
     set(pos, v,   X[0]+nx0*LH, y, Z[0]+nz0*LH); set(nrm, v,   -sx, 0, -sz);
     set(pos, v+1, X[0]-nx0*LH, y, Z[0]-nz0*LH); set(nrm, v+1, -sx, 0, -sz);
   }
-  for(let m=0;m<=M;m++){
-    const kH = R*(M+1)+m, kT = m;
-    let v = leafIndex.head + m*2;
-    pos.copyWithin(v*3, kH*3, kH*3+3);             set(nrm, v, 0, 1, 0);
-    pos.copyWithin((v+1)*3, (A_CNT+kH)*3, (A_CNT+kH)*3+3); set(nrm, v+1, 0, 1, 0);
-    v = leafIndex.tail + m*2;
-    pos.copyWithin(v*3, kT*3, kT*3+3);             set(nrm, v, 0, -1, 0);
-    pos.copyWithin((v+1)*3, (A_CNT+kT)*3, (A_CNT+kT)*3+3); set(nrm, v+1, 0, -1, 0);
+  for(const [r, base, ny] of [[R, leafIndex.head, 1], [0, leafIndex.tail, -1]]){
+    const rr = vary ? r : 0, X = _X[rr], Z = _Z[rr], A = _A[rr];
+    const y = L.yb + r/R*(L.yt - L.yb);
+    for(let m=0;m<=M;m++){
+      const nx = -Math.sin(A[m]), nz = Math.cos(A[m]), v = base + m*2;
+      set(pos, v,   X[m]+nx*LW, y, Z[m]+nz*LW); set(nrm, v,   0, ny, 0);
+      set(pos, v+1, X[m]-nx*LW, y, Z[m]-nz*LW); set(nrm, v+1, 0, ny, 0);
+    }
   }
   L.geo.attributes.position.needsUpdate = true;
   L.geo.attributes.normal.needsUpdate = true;

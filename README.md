@@ -11,8 +11,9 @@ python3 -m http.server 8123
 ```
 
 Then open http://localhost:8123. Port 8123 matters: the Firebase key only accepts
-that local address. `?intro` replays the opening film, `?emu` uses the Firebase
-emulators, `?film` is the mode the film is shot in.
+that local address. `?intro` replays the opening, `?emu` uses the Firebase
+emulators, `?film` is the mode the opening is shot as a video in, `?pr=1.5` pins the pixel ratio
+(a phone's frame loop otherwise steps it down when its GPU cannot keep up).
 
 ## Layout
 
@@ -21,14 +22,14 @@ index.html            markup only: the loading screen, the canvas, buttons, menu
 css/                  styles, linked from index.html in this order (the cascade relies on it)
   base.css              tokens, the page, the canvas, the hidden quill, the error strip
   controls.css          round buttons, pager, toast, the ⋯ menu, phone sizes
-  intro.css             the loading circle and the opening film
+  intro.css             the loading circle and the veil it lifts off the opening
   cards.css             the shortcuts card, which the Share card builds on
   shelf.css             the Share card
   invitation.css        the invitation a friend's link opens
 src/
   main.js             entry point: wires the modules, boots, starts the loop
   core/               launch flags, measurements and asset paths, easing, error strip
-  scene/              renderer and camera, sunbeam, post, the rig, rock, forest, plants, life
+  scene/              renderer and camera, sunbeam, soft dust and glow, post, the rig, rock, forest, plants, life
   book/               materials, paper and print, pages, boards, sapphire, spine, leaves,
                       state and layout, view and framing, turning, seeking a page, leather
   ink/                text layout, painting ink, writing, spells, saving
@@ -36,13 +37,16 @@ src/
   audio/              forest sound and the book's own sounds
   input/              picking and gestures
   ui/                 controls, the little windows, the toast
-  assets/             loaders and loading every scan and model
+  assets/             loaders, loading in two parts (all in view first, then the sharper
+                      forest), the worker that decodes the forest's depth
   app/                the frame loop
-  film/               intro.js (loading screen + film player), opening.js (hand-over to the
-                      live book), capture.js (shoots the film under ?film)
+  film/               intro.js (loading screen), capture.js (the opening's story, played live
+                      on the scene, or shot as a video under ?film), opening.js (its hooks
+                      in the scene and the hand-over to the reader)
   sharing/            shared books in Firebase (shelf.js), the invitation's magic, the config
-  lib/                procedural textures and small maths helpers
-assets/               audio, forest panorama, intro films, leather, plants, rock, models
+  lib/                procedural textures, value noise from a 3D texture, small maths helpers
+assets/               audio, forest panorama, the opening's music, leather, rock, models,
+                      plants (Draco + WebP .glb, made with gltf-transform)
 firestore.rules       access rules for shared books; firebase.json points the CLI at them
 tests/firestore/      rules tests against the emulator
 tools/film/           shoots and encodes the opening film
@@ -60,5 +64,5 @@ import lines show how the parts depend on each other.
   `setX()` functions; other modules read them as live imports.
 - Cache busting: bump `?v=` on `src/main.js` in index.html, and on an asset's URL in
   `src/core/config.js` when the file behind it changes.
-- After a visual change to the scene, the book or the opening, re-shoot the film
-  (`node tools/film/shoot.mjs`), or its last frame will not match the live book.
+- The opening plays live on the scene itself, so a change to the scene or the book
+  needs no re-shoot. `node tools/film/shoot.mjs` still renders it as a video to share.

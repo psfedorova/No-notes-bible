@@ -6,9 +6,19 @@ import { HI_RES, VH, VW } from '../core/config.js';
 const canvasEl = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: false, alpha: false, powerPreference: 'high-performance' });
 /* a phone starts at 1.5 device pixels to a CSS pixel and steps down while its frames run
-   slow (adaptPixels, 15. loop); the post passes and the forest are what fill its GPU */
+   slow (adaptPixels in app/loop.js). A computer draws at its screen's own ratio, up to 2,
+   and is never stepped down to buy frames; only a huge sharp screen (4K at 2x) is drawn
+   at no more than about six million pixels, which from where one sits looks the same */
 const DPR_MAX = Math.min(devicePixelRatio, HI_RES ? 2 : 1.5);
-let DPR = DPR_MAX;
+const PR_FLOOR = Math.min(DPR_MAX, 1);
+const PR_LEVELS = [];
+for(let p = DPR_MAX; p > PR_FLOOR + 0.02; p *= 0.875) PR_LEVELS.push(+p.toFixed(3));
+PR_LEVELS.push(PR_FLOOR);
+/* ?pr=1.5 pins the ratio and stops the ladder, for measuring */
+const PR_PIN = +new URLSearchParams(location.search).get('pr') || 0;
+const PX_MAX = 6.2e6;
+const deskRatio = ()=> Math.min(DPR_MAX, Math.max(1.25, Math.sqrt(PX_MAX/(VW*VH))));
+let DPR = PR_PIN || (HI_RES ? deskRatio() : DPR_MAX);
 function setDPR(v){ DPR = v; }
 renderer.setPixelRatio(DPR);
 renderer.setSize(VW, VH, false);
@@ -53,6 +63,6 @@ const gemLight = new THREE.PointLight(0x5aa0ff, 0.5, 2.2, 2);
 scene.add(gemLight);
 
 export {
-  camera, canvasEl, DPR, DPR_MAX, FOREST_YAW, gemLight, renderer, scene, setDPR,
+  camera, canvasEl, deskRatio, DPR, FOREST_YAW, gemLight, PR_LEVELS, PR_PIN, renderer, scene, setDPR,
   setShadowDirty, shadowDirty, shadowKey, sun, SUN_DIR
 };

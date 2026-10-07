@@ -1,5 +1,5 @@
 /* the little windows: a page to turn to, the list of spells */
-import { MOD, N } from '../core/config.js';
+import { ALT, MOD, N } from '../core/config.js';
 import { st } from '../book/state.js';
 import { quill, writing } from '../ink/writing.js';
 import { turnToPage } from '../book/seek.js';
@@ -49,6 +49,7 @@ const SPELLS = [
     ['Edge', 'Click by a page\'s outer edge to turn it'],
     ['Click', 'Write where you click on the page'],
     ['Drag', 'Off the pages: look round the glade'],
+    ['Right-drag', 'Look round the glade, the book stays in hand'],
   ]],
   ['With the quill', [
     [`${MOD}E`, 'Erase your writing on this page'],
@@ -64,6 +65,7 @@ const SPELLS = [
     [`${MOD}S`, 'Save now (it saves itself anyway)'],
     [`${MOD}Shift S`, 'Back up the book to a file'],
     ['?', 'This list'],
+    [`${ALT}5`, 'Frame rate on this device'],
   ]],
 ];
 (()=>{

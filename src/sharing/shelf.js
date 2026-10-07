@@ -486,11 +486,11 @@ export function createShelf(api){
     const c = clash, when = c.at ? ` from ${c.at.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}` : '';
     const here = filled(api.personalData());
     body.appendChild(el('h3', null, 'Your private book'));
-    body.appendChild(el('p', 'sub', `Your Google account keeps a copy of your private book${when} with ${c.p} written ${c.p === 1 ? 'page' : 'pages'}. This browser’s private book is different, with ${here} written ${here === 1 ? 'page' : 'pages'}. Which one should stay?`));
+    body.appendChild(el('p', 'sub', `Your account’s copy${when} has ${c.p} written ${c.p === 1 ? 'page' : 'pages'}, this browser’s has ${here}. Which one stays?`));
     const acts = el('div', 'acts');
-    acts.appendChild(btn('The copy from my account', 'main', async ()=>{ takeCopy(c.uid, c.v, c.copy); api.toast('YOUR PRIVATE BOOK IS THE COPY FROM YOUR ACCOUNT', 2600); render(); }));
-    acts.appendChild(btn('The book in this browser', '', async ()=>{ keepLocal(); api.toast('YOUR ACCOUNT NOW KEEPS THIS BROWSER’S BOOK', 2600); render(); }));
-    acts.appendChild(btn('Back up this browser’s book to a file first', 'minor', async ()=> api.saveCopy(true)));
+    acts.appendChild(btn('The account’s copy', 'main', async ()=>{ takeCopy(c.uid, c.v, c.copy); api.toast('YOUR PRIVATE BOOK IS THE COPY FROM YOUR ACCOUNT', 2600); render(); }));
+    acts.appendChild(btn('This browser’s', '', async ()=>{ keepLocal(); api.toast('YOUR ACCOUNT NOW KEEPS THIS BROWSER’S BOOK', 2600); render(); }));
+    acts.appendChild(btn('Back up this browser’s first', 'minor', async ()=> api.saveCopy(true)));
     body.appendChild(acts);
   }
 
@@ -1037,10 +1037,9 @@ export function createShelf(api){
     if(making){ body.appendChild(el('p', 'sub', 'Making the book and its link…')); return; }
     if(clash && real()) renderClash();
     if(!user){
-      body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. No account needed. Anyone can erase or change any page, and every page keeps its history'));
+      body.appendChild(el('p', 'sub', 'Friends with the link write in this book with you'));
       const input = el('input'); input.type = 'text'; input.maxLength = 24; input.value = guestName; input.placeholder = 'Your name'; input.setAttribute('aria-label', 'Your name');
       body.appendChild(input);
-      body.appendChild(el('p', 'hint', 'the name your friend sees by your writing'));
       const go = async ()=>{
         const name = input.value.trim();
         if(!name){ input.focus(); api.toast('WRITE YOUR NAME FIRST', 1600); return; }
@@ -1048,16 +1047,19 @@ export function createShelf(api){
       };
       input.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); go(); } });
       acts.appendChild(btn('Get a link', 'main', go));
-      acts.appendChild(btn('Sign in with Google instead', 'minor', signIn));
       body.appendChild(acts);
+      const acct = el('div', 'acct bare'), who = el('div', 'who');
+      who.appendChild(pill('Sign in with Google', async ()=>{ await signIn(); render(); }));
+      acct.appendChild(who);
+      body.appendChild(acct);
       return;
     }
     if(cur || books.length) bookPicker();
-    if(cur) renderLink(acts);
+    if(cur) renderLink();
     else if(made >= MAX_BOOKS){
-      body.appendChild(el('p', 'sub', `You keep ${MAX_BOOKS} shared books, the most there can be. Open one from the list above to share it, or delete one of yours to make room`));
+      body.appendChild(el('p', 'sub', `${MAX_BOOKS} shared books is the most. Share one from the list above or delete one`));
     }else{
-      body.appendChild(el('p', 'sub', 'Your friend gets a link, takes the vow and writes in the book with you. Anyone can erase or change any page, and every page keeps its history'));
+      body.appendChild(el('p', 'sub', 'Friends with the link write in this book with you'));
       acts.appendChild(btn('Get a link', 'main', ()=> makeBook()));
       body.appendChild(acts);
     }
@@ -1072,7 +1074,6 @@ export function createShelf(api){
       who.appendChild(pill('Sign in with Google', async ()=>{ await signIn(); render(); }));
     }
     acct.appendChild(who);
-    if(user && !real()) acct.appendChild(el('p', 'hint', 'Your ink is kept by this browser. Sign in with Google to keep it on any device'));
     body.appendChild(acct);
   }
   async function signOut(){
@@ -1086,7 +1087,7 @@ export function createShelf(api){
   function renderKeepers(){
     if(!cur.owner) return;
     if(cur.owner !== user.uid){
-      if(reading) body.appendChild(el('p', 'sub', 'You can read this book. Its creator has not let you write in it'));
+      if(reading) body.appendChild(el('p', 'sub', 'You can only read this book'));
       const all = [...names.entries()].sort(([a], [b])=> (b === cur.owner) - (a === cur.owner) || (b === user.uid) - (a === user.uid));
       if(all.length){
         const sec = el('div', 'people');
@@ -1187,7 +1188,7 @@ export function createShelf(api){
     body.appendChild(more);
   }
   function renderDelete(){
-    body.appendChild(el('p', 'sub', `Everything written in ${cur.name}, by you and by everyone else, disappears for good. Download it first if you want to keep it`));
+    body.appendChild(el('p', 'sub', `Everything in ${cur.name} is gone for everyone, for good`));
     const acts = el('div', 'acts');
     acts.appendChild(btn('Delete the book', 'main', deleteBook));
     acts.appendChild(btn('Download it first', '', async ()=> api.exportText()));
@@ -1207,15 +1208,13 @@ export function createShelf(api){
     setTimeout(()=>{ input.focus(); input.select(); }, 50);
   }
   function renderRename(){
-    body.appendChild(el('p', 'sub', 'Everyone who keeps the book sees the new name'));
     nameForm(cur.name, 60, 'Book name', renameBook);
   }
   function renderName(){
-    body.appendChild(el('p', 'sub', 'The name your friends see by your writing'));
     nameForm(guestName, 24, 'Your name', renameGuest);
   }
   function renderOut(){
-    body.appendChild(el('p', 'sub', 'Some of your writing has not reached the book yet. If you sign out now, it stays behind in this browser'));
+    body.appendChild(el('p', 'sub', 'Some writing has not synced yet. Signing out leaves it in this browser'));
     const acts = el('div', 'acts');
     acts.appendChild(btn('Stay signed in', 'main', async ()=> show('share')));
     acts.appendChild(btn('Sign out anyway', 'minor', signOut));
@@ -1266,7 +1265,7 @@ export function createShelf(api){
   }
   function renderPast(){
     const pages = pastPages.map(n => n + 1).join(' and ');
-    body.appendChild(el('p', 'sub', `Page ${pages} as it was each time someone erased or changed another hand’s ink. Bring back any of them`));
+    body.appendChild(el('p', 'sub', `Earlier versions of page ${pages}`));
     if(!pastRows){ body.appendChild(el('p', 'hint', 'Opening the history…')); return; }
     if(!pastRows.length){ body.appendChild(el('p', 'hint', 'Nothing here has been erased or changed yet')); return; }
     const sec = el('div', 'people');
@@ -1294,19 +1293,18 @@ export function createShelf(api){
     api.toast(`PAGE ${r.n + 1} IS BACK AS IT WAS`, 2400);
   }
   function renderLeave(){
-    body.appendChild(el('p', 'sub', `What you wrote stays in ${cur.name}, with the keepers. To come back, ask for the link again`));
+    body.appendChild(el('p', 'sub', `Your writing stays. To come back, ask for the link again`));
     const acts = el('div', 'acts');
     acts.appendChild(btn('Leave the book', 'main', leaveShared));
     acts.appendChild(btn('Stay', 'minor', async ()=> show('share')));
     body.appendChild(acts);
   }
-  async function renderLink(acts, sub){
-    body.appendChild(el('p', 'sub', sub || 'Friends with this link take the vow and write in this book with you'));
+  async function renderLink(){
+    body.appendChild(el('p', 'sub', 'Friends with this link write in this book with you'));
     const box = el('div', 'linkbox');
     const url0 = el('span', 'url', 'Making a link…');
     box.appendChild(url0);
     body.appendChild(box);
-    body.appendChild(acts);
     const id = cur.id, url = await inviteLink(false);
     if(!cur || cur.id !== id) return;
     if(!url){ url0.textContent = 'Only the book’s creator can make a link'; return; }
@@ -1319,7 +1317,6 @@ export function createShelf(api){
       catch(e){ api.toast('SELECT THE LINK AND COPY IT', 2000); }
     });
     box.appendChild(copy);
-    if(navigator.share) acts.prepend(btn('Send the link', 'main', async ()=>{ try{ await navigator.share({ title: cur.name, text: 'You’ve been invited to become a keeper of our bible. No notes', url: link.url }); }catch(e){} }));
   }
   /* ---------- the invitation: a card on the book's own paper, the rules, the vow, a signature ---------- */
   const RULES = ['Any keeper writes on any page', 'No notes: if it is wrong, rewrite it', 'The book remembers every page'];

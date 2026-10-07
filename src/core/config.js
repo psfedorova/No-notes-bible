@@ -46,19 +46,21 @@ const fontById = id => FONTS.find(f=>f.id===id) || FONTS[0];
 const capFont = (f, size) => `${f.capWeight || 400} ${Math.round(size)}px ${f.capCss || f.css}, ${f.css}, serif`;
 const fontCss = (f, size, weight) => `${f.style==='italic'?'italic ':''}${weight||f.weight} ${Math.round(size)}px ${f.css}, "Cormorant Garamond", serif`;
 
-/* a phone gets the 4k forest with its depth at the same size (6144 is past the texture
-   limit of many phones), the light and the leather at 1k: the leather is dyed down to
-   1024 anyway, and the light only feeds the blurred reflections */
-const LEA = HI_RES ? '2k' : '1k';
+/* what the book needs to be shown comes first and small: the forest at 4k with its depth
+   (6144 is past the texture limit of many phones), the light and the leather at 1k (the
+   leather is dyed down to 1024 anyway and the light only feeds blurred reflections:
+   side by side the 2k ones looked the same). Once the book is in the reader's hands a
+   computer fetches the 6k forest and its depth and lays them in (forestFull, depthFull),
+   and every device the plants round the boulder and the layer behind the trunks */
 const ASSETS = {
-  forest: HI_RES ? 'assets/forest/forest.jpg' : 'assets/forest/forest_4k.jpg',
-  forestDepth: HI_RES ? 'assets/forest/depth.png' : 'assets/forest/depth_4k.png', forestWater: 'assets/forest/water.png',
-  forestLight: HI_RES ? 'assets/forest/light.hdr' : 'assets/forest/light_1k.hdr',
+  forest: 'assets/forest/forest_4k.jpg', forestDepth: 'assets/forest/depth_4k.png',
+  forestFull: HI_RES ? 'assets/forest/forest.jpg' : null, depthFull: HI_RES ? 'assets/forest/depth.png' : null,
+  forestWater: 'assets/forest/water.png', forestLight: 'assets/forest/light_1k.hdr',
   forestBack: 'assets/forest/back.jpg', forestBackDepth: 'assets/forest/back_depth.png', forestNear: 'assets/forest/near.json',
   brook: 'assets/audio/forest_brook.wav', magicBed: 'assets/audio/magic_forest.wav',
   twinkles: ['assets/audio/twinkle_a.mp3', 'assets/audio/twinkle_b.mp3', 'assets/audio/twinkle_c.mp3'],
-  leaAlbedo: `assets/leather/brown_leather_albedo_${LEA}.jpg`, leaNor: `assets/leather/brown_leather_nor_gl_${LEA}.jpg`,
-  leaRough: `assets/leather/brown_leather_rough_${LEA}.jpg`,
+  leaAlbedo: 'assets/leather/brown_leather_albedo_1k.jpg', leaNor: 'assets/leather/brown_leather_nor_gl_1k.jpg',
+  leaRough: 'assets/leather/brown_leather_rough_1k.jpg',
   goldFront: 'assets/models/gold_front.glb?v=2', goldBack: 'assets/models/gold_back.glb?v=2',
   maskFront: 'assets/models/gold_front_mask.png?v=2', maskBack: 'assets/models/gold_back_mask.png?v=2',
   rock: 'assets/models/rock.glb?v=3',
@@ -79,9 +81,10 @@ measureViewport();
 /* the modifier key as the shortcuts card and the tooltips name it */
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
 const MOD = IS_MAC ? '⌘' : 'Ctrl+';
+const ALT = IS_MAC ? '⌥' : 'Alt+';
 
 export {
-  ALPHA, ASSETS, BACK_GAP, capFont, CH, CVR, CW, EPS, FAN, fontById, fontCss, FONTS, FS,
+  ALPHA, ALT, ASSETS, BACK_GAP, capFont, CH, CVR, CW, EPS, FAN, fontById, fontCss, FONTS, FS,
   GROUND_Y, HI_RES, INK, LH, LIFT_H, LS_KEY, LT, M, measureViewport, MOD, N, OPEN,
   PAGE_H, PAGE_W, PH, PW, R, RB, ROCK_TOP, SC, SWELL, T, VH, VW, XJ_C, XJ_O, ZB
 };

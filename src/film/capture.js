@@ -1,10 +1,12 @@
 /* ============================================================================
-   The opening film, shot from the live scene one frame at a time.
+   The opening, played on the live scene.
 
-   src/main.js loads this under ?film. A capture script (tools/film/shoot.mjs)
-   calls __film.shot(i) for every frame and screenshots the page, then encodes
-   assets/intro/{wide,tall}.mp4 and writes the camera's first and last pose to
-   assets/intro/poses.json, so the live book can take over from the last frame.
+   On a first visit src/main.js loads this before the book is shown and
+   film/opening.js (playLive) runs the story on the frame loop's own time. Under
+   ?film it is shot one frame at a time instead: tools/film/shoot.mjs calls
+   __film.shot(i) for every frame, screenshots the page and encodes a video (for
+   sharing; the site itself no longer plays one). The camera's last key is the
+   reader's pose kept in assets/intro/poses.json.
 
    The story: the book lies shut on its rock in the clearing. One of the forest's
    fireflies drifts in and settles on the sapphire, and its light sinks into the
@@ -19,7 +21,10 @@
    ==========================================================================*/
 import { mulberry32 } from '../lib/textures.js';
 
+/* played live as the opening (window.__book.film.live), the same story runs on the
+   frame loop's own time instead of being shot frame by frame */
 const F = window.__book.film;
+const LIVE = !!F.live;
 const { THREE, scene, st, orbit } = F;
 
 const FPS = 30;
@@ -79,7 +84,7 @@ F.matSpine.needsUpdate = true;
 
 /* ---------------- the magic circle, the same one pressed into every leaf ---------------- */
 /* channels: R the rings, G the runes, B the star; a second, blurred copy is its glow */
-const SIG = 2048, SR = 118;
+const SIG = matchMedia('(pointer: coarse)').matches ? 1024 : 2048, SR = 118;
 function sigilCanvas(blur){
   const c = document.createElement('canvas');
   c.width = c.height = SIG;
@@ -89,7 +94,7 @@ function sigilCanvas(blur){
   const k = SIG/2/(SR*1.06);
   g.lineCap = 'round'; g.lineJoin = 'round';
   g.globalCompositeOperation = 'lighter';
-  if(blur) g.filter = `blur(${blur}px)`;
+  if(blur) g.filter = `blur(${blur*SIG/2048}px)`;
   const W = blur ? 2.2 : 1;
   const ring = (r, w)=>{ g.lineWidth = w*k*W; g.beginPath(); g.arc(0, 0, r*k, 0, Math.PI*2); g.stroke(); };
   g.strokeStyle = g.fillStyle = '#f00';
@@ -704,7 +709,8 @@ const pose = () => ({
 /* the view settles on the first frame before the film starts; the title page is bare
    until the circle brings its lettering */
 F.titleReveal(0);
-const ends = await fetch('assets/intro/poses.json?v=' + Date.now()).then(r => r.json());
+for(let i=0;i<240;i++) F.update(1/FPS);
+const ends =await fetch('assets/intro/poses.json' + (LIVE ? '?v=2' : '?v=' + Date.now())).then(r => r.json());
 buildRig(ends[TALL ? 'tall' : 'wide'].end);
 at(0, 0);
 for(let i=0;i<240;i++) F.update(1/FPS);
@@ -717,3 +723,37 @@ window.__film = {
   run(i){ at(i/FPS, 1/FPS); F.update(1/FPS); return i; },
   pose
 };
+
+/* ---------------- played live ---------------- */
+/* the frame loop calls tick(dt) before each update; at the end, or when the reader cuts
+   it short, the story's own things are put away and done() hands the book over */
+let liveT = 0, liveEnd = null;
+function putAway(){
+  rig.keys = null;
+  circle.visible = false; motes.visible = false; lights.visible = false;
+  fly.position.set(0, -200, 0); flyLight.intensity = 0;
+  flowU.uFlowK.value = 0;
+  window.__filmCam = null;
+}
+const live = {
+  get t(){ return liveT; },
+  end: END,
+  tick(dt){
+    if(liveEnd) return;
+    liveT = Math.min(END, liveT + dt);
+    at(liveT, dt);
+    if(liveT >= END){ putAway(); liveEnd = 'end'; live.done && live.done('end'); }
+  },
+  /* the reader would rather begin: the book opens on its title page, lettered, now */
+  skip(){
+    if(liveEnd) return;
+    liveEnd = 'skip';
+    putAway();
+    st.auraTo = 0; st.gemFlare = 0;
+    if(!opened){ opened = true; F.setOpen(true); }
+    if(sigM) F.titleBurn({ M: sigM, t: liveT, start: 0, sig: 0, done: true });
+    else F.titleReveal(1);
+    live.done && live.done('skip');
+  }
+};
+if(LIVE) window.__film.live = live;

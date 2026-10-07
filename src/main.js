@@ -32,7 +32,7 @@ import { pageCache, pages, paintPage } from './book/pages.js';
 import { frontGem, frontGrp } from './book/boards.js';
 import { matSpine } from './book/spine.js';
 import { leaves, pagePointWorld } from './book/leaves.js';
-import { layout, st } from './book/state.js';
+import { invalidateLayout, layout, st } from './book/state.js';
 import { camTarget, fitDistance, glideSpin, homeQuat, orbit, qOpenHome, spinGoal } from './book/view.js';
 import { applyPage, booted, BROWSER_HAND, exportText, handsOf, loadAll, personalData, personalPages, saveCopy, setBooted, setShelf, shelf, takePersonal, useBook } from './ink/storage.js';
 import { toast } from './ui/toast.js';
@@ -46,9 +46,15 @@ import { erasePages, pour, quillTo, restoreErased } from './ink/spells.js';
 import { seekSpread, turnToPage } from './book/seek.js';
 import { closeMenu, menuEl, menuNotes, refreshUI } from './ui/controls.js';
 import { backdrop } from './scene/forest.js';
-import { loadAssets } from './assets/load.js';
-import { frame, onResize, rafLoop, update, warmUp } from './app/loop.js';
-import { pagePuff, pageShine, settled, takeOver, titleBurn, titleBurnPlan, titleReveal } from './film/opening.js';
+import { loadAssets, loadMore } from './assets/load.js';
+import { calm, frame, onResize, rafLoop, update, warmUp } from './app/loop.js';
+import { pagePuff, pageShine, playLive, settled, takeOver, titleBurn, titleBurnPlan, titleReveal } from './film/opening.js';
+
+/* what the opening's story (film/capture.js) works the scene with */
+function filmHooks(){
+  return { THREE, scene, renderer, st, orbit, setOpen, beam, beamU, BEAM_DIR, pageShine, frame, update, camera, frontGem, spinGrp, spinGoal, qOpenHome, fallers, emitOpenBurst, matGold, pagePointWorld, PAGE_W, PAGE_H, bookRoot, floatGrp, OPEN, frontGrp, CW, CH, CVR, titleReveal, matSpine, titleBurn, titleBurnPlan, pagePuff,
+    render(){ renderer.shadowMap.needsUpdate = true; if(backdrop){ backdrop.material.uniforms.uCam.value.copy(camera.position); backdrop.draw(); } composer.render(0); } };
+}
 
 /* ---------------- boot ---------------- */
 async function boot(){
@@ -92,8 +98,19 @@ async function boot(){
   blankMat[1].map.image = pageBackground(-1); blankMat[1].map.needsUpdate = true;
   pageCache.forEach((e,n)=>{ e.bg = pageBackground(n); paintPage(n); });
   if(FILM) st.open = false;
+  /* the opening played live: the story's things are made and its shaders built before
+     warmUp, so nothing compiles while it runs; the book waits shut on its title page */
+  const live = intro && intro.live;
+  if(live){
+    st.open = false; st.k = 0; invalidateLayout();
+    window.__book.film = { ...filmHooks(), live: true };
+    try{ await import('./film/capture.js'); }catch(e){ console.warn('The opening could not be played:', e); }
+  }
   await warmUp();
-  if(intro){
+  if(live && window.__film && window.__film.live){
+    window.__book.bootMs = Math.round(performance.now() - T0);
+    await new Promise(r=>intro.ready(()=>{ playLive(window.__film.live); r(); }));
+  }else if(intro){
     if(intro.stage) intro.stage(.95);
     const poses = await fetch('assets/intro/poses.json').then(r=>r.json()).catch(()=>null);
     window.__book.bootMs = Math.round(performance.now() - T0);
@@ -112,12 +129,15 @@ async function boot(){
   }
   setBooted(true);
   if(FILM){
-    window.__book.film = { THREE, scene, renderer, st, orbit, setOpen, beam, beamU, BEAM_DIR, pageShine, frame, update, camera, frontGem, spinGrp, spinGoal, qOpenHome, fallers, emitOpenBurst, matGold, pagePointWorld, PAGE_W, PAGE_H, bookRoot, floatGrp, OPEN, frontGrp, CW, CH, CVR, titleReveal, matSpine, titleBurn, titleBurnPlan, pagePuff,
-      render(){ renderer.shadowMap.needsUpdate = true; if(backdrop){ backdrop.material.uniforms.uCam.value.copy(camera.position); backdrop.draw(); } composer.render(0); } };
+    /* the film is shot with everything in, at full size */
+    await loadMore();
+    window.__book.film = filmHooks();
     import('./film/capture.js?v=' + Date.now());
     return;
   }
   requestAnimationFrame(rafLoop);
+  /* the rest comes once the book is in the reader's hands (after the opening, if any) */
+  Promise.resolve(settled && settled.p).then(()=>loadMore(calm));
 }
 document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', ()=>{ pageCache.forEach((e,n)=>paintPage(n)); });
 

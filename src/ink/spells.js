@@ -150,8 +150,9 @@ function applyPour(n, res){
   saveSoon(true);
 }
 /* room made on a page calls back the words that ran on from it: whole words come back
-   from the head of the next page while they fit, and a page left empty calls in its own
-   run-on in turn; they write themselves in again where they land */
+   from the head of the next page while they fit, and the room that leaves there calls
+   in that page's own run-on in turn, page after page; they write themselves in again
+   where they land */
 function pullBack(n){
   const now = performance.now();
   let changed = false;
@@ -178,7 +179,6 @@ function pullBack(n){
     if(spreadOf(m) === st.k || spreadOf(p) === st.k) emitWisps(m, spreadOf(p) === spreadOf(m) ? p : null, 20);
     [p, m].forEach(q=>{ if(pageCache.has(q)){ burning.add(q); paintPage(q, now); } });
     changed = true;
-    if(nx.t) break;
   }
   if(!changed) return false;
   if(writing && writing.n === n && quill.value !== pages[n].t){
@@ -224,7 +224,14 @@ function erasePages(list){
     paintPage(n, now);
   });
   if(!gone.length){ toast('NOTHING TO ERASE', 1800); return; }
-  lastErase = { pages: gone, at: now };
+  const was = pages.map((pg, q)=> ({ t: pg.t, a: handsOf(q).slice(), c: pg.c }));
+  gone.forEach(g => pullBack(g.n));
+  gone.forEach(g=>{ g.left = pages[g.n].t; });
+  const shifted = [];
+  was.forEach((w, q)=>{
+    if(pages[q].t !== w.t && !gone.some(g => g.n === q)) shifted.push({ n: q, t: w.t, a: w.a, c: w.c, now: pages[q].t });
+  });
+  lastErase = { pages: gone, shifted, at: now };
   sfx.erase();
   saveSoon(true);
   toast(`ERASED · ${MOD}Z BRINGS IT BACK`, 2800);
@@ -233,10 +240,22 @@ function erasePages(list){
 function restoreErased(){
   if(readOnly()) return false;
   if(!lastErase || performance.now() - lastErase.at > 60000) return false;
-  const back = lastErase.pages.filter(p => pages[p.n].t === p.left);
+  const { shifted } = lastErase;
+  const still = shifted.every(s => pages[s.n].t === s.now);
+  const back = lastErase.pages.filter(p => pages[p.n].t === p.left && (still || !p.left));
   lastErase = null;
   if(!back.length) return false;
   const now = performance.now();
+  if(still) shifted.forEach(s=>{
+    const pg = pages[s.n];
+    pg.t = s.t; pg.a = s.a; pg.c = s.c; pg.born = null;
+    if(writing && writing.n === s.n){
+      const i = Math.min(quill.selectionEnd, pg.t.length);
+      quill.value = pg.t; quill.setSelectionRange(i, i);
+      setLastGood({ v: pg.t, a: i, b: i });
+    }
+    if(pageCache.has(s.n)) paintPage(s.n, now);
+  });
   back.forEach(p=>{
     const pg = pages[p.n];
     const step = Math.min(14, 1500/Math.max(1, p.t.length));

@@ -10,6 +10,7 @@ import { saveSoon } from '../ink/storage.js';
 import { exitWriting, pageNoEl, writing } from '../ink/writing.js';
 import { sfx } from '../audio/sound.js';
 import { emitDustPuff, emitOpenBurst } from '../fx/magic.js';
+import { gust } from '../scene/plants.js';
 import { setWriteOnOpen, writePose } from '../input/gestures.js';
 import { seek } from '../ink/spells.js';
 import { flightPace } from './seek.js';
@@ -71,6 +72,7 @@ function stepFall(F, dt){
 }
 function coverImpact(speed){
   coverEvent('thud');
+  gust(clamp(0.75 + speed*0.25, 0.75, 1.3));
   st.joltV -= clamp(speed, 0.6, 3)*0.9;
 }
 function coverEvent(name){

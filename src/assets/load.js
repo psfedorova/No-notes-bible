@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { ASSETS, HI_RES, ROCK_TOP } from '../core/config.js';
 import { FOREST_YAW, renderer, scene } from '../scene/renderer.js';
+import { spinGrp } from '../scene/rig.js';
 import { matGold } from '../book/materials.js';
 import { backGoldSlot, frontGoldSlot } from '../book/boards.js';
 import { leafHaze, measureRock } from '../scene/forest-life.js';
@@ -12,15 +13,18 @@ import { mossShells, rockMaterial } from '../scene/rock.js';
 import { backdrop, decodeDepth, makeBackdrop, measureFoot } from '../scene/forest.js';
 import { nearField } from '../scene/plants.js';
 
+/* loading comes in two parts. All that is in view (the book, the boulder, the plants and
+   grass round it, the forest at 4k and its light) is fetched first and shows at once,
+   after a fraction of the bytes; then, once the book is in the reader's hands, loadMore
+   brings the layer behind the trunks and on a computer the 6k forest, crossfaded in,
+   only while nothing is being moved */
+const imgs = {};
 async function loadAssets(){
-  const imgs = {};
-  const imgJobs = ['forest','forestWater','forestBack','granite','moss','stone','stoneNor','leaAlbedo','leaNor','leaRough','maskFront','maskBack']
+  const imgJobs = ['forest','forestWater','granite','moss','stone','stoneNor','leaAlbedo','leaNor','leaRough','maskFront','maskBack']
     .map(k=>loadImage(ASSETS[k]).then(i=>{ imgs[k] = i; }));
   const model = url => retry(()=>gltfLoader.loadAsync(url));
   const models = Promise.all([model(ASSETS.goldFront), model(ASSETS.goldBack), model(ASSETS.rock)]);
-  /* a phone decodes the two depth maps one after the other: each needs ~100 MB on the way */
   const depth = retry(()=>decodeDepth(ASSETS.forestDepth));
-  const backDepth = HI_RES ? retry(()=>decodeDepth(ASSETS.forestBackDepth, true)) : depth.then(()=>retry(()=>decodeDepth(ASSETS.forestBackDepth, true)));
   const light = retry(()=>new RGBELoader().loadAsync(ASSETS.forestLight));
   await Promise.all(imgJobs);
   const [gf, gb, rk] = await models;
@@ -34,7 +38,8 @@ async function loadAssets(){
   scene.environmentRotation.set(0, FOREST_YAW, 0);
   scene.background = null;
   applyLeather(imgs);
-  scene.add(makeBackdrop(imgs.forest, await depth, imgs.forestWater, imgs.forestBack, await backDepth));
+  scene.add(makeBackdrop(imgs.forest, await depth, imgs.forestWater, null, null));
+  backdrop.setDetail(imgs.moss);
   leafHaze.value = backdrop.picture;
   [[gf, frontGoldSlot], [gb, backGoldSlot]].forEach(([gl, slot])=>{
     const m = firstMesh(gl);
@@ -63,11 +68,35 @@ async function loadAssets(){
      render's ground and would otherwise shave the stone's foot off, baring the black
      earth beneath it */
   rockGrp.traverse(o=>{ if(o.isMesh) o.renderOrder = -6; });
+  /* and the book before both: it covers much of the stone and its moss, whose costly
+     shading (nine shells of strands) is then never worked out under it */
+  spinGrp.traverse(o=>{ if(o.isMesh && !o.renderOrder) o.renderOrder = -8; });
+  /* what grows round the boulder comes with it (compressed it is a few MB), so all that
+     is in view shows at once; nothing grows in after the book is shown */
   await nearField(rockMaterial(imgs, true));
   /* the boulder's shadow is in the forest render itself; the backdrop only fills the
      floor under its foot (uFoot) */
 }
+/* the rest, after the book is shown. calm() waits for a moment when nothing is being
+   turned, thrown or riffled, so a texture going up to the GPU never lands mid-gesture */
+async function loadMore(calm = ()=>Promise.resolve()){
+  try{
+    const [back, backDepth] = await Promise.all([loadImage(ASSETS.forestBack), retry(()=>decodeDepth(ASSETS.forestBackDepth, true))]);
+    await back.decode().catch(()=>{});
+    await calm();
+    backdrop.setBack(back, backDepth);
+  }catch(e){ console.warn('The forest behind the trunks could not be loaded:', e); }
+  if(ASSETS.forestFull){
+    try{
+      const [pano, depth] = await Promise.all([loadImage(ASSETS.forestFull), retry(()=>decodeDepth(ASSETS.depthFull))]);
+      await pano.decode().catch(()=>{});
+      await calm();
+      renderer.initTexture(depth);
+      renderer.initTexture(backdrop.setPano(pano, depth));
+    }catch(e){ console.warn('The sharper forest could not be loaded:', e); }
+  }
+}
 
 export {
-  loadAssets
+  loadAssets, loadMore
 };

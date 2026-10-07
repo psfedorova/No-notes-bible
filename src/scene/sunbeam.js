@@ -3,7 +3,9 @@ import * as THREE from 'three';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { mulberry32, cv, makeSpriteCanvas, makeRayAlpha } from '../lib/textures.js';
 import { HI_RES } from '../core/config.js';
+import { NOISE_GLSL, noiseTex } from '../lib/noise.js';
 import { camera, scene, SUN_DIR } from './renderer.js';
+import { GUST_GLSL, nearGust } from './plants.js';
 
 /* a shaft of sun through a gap in the canopy, landing on the book: the book and the
    crown of the boulder stand in a pool of light brighter than the wood round them */
@@ -107,26 +109,48 @@ const beamU = {
 };
 beamU.uX.value.crossVectors(new THREE.Vector3(0, 1, 0), BEAM_DIR).normalize();
 beamU.uY.value.crossVectors(BEAM_DIR, beamU.uX.value).normalize();
+/* the march runs at half the frame's pixels each way: the haze has no edge of its own.
+   The pass only fills its small picture; the last pass of the frame (scene/post.js)
+   lays it over the scene with BEAM_MIX, taking each pixel from the nearby small ones at
+   the same distance as its own, so the haze stays behind the book and the stones where
+   it passes behind them */
+const VIEW_DIST = `float viewDist(float z){
+  vec4 v = uInvProj*vec4(vUv*2.0 - 1.0, z*2.0 - 1.0, 1.0); v /= v.w;
+  return z > 0.99999 ? 800.0 : length(v.xyz); }`;
+const BEAM_MIX = `${VIEW_DIST}
+  vec3 beamAt(){
+    if(uK < 0.001) return vec3(0.0);
+    float d = viewDist(texture2D(tDepth, vUv).x);
+    ivec2 sz = textureSize(tLow, 0);
+    vec2 g = vUv*vec2(sz) - 0.5, f = fract(g);
+    ivec2 i0 = ivec2(floor(g));
+    float acc = 0.0, wsum = 0.0;
+    for(int k=0;k<4;k++){
+      ivec2 o = ivec2(k & 1, k >> 1);
+      vec2 s = texelFetch(tLow, clamp(i0 + o, ivec2(0), sz - 1), 0).rg;
+      float w = (o.x == 1 ? f.x : 1.0 - f.x)*(o.y == 1 ? f.y : 1.0 - f.y);
+      w *= exp(-abs(s.g - d)/(0.03*d + 0.02)) + 1e-4;
+      acc += s.r*w; wsum += w;
+    }
+    return uCol*(acc/wsum)*uK;
+  }`;
 class BeamPass extends Pass {
   constructor(){
     super();
+    this.needsSwap = false;
+    this.low = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
     this.material = new THREE.ShaderMaterial({
-      uniforms: { ...beamU, tColor: { value: null }, tDepth: { value: null }, tGobo: { value: goboTex },
+      uniforms: { ...beamU, tDepth: { value: null }, tGobo: { value: goboTex }, tNoise: { value: noiseTex },
         uInvProj: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: `uniform sampler2D tColor, tDepth, tGobo; uniform mat4 uInvProj, uCamWorld;
-        uniform vec3 uA, uD, uX, uY, uCol; uniform float uSig, uLen, uTime, uK, uGobo; varying vec2 vUv;
-        float h31(vec3 p){ p = fract(p*0.3183099 + 0.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x + p.y + p.z)); }
-        float vn3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0 - 2.0*f);
-          return mix(mix(mix(h31(i), h31(i + vec3(1,0,0)), f.x), mix(h31(i + vec3(0,1,0)), h31(i + vec3(1,1,0)), f.x), f.y),
-                     mix(mix(h31(i + vec3(0,0,1)), h31(i + vec3(1,0,1)), f.x), mix(h31(i + vec3(0,1,1)), h31(i + vec3(1,1,1)), f.x), f.y), f.z); }
+      fragmentShader: `uniform sampler2D tDepth, tGobo; uniform mat4 uInvProj, uCamWorld;
+        uniform vec3 uA, uD, uX, uY; uniform float uSig, uLen, uTime, uGobo; varying vec2 vUv;
+        ${VIEW_DIST}
+        ${NOISE_GLSL}
         void main(){
-          vec4 base = texture2D(tColor, vUv);
-          gl_FragColor = base;
-          if(uK < 0.001) return;
-          float z = texture2D(tDepth, vUv).x;
-          vec4 v = uInvProj*vec4(vUv*2.0 - 1.0, z*2.0 - 1.0, 1.0); v /= v.w;
-          float tEnd = z > 0.99999 ? 800.0 : length(v.xyz);
+          float tEnd = viewDist(texture2D(tDepth, vUv).x);
+          gl_FragColor = vec4(0.0, tEnd, 0.0, 1.0);
+          vec4 v = uInvProj*vec4(vUv*2.0 - 1.0, 0.0, 1.0); v /= v.w;
           vec3 ro = (uCamWorld*vec4(0.0, 0.0, 0.0, 1.0)).xyz, rd = normalize((uCamWorld*vec4(v.xyz, 0.0)).xyz);
           vec3 w0 = ro - uA, dp = rd - uD*dot(rd, uD), wp = w0 - uD*dot(w0, uD);
           float R = uSig*(1.0 + uLen*0.012)*3.0;
@@ -151,16 +175,19 @@ class BeamPass extends Pass {
           }
           float cs = dot(rd, uD);
           float hg = 0.3 + 0.64/pow(1.36 - 1.2*cs, 1.5)*0.2;
-          gl_FragColor = vec4(base.rgb + uCol*acc*dt*hg*uK, base.a);
+          gl_FragColor.r = acc*dt*hg;
         }`
     });
     this.quad = new FullScreenQuad(this.material);
+    this.uniforms = { tLow: { value: this.low.texture }, uInvProj: this.material.uniforms.uInvProj, uCol: beamU.uCol, uK: beamU.uK };
   }
+  setSize(w, h){ this.low.setSize(Math.max(1, Math.round(w/2)), Math.max(1, Math.round(h/2))); }
   render(renderer, writeBuffer, readBuffer){
     const u = this.material.uniforms;
-    u.tColor.value = readBuffer.texture; u.tDepth.value = readBuffer.depthTexture;
+    u.tDepth.value = readBuffer.depthTexture;
     u.uInvProj.value.copy(camera.projectionMatrixInverse); u.uCamWorld.value.copy(camera.matrixWorld);
-    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    if(beamU.uK.value < 0.001) return;
+    renderer.setRenderTarget(this.low);
     this.quad.render(renderer);
   }
 }
@@ -179,14 +206,17 @@ const beamMotes = (()=>{
   g.setAttribute('seed', new THREE.BufferAttribute(seed, 4));
   const m = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    uniforms: { uA: beamU.uA, uD: beamU.uD, uSig: beamU.uSig, uTime: beamU.uTime, uK: { value: 1 }, uScale: { value: 1 } },
+    uniforms: { uA: beamU.uA, uD: beamU.uD, uSig: beamU.uSig, uTime: beamU.uTime, uGust: nearGust, uK: { value: 1 }, uScale: { value: 1 } },
     vertexShader: `attribute vec4 seed; uniform vec3 uA, uD; uniform float uSig, uTime, uScale; varying float vA;
+      ${GUST_GLSL}
       void main(){
         vec3 n1 = normalize(cross(uD, vec3(0.0, 1.0, 0.0))), n2 = cross(n1, uD);
         float ph = seed.w*40.0, t = uTime*(0.05 + 0.08*seed.w);
         float s = seed.x + sin(t*1.3 + ph)*0.8;
         float a = seed.y + t*0.4, r = seed.z*(1.0 + 0.12*sin(t*0.9 + ph));
         vec3 p = uA + uD*s + (n1*cos(a) + n2*sin(a))*r + vec3(sin(t*2.1 + ph), cos(t*1.7 + ph*1.3), sin(t*1.9 + ph*0.7))*0.35;
+        vec2 gw = gustAt(p.xz, 2.5)*(0.6 + 0.8*seed.w)*exp(-max(p.y, 0.0)*0.12);
+        p += vec3(gw.x, length(gw)*0.5, gw.y)*1.6;
         float lit = exp(-r*r/(uSig*uSig*1.3))*smoothstep(-0.2, 1.5, s);
         float glint = pow(0.5 + 0.5*sin(uTime*(0.7 + 1.6*seed.w) + ph), 6.0);
         vA = lit*(0.25 + 0.75*glint);
@@ -205,5 +235,5 @@ const beamMotes = (()=>{
 })();
 
 export {
-  beam, BEAM_AT, BEAM_DIR, beamMotes, BeamPass, beamU, dust, rayGroup
+  beam, BEAM_AT, BEAM_DIR, BEAM_MIX, beamMotes, BeamPass, beamU, dust, rayGroup
 };

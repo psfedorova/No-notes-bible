@@ -27,8 +27,8 @@ const camTarget = new THREE.Vector3();
    the framing's own elevation; dragging the forest moves the goals */
 const orbit = { az:0, azTo:0, el:0, elTo:0, vx:0, vy:0, coast:false };
 const ORBIT_EL = [0.06, 1.38];
-/* how far the eye may stand from the boulder: beyond about 3 m the forest picture
-   tears, and walking round the old oak would step into its trunk */
+/* how far the eye may stand from the boulder at most (app/loop.js keeps it nearer still,
+   within two metres of the point the forest was captured from) */
 const CAM_REACH = 30;
 
 /* a book shut where it lay stays square to the reader; only the first closed pose,

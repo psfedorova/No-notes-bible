@@ -28,7 +28,7 @@ const leafMats = [0xd6dcc4, 0xe8dc9a, 0xd8b06c, 0xa88660].map(tint=>{
         float back = pow(clamp(-dot(normalize(vViewPosition), sv), 0.0, 1.0), 2.0);
         outgoingLight += diffuseColor.rgb*vec3(1.0, 0.95, 0.62)*(0.3 + 2.4*back);
         vec3 haze = textureLod(tHaze, vScr.xy/vScr.w*0.5 + 0.5, 4.0).rgb;
-        outgoingLight = mix(outgoingLight, haze, clamp(1.0 - exp(-max(length(vViewPosition) - 4.0, 0.0)*0.03), 0.0, 0.45)); }
+        outgoingLight = mix(outgoingLight, haze, clamp(1.0 - exp(-max(length(vViewPosition) - 20.0, 0.0)*0.015), 0.0, 0.35)); }
       #include <opaque_fragment>`);
   };
   return m;

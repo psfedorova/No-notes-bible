@@ -4,7 +4,7 @@ import { clamp, lerp, smooth } from '../lib/textures.js';
 import { FILM, intro } from '../core/launch.js';
 import { damp, easeIO, glideStep, sdamp } from '../core/easing.js';
 import { CVR, CW, GROUND_Y, HI_RES, LIFT_H, measureViewport, N, OPEN, PAGE_H, PAGE_W, PH, PW, ROCK_TOP, VH, VW, XJ_C, XJ_O, ZB } from '../core/config.js';
-import { camera, DPR, DPR_MAX, gemLight, renderer, scene, setDPR, setShadowDirty, shadowDirty, shadowKey } from '../scene/renderer.js';
+import { camera, deskRatio, DPR, gemLight, PR_LEVELS, PR_PIN, renderer, scene, setDPR, setShadowDirty, shadowDirty, shadowKey } from '../scene/renderer.js';
 import { BEAM_AT, beamMotes, beamU, dust, rayGroup } from '../scene/sunbeam.js';
 import { composer } from '../scene/post.js';
 import { bookRoot, floatGrp, spinGrp } from '../scene/rig.js';
@@ -28,14 +28,17 @@ import { coverAnim, coverEvent, coverLanded, fallCover, setCoverAnim, stepFall, 
 import { seek, spreadOf, stepWisps } from '../ink/spells.js';
 import { stepRiffle, stepSeek } from '../book/seek.js';
 import { refreshUI } from '../ui/controls.js';
+import { meterTick } from '../ui/fps.js';
 import { rockTime } from '../scene/rock.js';
-import { backdrop } from '../scene/forest.js';
-import { nearTime } from '../scene/plants.js';
+import { backdrop, FOREST_CAP } from '../scene/forest.js';
+import { nearTime, setGrassBudget } from '../scene/plants.js';
 import { camBlend, stepCamBlend } from '../film/opening.js';
 
 const liveFov = ()=> clamp(2*Math.atan(Math.tan(20*Math.PI/180)*0.8/(VW/VH))*180/Math.PI, 40, 62);
 function onResize(){
   if(!measureViewport()) return;
+  /* moved to a bigger screen, a computer keeps within its pixel budget */
+  if(HI_RES && !PR_PIN && Math.abs(deskRatio() - DPR) > 0.01){ setDPR(deskRatio()); renderer.setPixelRatio(DPR); composer.setPixelRatio(DPR); }
   renderer.setSize(VW, VH, false);
   composer.setSize(VW, VH);
   camera.aspect = VW/VH;
@@ -58,9 +61,14 @@ addEventListener('resize', onResize);
 try{ new ResizeObserver(()=>onResize()).observe(document.documentElement); }catch(_){}
 
 let last = performance.now(), clock = 0, bobAmt = 1;
-const _bc = new THREE.Vector3();
+/* the opening played live (film/capture.js): it moves the scene ahead of each update */
+let story = null;
+function setStory(fn){ story = fn; }
+const _bc = new THREE.Vector3(), _rd = new THREE.Vector3(), _rc = new THREE.Vector3();
+const EYE_SPHERE = 20;
 function update(dt){
   clock += dt;
+  if(story) story(dt);
   stepFrame(dt);
   const theta0 = st.theta;
   if(g && g.mode === 'cover'){
@@ -211,8 +219,15 @@ function update(dt){
     _bc.set(fz*c.x, floatGrp.position.y, fz*c.z);
   }else _bc.set(fz*st.focusSide*(XJ_O + PW*0.5), floatGrp.position.y, fz*0.12);
   sdamp(camTarget, 'x', _bc.x, 0.4, dt); sdamp(camTarget, 'y', _bc.y, 0.3, dt); sdamp(camTarget, 'z', _bc.z, 0.4, dt);
-  st.zoom = Math.min(st.zoom, Math.max(1, CAM_REACH/fitDistance()));
-  sdamp(st, 'camD', lerp(Math.min(fitDistance()*st.zoom, CAM_REACH), pageD, fz), 0.45, dt);
+  /* the forest is a picture taken from one point: the further the eye stands from it the
+     more it slides apart (low by the stream it tears along the bank and round the trunks),
+     so the eye keeps within about two metres of that point, wherever it looks from. The
+     book is always let in whole, however far that takes it */
+  _rd.subVectors(camera.position, camTarget).normalize();
+  _rc.subVectors(camTarget, FOREST_CAP);
+  const rb = _rd.dot(_rc), reach = Math.max(fitDistance(), Math.min(CAM_REACH, -rb + Math.sqrt(Math.max(0, rb*rb - _rc.lengthSq() + EYE_SPHERE*EYE_SPHERE))));
+  st.zoom = Math.min(st.zoom, Math.max(1, reach/fitDistance()));
+  sdamp(st, 'camD', lerp(Math.min(fitDistance()*st.zoom, reach), pageD, fz), 0.45, dt);
   if(st.camEl === undefined) st.camEl = camElevation();
   const el0 = sdamp(st, 'camEl', lerp(camElevation(), WRITE_EL, fz), 0.5, dt);
   /* walking round the rock: a flick coasts on, the eye never sinks into the
@@ -224,9 +239,15 @@ function update(dt){
     if(Math.hypot(orbit.vx, orbit.vy) < 0.02) orbit.coast = false;
   }
   orbit.elTo = clamp(orbit.elTo, ORBIT_EL[0] - camElevation(), ORBIT_EL[1] - camElevation());
+  /* the forest is a picture taken from one point a metre over the floor: from much higher
+     the stream's bank, which that point never saw, tears into smears and straight seams,
+     so looking round the eye rises no more than 60 cm above it */
+  const elTop = Math.asin(clamp((FOREST_CAP.y + 6 - camTarget.y)/Math.max(1e-3, st.camD), -1, 1));
+  orbit.elTo = Math.min(orbit.elTo, Math.max(0, elTop - camElevation()));
   if(fz < 0.001 && Math.abs(orbit.azTo) > Math.PI){ const w = Math.round(orbit.azTo/(2*Math.PI))*2*Math.PI; orbit.azTo -= w; orbit.az -= w; }
   sdamp(orbit, 'az', orbit.azTo, 0.22, dt); sdamp(orbit, 'el', orbit.elTo, 0.22, dt);
-  const az = orbit.az*(1 - fz), el = clamp(el0 + orbit.el*(1 - fz), ORBIT_EL[0], Math.max(ORBIT_EL[1], el0));
+  /* leaning over a page to read or write, the eye is close and may look straight down */
+  const az = orbit.az*(1 - fz), el = Math.min(clamp(el0 + orbit.el*(1 - fz), ORBIT_EL[0], Math.max(ORBIT_EL[1], el0)), Math.max(elTop, lerp(ORBIT_EL[0], el0, fz)));
   const ce = Math.cos(el)*st.camD;
   camera.position.set(camTarget.x + Math.sin(az)*ce, camTarget.y + Math.sin(el)*st.camD, camTarget.z + Math.cos(az)*ce);
   camera.position.y = Math.max(camera.position.y, GROUND_Y + 1.0);
@@ -235,7 +256,7 @@ function update(dt){
   _bc.set(camTarget.x, camTarget.y + lift, camTarget.z);
   camera.lookAt(_bc);
   if(camBlend) stepCamBlend(dt);
-  if(FILM && window.__filmCam) window.__filmCam(dt);
+  if(window.__filmCam) window.__filmCam(dt);
   layout(false);
   floatGrp.updateMatrixWorld(true);
 
@@ -267,35 +288,70 @@ function frame(fixed){
   const raw = fixed || (now-last)/1000, dt = Math.min(0.05, raw);
   last = now;
   adaptPixels(raw);
+  adaptGrass(raw);
   update(dt);
+  /* the bob and the jolt die away without ever reaching nought, and for minutes they move
+     the book by less than an atom: only a move past a hundredth of a millimetre counts */
   const m = bookRoot.matrixWorld.elements;
-  for(let i=0;i<16;i++) if(m[i] !== shadowKey[i]){ shadowKey[i] = m[i]; setShadowDirty(true); }
+  for(let i=0;i<16;i++) if(Math.abs(m[i] - shadowKey[i]) > 1e-4){ shadowKey.set(m); setShadowDirty(true); break; }
   renderer.shadowMap.needsUpdate = shadowDirty;
   setShadowDirty(false);
   if(backdrop) backdrop.draw();
   composer.render(dt);
   prewarmPages(now);
 }
-/* a phone that cannot keep up draws fewer pixels: after two slow seconds it steps down,
-   after three quick ones in a row back up, only while nothing moves, since the new
-   targets take a moment to make */
-const PR_STEPS = [1, 1.25, 1.5, 2].filter(p=>p < DPR_MAX).concat(DPR_MAX);
-let prSum = 0, prN = 0, prQuick = 0;
+/* a phone that cannot keep up draws fewer pixels: frames are timed while the loop runs
+   uncapped (not resting at 30), and after a second and a half below 42 a second it steps
+   one rung down the ladder, after three quick spells in a row one back up. A rung that
+   ran slow is not tried again for a while, longer each time, so it does not see-saw.
+   A step down that won nothing (the time goes somewhere other than the pixels) is taken
+   back, and the ladder stays there for two minutes rather than blur the book for naught.
+   The new size is taken only while nothing moves, since the new targets take a moment */
+let prSum = 0, prN = 0, prQuick = 0, prWant = -1, prDown = null, prStop = 0;
+const prBan = new Map();
+/* any screen whose frames run under about 45 a second while the book is in use draws
+   less of the far grass, a step every two seconds, down to a third of it, and takes it
+   back after six quick seconds; the grass near the book and the stone always stays */
+let grassK = 1, gSum = 0, gN = 0, gQuick = 0;
+function adaptGrass(raw){
+  if(document.hidden || raw > 0.5 || still()){ gSum = 0; gN = 0; return; }
+  gSum += raw; gN++;
+  if(gSum < 2) return;
+  const avg = gSum/gN;
+  gSum = 0; gN = 0;
+  let k = grassK;
+  if(avg > 1/45){ k = Math.max(0.3, k - 0.35); gQuick = 0; }
+  else if(avg < 1/56){ if(++gQuick >= 3){ k = Math.min(1, k + 0.35); gQuick = 0; } }
+  else gQuick = 0;
+  if(k === grassK) return;
+  grassK = k;
+  setGrassBudget(k);
+}
 function adaptPixels(raw){
-  if(HI_RES) return;
-  if(document.hidden || raw > 0.5 || resting()){ prSum = 0; prN = 0; return; }
-  prSum += raw; prN++;
-  if(prSum < 2) return;
-  const avg = prSum/prN;
-  prSum = 0; prN = 0;
-  if(g || pinch || st.flight || st.riffle || coverAnim || spinAnim) return;
-  const i = PR_STEPS.indexOf(DPR);
-  let to = i;
-  if(avg > 1/32){ to = Math.max(0, i - 1); prQuick = 0; }
-  else if(avg < 1/48){ if(++prQuick >= 3){ to = Math.min(PR_STEPS.length - 1, i + 1); prQuick = 0; } }
-  else prQuick = 0;
-  if(to === i) return;
-  setDPR(PR_STEPS[to]);
+  if(PR_PIN || HI_RES) return;
+  const now = performance.now(), i = PR_LEVELS.indexOf(DPR);
+  if(document.hidden || raw > 0.25 || still()){ prSum = 0; prN = 0; }
+  else if((prSum += raw, ++prN, prSum >= 1.5)){
+    const avg = prSum/prN, down = prDown;
+    prSum = 0; prN = 0; prDown = null;
+    if(down && i === down.from + 1 && avg > down.avg*0.9){ prWant = down.from; prStop = now + 120000; }
+    else if(avg > 1/42){
+      prQuick = 0;
+      if(i < PR_LEVELS.length - 1 && prStop < now){
+        const b = prBan.get(i) || { n: 0 };
+        b.n++; b.until = now + 15000*Math.pow(3, b.n - 1);
+        prBan.set(i, b);
+        prDown = { from: i, avg };
+        prWant = i + 1;
+      }
+    }else if(avg < 1/56){
+      const b = prBan.get(i - 1);
+      if(++prQuick >= 3 && i > 0 && !(b && b.until > now)){ prWant = i - 1; prQuick = 0; }
+    }else prQuick = 0;
+  }
+  if(prWant < 0 || g || pinch || st.flight || st.riffle || coverAnim || spinAnim) return;
+  setDPR(PR_LEVELS[prWant]);
+  prWant = -1;
   renderer.setPixelRatio(DPR);
   composer.setPixelRatio(DPR);
   onResize();
@@ -336,16 +392,28 @@ function restPages(now){
 let activeAt = 0, drawnAt = 0;
 ['pointerdown', 'pointermove', 'keydown', 'input'].forEach(t=>addEventListener(t, ()=>{ activeAt = performance.now(); }, { capture:true, passive:true }));
 function still(){
-  return performance.now() - activeAt > 2500 && !g && !pinch && !st.flight && !st.riffle
+  return !story && performance.now() - activeAt > 2500 && !g && !pinch && !st.flight && !st.riffle
     && !coverAnim && !spinAnim && !inertia && !orbit.coast && seek.goal === null;
 }
-function resting(){ return !HI_RES && still(); }
+/* a moment when nothing is turned, thrown, riffled or played: the late loads lay their
+   pictures in then, so an upload never lands in the middle of a gesture */
+function calm(){
+  const quiet = ()=> !story && !g && !pinch && !st.flight && !st.riffle && !coverAnim && !spinAnim && !inertia && !orbit.coast;
+  return new Promise(r=>{ const check = ()=> quiet() ? r() : setTimeout(check, 150); check(); });
+}
+/* the screen's own frame interval decides which of its frames are drawn: the one nearest
+   the step, so a 120 Hz screen draws every other frame, while a 75 or 144 Hz one draws
+   at 75 or 72 a second rather than falling to 37 or 48 */
+let rafDt = 1000/60, rafAt = 0;
 function rafLoop(now){
   requestAnimationFrame(rafLoop);
+  if(rafAt) rafDt += (Math.min(50, now - rafAt) - rafDt)*0.1;
+  rafAt = now;
   const step = still() ? 1000/30 : 1000/60;
-  if(now - drawnAt < step - 1) return;
-  drawnAt = Math.max(drawnAt + step, now - step);
+  if(now - drawnAt < step - rafDt*0.6) return;
+  drawnAt = now;
   frame();
+  meterTick(now, step > 20);
 }
 /* rAF sleeps in a hidden tab: a turn or an opening already under way still plays out
    (screenshots of a hidden tab stay real), then the book sleeps until it is shown */
@@ -382,5 +450,5 @@ async function warmUp(){
 }
 
 export {
-  clock, frame, liveFov, onResize, rafLoop, update, warmUp
+  calm, clock, frame, liveFov, onResize, rafLoop, setStory, update, warmUp
 };
