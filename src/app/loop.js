@@ -31,7 +31,7 @@ import { refreshUI } from '../ui/controls.js';
 import { meterTick } from '../ui/fps.js';
 import { rockTime } from '../scene/rock.js';
 import { backdrop, FOREST_CAP } from '../scene/forest.js';
-import { nearTime, setGrassBudget } from '../scene/plants.js';
+import { nearTime } from '../scene/plants.js';
 import { camBlend, stepCamBlend } from '../film/opening.js';
 
 const liveFov = ()=> clamp(2*Math.atan(Math.tan(20*Math.PI/180)*0.8/(VW/VH))*180/Math.PI, 40, 62);
@@ -288,7 +288,6 @@ function frame(fixed){
   const raw = fixed || (now-last)/1000, dt = Math.min(0.05, raw);
   last = now;
   adaptPixels(raw);
-  adaptGrass(raw);
   update(dt);
   /* the bob and the jolt die away without ever reaching nought, and for minutes they move
      the book by less than an atom: only a move past a hundredth of a millimetre counts */
@@ -309,24 +308,6 @@ function frame(fixed){
    The new size is taken only while nothing moves, since the new targets take a moment */
 let prSum = 0, prN = 0, prQuick = 0, prWant = -1, prDown = null, prStop = 0;
 const prBan = new Map();
-/* any screen whose frames run under about 45 a second while the book is in use draws
-   less of the far grass, a step every two seconds, down to a third of it, and takes it
-   back after six quick seconds; the grass near the book and the stone always stays */
-let grassK = 1, gSum = 0, gN = 0, gQuick = 0;
-function adaptGrass(raw){
-  if(document.hidden || raw > 0.5 || still()){ gSum = 0; gN = 0; return; }
-  gSum += raw; gN++;
-  if(gSum < 2) return;
-  const avg = gSum/gN;
-  gSum = 0; gN = 0;
-  let k = grassK;
-  if(avg > 1/45){ k = Math.max(0.3, k - 0.35); gQuick = 0; }
-  else if(avg < 1/56){ if(++gQuick >= 3){ k = Math.min(1, k + 0.35); gQuick = 0; } }
-  else gQuick = 0;
-  if(k === grassK) return;
-  grassK = k;
-  setGrassBudget(k);
-}
 function adaptPixels(raw){
   if(PR_PIN || HI_RES) return;
   const now = performance.now(), i = PR_LEVELS.indexOf(DPR);

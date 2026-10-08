@@ -430,7 +430,8 @@ function makeBackdrop(pano, depth, water, back, backDepth){
   return dome;
 }
 /* a phone marches the forest at half its frame's pixels, the picture is hazy enough to bear it */
-const backdropPR = ()=> HI_RES ? Math.min(DPR, 1) : DPR*0.5;
+const MARCH_PX = 2.1e6;
+const backdropPR = ()=> HI_RES ? Math.min(DPR, 1, Math.sqrt(MARCH_PX/(VW*VH))) : DPR*0.5;
 let backdrop = null;
 
 export {

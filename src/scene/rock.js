@@ -156,7 +156,7 @@ function mossShells(rock, u, count){
   grp.name = 'moss';
   for(let i=1;i<=count;i++){
     const t = i/count;
-    const m = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, envMapIntensity: 0.6 });
+    const m = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, envMapIntensity: 0.6, alphaToCoverage: true });
     m.onBeforeCompile = sh=>{
       Object.assign(sh.uniforms, u, { uT: { value: t }, uLen: { value: 0.11 } });
       sh.vertexShader = 'uniform float uT, uLen; varying vec3 vWp; varying vec3 vWn; varying float vBed;\n' + sh.vertexShader
@@ -172,15 +172,21 @@ function mossShells(rock, u, count){
              before the moss mask has to be worked out */
           if(vBed < 0.15 || vWp.y < ${GROUND_Y.toFixed(2)}) discard;
           vec3 sp = vWp*70.0;
-          float strand = vn3(sp) *0.65 + vn3(sp*2.3 + 5.0)*0.35;
-          if(strand < 0.32 + uT*0.42) discard;
+          float strand = vn3(sp) *0.65 + vn3(sp*2.3 + 5.0)*0.35 - (0.32 + uT*0.42);
+          float cover = clamp(strand/max(fwidth(strand), 1e-4) + 0.5, 0.0, 1.0);
+          if(cover <= 0.0) discard;
           /* cushions: the strands stand tall in clumps and lie low between them */
-          if(vn3(vWp*3.2 + 9.0) < uT*0.7 - 0.05) discard;
+          float clump = vn3(vWp*3.2 + 9.0) - (uT*0.7 - 0.05);
+          cover *= clamp(clump/max(fwidth(clump), 1e-4) + 0.5, 0.0, 1.0);
+          if(cover <= 0.0) discard;
           vec3 Nw = normalize(vWn);
-          if(mossMask(vWp, Nw) < 0.3 + uT*0.55) discard;
+          float edge = mossMask(vWp, Nw) - (0.3 + uT*0.55);
+          cover *= clamp(edge/max(fwidth(edge), 1e-4) + 0.5, 0.0, 1.0);
+          if(cover <= 0.0) discard;
           vec3 Wt = triW(Nw);
           vec3 mos = mossTone(tri(tMoss, vWp*mScale, Wt).rgb, vWp);
-          diffuseColor.rgb *= mos*(0.55 + 0.6*uT);`);
+          diffuseColor.rgb *= mos*(0.55 + 0.6*uT);
+          diffuseColor.a = cover;`);
     };
     const sh = new THREE.Mesh(rock.geometry, m);
     sh.receiveShadow = true;

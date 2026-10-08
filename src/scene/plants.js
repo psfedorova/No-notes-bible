@@ -252,11 +252,6 @@ async function nearField(skirtMat){
    bank grows grass down to the water. Where the floor is half earth the tufts thin out
    rather than shrink, and at the near field's edge they shorten and thin out into the
    picture. Built in the forest's own frame (the group turns it by FOREST_YAW) */
-let grassPlots = [];
-/* how much of the far grass is drawn, 0..1 (app/loop.js adaptGrass) */
-function setGrassBudget(k){
-  grassPlots.forEach(([mesh, near, far])=>{ mesh.geometry.instanceCount = near + Math.round(far*k); });
-}
 function grassField(G, stones, tufts){
   const N = HI_RES ? 220000 : 90000, SEG = HI_RES ? 4 : 2, WIDE = HI_RES ? 1 : 1.3;
   const R1 = GRASS_R1, R2 = GRASS_R2;
@@ -367,21 +362,15 @@ function grassField(G, stones, tufts){
   }
   /* out where the grass thins into the picture, each blade is a few pixels and the floor
      between them is already painted as grass: two in five go there, which none near the
-     book or the stone does. Those far blades come last, in no order, so a screen that
-     cannot keep up draws fewer of them (setGrassBudget) and the grass near is never touched.
-     The field is cut into square plots, each its own mesh, so the plots out of view (behind
-     the eye, beside the frame) are not drawn at all */
+     book or the stone does. The field is cut into square plots, each its own mesh, so the
+     plots out of view (behind the eye, beside the frame) are not drawn at all */
   const PLOT = 24, PN = Math.ceil(2*R2/PLOT), plots = [];
-  for(let i=0;i<PN*PN;i++) plots.push({ near: [], far: [] });
+  for(let i=0;i<PN*PN;i++) plots.push([]);
   const plotOf = i => Math.min(PN - 1, Math.max(0, Math.floor((root[i*4 + 2] + R2)/PLOT)))*PN + Math.min(PN - 1, Math.max(0, Math.floor((root[i*4] + R2)/PLOT)));
-  const far = [];
   for(let i=0;i<n;i++){
     const r = Math.hypot(root[i*4], root[i*4 + 2]);
-    if(r <= R1 + 4) plots[plotOf(i)].near.push(i);
-    else if(hh(i*0.37, 5.1) >= 0.4*sstep(R1 + 4, R1 + 14, r)) far.push(i);
+    if(r <= R1 + 4 || hh(i*0.37, 5.1) >= 0.4*sstep(R1 + 4, R1 + 14, r)) plots[plotOf(i)].push(i);
   }
-  for(let i=far.length - 1;i>0;i--){ const j = Math.floor(rnd()*(i + 1)), t = far[i]; far[i] = far[j]; far[j] = t; }
-  far.forEach(i=>plots[plotOf(i)].far.push(i));
   const pos = [], idx = [];
   for(let s=0;s<=SEG;s++){ const t = s/SEG; pos.push(-0.5, t, 0, 0.5, t, 0); }
   for(let s=0;s<SEG;s++){ const a = s*2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
@@ -390,8 +379,9 @@ function grassField(G, stones, tufts){
   const mat = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     uniforms: { uTime: nearTime, uGust: nearGust, tPano: U.tPano, tWater: U.tWater, tDepth: U.tDepth, uNear: U.uNear, uFar: U.uFar, tAO: U.tAO, uAO: U.uAO,
-      uCap: { value: FOREST_CAP }, uGain: U.uGain, uSun: { value: SUN_DIR }, tHaze: { value: backdrop.picture } },
+      uCap: { value: FOREST_CAP }, uGain: U.uGain, uSun: { value: SUN_DIR }, tHaze: { value: backdrop.picture }, uFoot: U.uFoot },
     vertexShader: `uniform float uTime, uGain, uNear, uFar; uniform sampler2D tPano, tWater, tDepth, tAO; uniform vec3 uCap; uniform vec2 uAO;
+      uniform float uFoot[${ROCK_FOOT_N}];
       ${GUST_GLSL}
       attribute vec4 aRoot, aBlade;
       varying vec3 vCol, vWp; varying float vT; varying vec4 vScr;
@@ -401,6 +391,18 @@ function grassField(G, stones, tufts){
         float L = length(rel);
         vec2 uv = eqUv(rel/L);
         vec3 fl = textureLod(tPano, uv, 1.0).rgb;
+        { float rr = length(r.xz), fa = atan(r.z, r.x)*${(ROCK_FOOT_N/(2*Math.PI)).toFixed(6)} + ${ROCK_FOOT_N.toFixed(1)};
+          int f0 = int(floor(fa)) % ${ROCK_FOOT_N}, f1 = (f0 + 1) % ${ROCK_FOOT_N};
+          float rf = mix(uFoot[f0], uFoot[f1], fract(fa));
+          if(rf > 0.0 && rr < rf + 3.5){
+            vec2 o = r.xz/rr, s = vec2(-o.y, o.x);
+            vec3 fo = vec3(0.0);
+            for(int k=0;k<4;k++){
+              vec2 q = o*(rf + 3.0 + float(k/2)*1.5) + s*(float(k%2)*2.0 - 1.0)*1.2;
+              fo += textureLod(tPano, eqUv(normalize(vec3(q.x, r.y, q.y) - uCap)), 2.0).rgb;
+            }
+            fl = max(fl, fo*0.25*mix(0.75, 1.0, smoothstep(rf, rf + 3.5, rr)));
+          } }
         float wet = textureLod(tWater, uv, 0.0).r;
         float seen = 1.0/(textureLod(tDepth, uv, 0.0).r*(1.0/uNear - 1.0/uFar) + 1.0/uFar);
         vec3 fs = pow(textureLod(tPano, uv, 5.0).rgb, vec3(1.0/2.2));
@@ -444,9 +446,8 @@ function grassField(G, stones, tufts){
   });
   const field = new THREE.Group();
   field.name = 'grass';
-  grassPlots = [];
-  plots.forEach(({ near, far: farHere })=>{
-    const order = near.concat(farHere), m = order.length;
+  plots.forEach(order=>{
+    const m = order.length;
     if(!m) return;
     const r4 = new Float32Array(m*4), b4 = new Float32Array(m*4);
     let cx = 0, cy = 0, cz = 0;
@@ -465,11 +466,10 @@ function grassField(G, stones, tufts){
     const mesh = new THREE.Mesh(ig, mat);
     mesh.userData.noPick = true;
     field.add(mesh);
-    grassPlots.push([mesh, near.length, farHere.length]);
   });
   return field;
 }
 
 export {
-  gust, GUST_GLSL, nearField, nearGust, nearTime, setGrassBudget
+  gust, GUST_GLSL, nearField, nearGust, nearTime
 };
