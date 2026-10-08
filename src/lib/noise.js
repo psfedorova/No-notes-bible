@@ -1,11 +1,6 @@
-/* value noise read from a texture: one filtered lookup instead of eight hashes */
 import * as THREE from 'three';
 import { mulberry32 } from './textures.js';
 
-/* the lattice of random values is a 3D texture; read at i + smoothstep(f) between texel
-   centres, the hardware's linear filter gives the same smooth-faded value noise the
-   eight-hash version gave, for the cost of one lookup. It repeats every 128 cells,
-   which no surface in the scene is large enough to show */
 const NOISE_N = 128;
 const noiseTex = (()=>{
   const N = NOISE_N, d = new Uint8Array(N*N*N), rnd = mulberry32(7331);

@@ -1,4 +1,3 @@
-/* writing: the hidden quill that takes the keyboard and puts its letters on the page */
 import { clamp } from '../lib/textures.js';
 import { fontCss } from '../core/config.js';
 import { caretXY, indexOnLine, layoutText, textBox } from './layout.js';
@@ -15,14 +14,13 @@ import { openSeek, openSpells } from '../ui/dialogs.js';
 import { refreshUI } from '../ui/controls.js';
 
 const quill = document.getElementById('quill');
-let writing = null;           // { n }
+let writing = null;
 let composing = false;
 let lastGood = { v:'', a:0, b:0 };
 function setLastGood(v){ lastGood = v; }
 const pageNoEl = document.getElementById('pageNo');
-const burning = new Set();    // pages with letters still glowing
+const burning = new Set();
 
-/* a keeper the creator lets only read turns the pages but cannot take the quill */
 const readOnly = ()=> !!shelf && shelf.readOnly();
 function enterWriting(n, idx){
   if(readOnly()){ toast('YOU CAN ONLY READ THIS BOOK', 2200); return; }
@@ -51,10 +49,6 @@ function exitWriting(keepFocus){
   st.bob = 1;
   refreshUI();
 }
-/* where an edit changed the text: the common head, then what went and what came */
-/* what one stroke of the quill did: at `at`, `del` letters went and `ins`
-   came; given the selection it was made on (a, b) and the caret after (c),
-   a letter typed beside the same letter of another hand is not taken for theirs */
 function editSpan(oldV, newV, a, b, c){
   const lo = Math.min(oldV.length, newV.length);
   let p = 0;
@@ -62,8 +56,6 @@ function editSpan(oldV, newV, a, b, c){
   let s = 0;
   while(s < lo - p && oldV[oldV.length-1-s] === newV[newV.length-1-s]) s++;
   const least = { at: p, del: oldV.length - p - s, ins: newV.length - p - s };
-  /* a reading from the selection is taken only if it deletes no more than
-     the plainest reading does */
   if(a !== undefined){
     const d = oldV.length - newV.length;
     const fits = (at, del, ins) => at >= 0 && del >= 0 && ins >= 0 && at + del <= oldV.length &&
@@ -79,7 +71,6 @@ function refuseStroke(msg){
   quill.setSelectionRange(lastGood.a, lastGood.b);
   toast(msg, 2200);
 }
-/* keep one birth time per character, so new letters can burn in */
 function trackBirths(n, oldV, newV){
   const now = performance.now();
   const old = pages[n].born || [];

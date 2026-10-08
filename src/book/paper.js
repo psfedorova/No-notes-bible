@@ -1,10 +1,8 @@
-/* the vellum of the leaves and the endpapers */
 import * as THREE from 'three';
 import { clamp, lerp, mulberry32, fbm, upsample, cv, normalFromHeight, tex } from '../lib/textures.js';
 import { CH, CW, PAGE_H, PAGE_W, PH } from '../core/config.js';
 import { shed } from '../assets/loaders.js';
 
-/* vellum: mottled, crinkled, fibrous, with foxing, like a hand-made sheet */
 function makeVellum(S){
   const mot = upsample(fbm(S>>2,S>>2, 3,3, 5, 404), S>>2,S>>2, S,S);
   const stain = upsample(fbm(S>>3,S>>3, 2,2, 3, 91), S>>3,S>>3, S,S);
@@ -25,7 +23,6 @@ function makeVellum(S){
     hf[i] = 0.5 + (ridged-0.6)*0.55 + (fib[i]-0.5)*0.15 + (mot[i]-0.5)*0.2 + (rnd()-0.5)*0.12;
   }
   ctx.putImageData(img,0,0);
-  /* long fibres laid into the sheet */
   for(let i=0;i<2600;i++){
     const x = rnd()*S, y = rnd()*S, a = (rnd()-0.5)*0.7, L = 6 + rnd()*22;
     ctx.strokeStyle = rnd() < 0.5 ? `rgba(255,240,205,${0.05+rnd()*0.07})` : `rgba(90,60,25,${0.04+rnd()*0.06})`;
@@ -34,13 +31,11 @@ function makeVellum(S){
     ctx.quadraticCurveTo(x + Math.cos(a)*L*0.5, y + Math.sin(a)*L*0.5 + (rnd()-0.5)*4, x + Math.cos(a)*L, y + Math.sin(a)*L);
     ctx.stroke();
   }
-  /* the tooth of a rag sheet: flecks of bark and dark fibre caught in the pulp */
   for(let i=0;i<9000;i++){
     const x = rnd()*S, y = rnd()*S, r = 0.4 + rnd()*0.9;
     ctx.fillStyle = rnd() < 0.8 ? `rgba(90,70,45,${0.05+rnd()*0.12})` : `rgba(255,246,225,${0.06+rnd()*0.1})`;
     ctx.fillRect(x, y, r, r*(0.6+rnd()*0.9));
   }
-  /* foxing */
   for(let i=0;i<110;i++){
     const x = rnd()*S, y = rnd()*S, r = 1 + rnd()*5;
     const gr = ctx.createRadialGradient(x,y,0,x,y,r);
@@ -50,7 +45,6 @@ function makeVellum(S){
   return { base: c, normalTex: shed(tex(normalFromHeight(hf,S,S,3.0), {rx:2.5, ry:2.5})) };
 }
 const parch = makeVellum(1024);
-/* the edges of an old leaf brown first, unevenly, worst at the corners */
 const edgeTone = (()=>{
   const W = PAGE_W >> 1, H = PAGE_H >> 1;
   const n1 = upsample(fbm(W>>3, H>>3, 4, 5, 4, 808), W>>3, H>>3, W, H);
@@ -68,13 +62,8 @@ const edgeTone = (()=>{
   ctx.putImageData(img, 0, 0);
   return c;
 })();
-/* doublure: the inside of each board is lined with dark chocolate leather, tooled
-   in gold (fillets, a beaded roll, filigree corner pieces), carried round the
-   hinge into the gutter. One map: u 0..HINGE_U is the hinge, HINGE_U..1 the panel */
 const EP_X0 = 0.14, EP_X1 = CW - 0.07, EP_H = CH - 0.14, EP_HINGE = 0.45, JOINT_H = PH - 0.02;
 const HINGE_U = EP_HINGE/(EP_X1 - EP_X0 + EP_HINGE);
-/* the pastedown and its joints lie a hair above the board: pulled toward the eye in depth,
-   so the board's own face never shows through them at a grazing angle */
 const matEndpaper = new THREE.MeshStandardMaterial({ color: 0x2a1d14, roughness: 0.7, metalness: 0, side: THREE.DoubleSide,
   polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
 

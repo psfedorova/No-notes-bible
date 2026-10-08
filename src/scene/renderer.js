@@ -1,20 +1,14 @@
-/* the WebGL renderer, the scene, the camera and the forest sun */
 import * as THREE from 'three';
 import { setMaxAniso } from '../lib/textures.js';
 import { HI_RES, VH, VW } from '../core/config.js';
 
 const canvasEl = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: false, alpha: false, powerPreference: 'high-performance' });
-/* a phone starts at 1.5 device pixels to a CSS pixel and steps down while its frames run
-   slow (adaptPixels in app/loop.js). A computer draws at its screen's own ratio, up to 2,
-   and is never stepped down to buy frames; only a huge sharp screen (4K at 2x) is drawn
-   at no more than about six million pixels, which from where one sits looks the same */
 const DPR_MAX = Math.min(devicePixelRatio, HI_RES ? 2 : 1.5);
 const PR_FLOOR = Math.min(DPR_MAX, 1);
 const PR_LEVELS = [];
 for(let p = DPR_MAX; p > PR_FLOOR + 0.02; p *= 0.875) PR_LEVELS.push(+p.toFixed(3));
 PR_LEVELS.push(PR_FLOOR);
-/* ?pr=1.5 pins the ratio and stops the ladder, for measuring */
 const PR_PIN = +new URLSearchParams(location.search).get('pr') || 0;
 const PX_MAX = 6.2e6;
 const deskRatio = ()=> Math.min(DPR_MAX, Math.max(1.25, Math.sqrt(PX_MAX/(VW*VH))));
@@ -27,12 +21,34 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.04;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-/* the shadow maps are drawn again only when something casting one has moved: the book
-   (bookRoot's place) or its leaves and boards (layout); the boulder never moves */
 renderer.shadowMap.autoUpdate = false;
-/* a phone keeps no copy of its pictures once they are on the GPU (shed), so a GPU that
-   comes back after iOS took it away has nothing to load them from: start the page again */
+/* iOS Safari drops the WebGL context of a background tab; shed textures cannot be uploaded again */
 canvasEl.addEventListener('webglcontextrestored', ()=>{ if(!HI_RES) location.reload(); });
+const SUN_TAPS = HI_RES ? 20 : 12;
+THREE.ShaderChunk.shadowmap_pars_fragment = THREE.ShaderChunk.shadowmap_pars_fragment
+  .replace('float getShadow(', `float sunShadow( sampler2D map, vec2 mapSize, float spread, vec4 c ){
+    vec2 texel = 1.0/mapSize;
+    float rot = 6.2831853*fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    float search = spread*0.18 + 2.0*texel.x, sum = 0.0, n = 0.0;
+    for(int i=0;i<12;i++){
+      float r = sqrt((float(i) + 0.5)/12.0), a = float(i)*2.39996 + rot;
+      float d = unpackRGBAToDepth(texture2D(map, c.xy + vec2(cos(a), sin(a))*r*search));
+      if(d < c.z){ sum += d; n += 1.0; }
+    }
+    if(n < 0.5) return 1.0;
+    float pen = max((c.z - sum/n)*spread, 1.5*texel.x);
+    if(n > 11.5 && pen < search) return 0.0;
+    float lit = 0.0;
+    for(int i=0;i<${SUN_TAPS};i++){
+      float r = sqrt((float(i) + 0.5)/${SUN_TAPS}.0), a = float(i)*2.39996 + rot;
+      lit += texture2DCompare(map, c.xy + vec2(cos(a), sin(a))*r*pen, c.z);
+    }
+    return lit/${SUN_TAPS}.0;
+  }
+  float getShadow(`)
+  .replace(/(if \( frustumTest \) \{\s*)#if defined\( SHADOWMAP_TYPE_PCF \)/,
+    '$1if( shadowRadius < 0.0 ) shadow = sunShadow( shadowMap, shadowMapSize, -shadowRadius, shadowCoord ); else {\n\t\t#if defined( SHADOWMAP_TYPE_PCF )')
+  .replace(/(shadow = texture2DCompare\( shadowMap, shadowCoord\.xy, shadowCoord\.z \);\s*#endif)/, '$1\n\t\t}');
 let shadowDirty = true;
 function setShadowDirty(v){ shadowDirty = v; }
 const shadowKey = new Float32Array(16);
@@ -43,9 +59,6 @@ scene.background = new THREE.Color(0x0b0f08);
 const camera = new THREE.PerspectiveCamera(40, VW/VH, 0.1, 400);
 camera.position.set(0, 8, 9);
 
-/* the low sun of the forest render (blender/build_forest.py SUN_TOWARD), behind the book on the right */
-/* the whole forest (and the boulder in it) is turned about the book this much, so the
-   reader faces the sun through the trees, the way the reference is lit */
 const FOREST_YAW = 0.5;
 const SUN_DIR = new THREE.Vector3(0.45, 0.55, -0.70).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), FOREST_YAW);
 const sun = new THREE.DirectionalLight(0xfff2e2, 1.6);
@@ -57,7 +70,8 @@ sun.shadow.camera.left = -15; sun.shadow.camera.right = 15;
 sun.shadow.camera.top = 15; sun.shadow.camera.bottom = -15;
 sun.shadow.bias = -0.0003;
 sun.shadow.normalBias = 0.02;
-sun.shadow.radius = 3;
+const SUN_SOFT = 0.015;
+sun.shadow.radius = -SUN_SOFT*(sun.shadow.camera.far - sun.shadow.camera.near)/(sun.shadow.camera.right - sun.shadow.camera.left);
 scene.add(sun, sun.target);
 const gemLight = new THREE.PointLight(0x5aa0ff, 0.5, 2.2, 2);
 scene.add(gemLight);

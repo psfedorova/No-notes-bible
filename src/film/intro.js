@@ -1,16 +1,8 @@
-/* the opening. A magic circle draws itself as the book's files arrive; when the book is
-   ready the circle flares and the veil lifts onto the scene itself, where the opening
-   plays live on the book (film/capture.js, run by film/opening.js playLive) with its
-   music, and the reader's own book takes over at its end. On the first visit only (and
-   with ?intro, or an invitation); otherwise, or with reduced motion, the veil lifts onto
-   the shut book, which opens itself. A tap or a key cuts the opening short */
 (()=>{
   const box = document.getElementById('intro');
   if(/[?&]film\b/.test(location.search)){ document.documentElement.classList.add('film'); box.remove(); return; }
   const svg = box.querySelector('svg.draw');
   const ticks = box.querySelector('.ticks'), core = svg.querySelector('.core');
-  /* the seven-pointed star of the book's watermark: its seven strokes grow together
-     from both ends, so its points come up first and the strokes close in the middle */
   const V = [...Array(7)].map((_, k)=>{ const a = -Math.PI/2 + k*2*Math.PI/7; return [78*Math.cos(a), 78*Math.sin(a)]; });
   const star = svg.querySelector('.star');
   V.forEach((p, k)=>{
@@ -20,7 +12,6 @@
     star.appendChild(l);
   });
   const [outer, inner, ...rest] = [...svg.querySelectorAll('.ln')], small = rest.pop();
-  /* the outer ring, the inner one, the star, the small ring at its heart: one after another */
   const PARTS = [[outer, 0, .22], [inner, .2, .4], ...rest.map(l=>[l, .4, .82]), [small, .82, 1]];
   const draw = p=>{
     PARTS.forEach(([l, a, b])=>{
@@ -32,9 +23,6 @@
     ticks.setAttribute('opacity', Math.min(1, Math.max(0, (p - .1)/.2)).toFixed(2));
     core.setAttribute('opacity', (.35 + .65*p).toFixed(2));
   };
-  /* what has arrived sets a goal and the drawing eases toward it, so a big file landing
-     never makes it leap; while nothing arrives (the page building the forest) it keeps
-     creeping a little way on, slower the further it gets ahead */
   let goal = 0, shown = 0, rush = false, prev = performance.now();
   const aim = p=>{ goal = Math.max(goal, Math.min(1, p)); };
   const step = now=>{
@@ -58,12 +46,9 @@
 
   const kind = innerWidth/innerHeight < 0.9 ? 'tall' : 'wide';
   const I = window.__intro = { kind, fit: 'cover', take: null, gone: false, live: false };
-  /* the book reports how far it has got once its files are in (src/main.js, boot) */
   I.stage = aim;
   draw(0);
   requestAnimationFrame(step);
-  /* what the page fetches before the book is shown, roughly, on this kind of device (the
-     depth maps come through a worker and are not counted here; the rest loads later) */
   const EXPECT = matchMedia('(pointer: coarse)').matches ? 15e6 : 16e6;
   setInterval(()=>{
     if(I.gone || lifting) return;
@@ -73,7 +58,6 @@
     check();
   }, 300);
 
-  /* the opening plays on the first visit only; ?intro shows it again */
   const SEEN = 'liber-arcanum.film-seen';
   let seen = false;
   try{ seen = !!localStorage.getItem(SEEN); }catch(e){}
@@ -83,16 +67,12 @@
     u.searchParams.delete('intro');
     history.replaceState(null, '', u);
   }
-  /* an invitation always ends in the opening, seen before or not: the vow opens the book.
-     The invitation is in the address, or kept for this tab across a sign-in */
   let invited = /^#join=[A-Za-z0-9]{6,40}\.[a-z0-9]{24,64}/.test(location.hash);
   try{ invited = invited || !!sessionStorage.getItem('liber-arcanum.join'); }catch(e){}
   if(invited) seen = false;
   I.live = !seen && !matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* its music, unless the reader turned the sound off. A browser that will not let a page
-     sound before it is touched plays the opening silent, and the first touch brings the
-     music in where the story has got to, rather than cutting the opening short */
+  /* browsers block audio before the first user activation */
   let quiet = false;
   try{ quiet = localStorage.getItem('liber-arcanum.muted') === '1'; }catch(e){}
   const score = I.live && !quiet ? new Audio('assets/intro/score_' + kind + '.m4a') : null;
@@ -104,7 +84,6 @@
     I.take(mode);
     if(!story) end();
   };
-  /* the circle completes and flares, then the veil lifts */
   let lifting = false;
   const lift = ()=>{
     if(lifting || I.gone) return;
@@ -118,11 +97,8 @@
     lift();
   };
   I.ready = take=>{ I.take = take; check(); };
-  /* an invitation is read over the circle first; the opening waits until it is done */
   I.wait = p=>{ I.holding = true; p.then(()=>{ I.holding = false; check(); }); };
 
-  /* the story has begun on the scene: the veil fades off it, the music starts with it,
-     and until it ends a touch or a key belongs to it */
   let story = null, hush = false;
   I.started = L=>{
     story = L;

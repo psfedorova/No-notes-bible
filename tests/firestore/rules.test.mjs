@@ -15,7 +15,6 @@ const anon = env.unauthenticatedContext().firestore();
 const B = 'book1', CODE = 'c'.repeat(32), CODE2 = 'd'.repeat(32);
 const ink = (uid, n, s, extra = {}) => ({ uid, dev: 'dev1', n, s, k: [...s].map((_, i) => 'k' + (i + 1)).join(','), f: null, c: false, at: serverTimestamp(), ...extra });
 const member = (name, code, g = false) => ({ name, code, guest: g, at: serverTimestamp() });
-/* a book, its count, its owner, its first code and the owner's list entry, all in one batch, as the app makes it */
 function make(db, uid, name, id, made, code = CODE, g = false){
   const b = writeBatch(db);
   b.set(doc(db, 'books', id), { name: 'Book', owner: uid, at: serverTimestamp() });
@@ -28,7 +27,6 @@ function make(db, uid, name, id, made, code = CODE, g = false){
 let pass = 0, fail = 0;
 async function t(name, p){ try{ await p; pass++; }catch(e){ fail++; console.log('FAIL', name, e.message.split('\n')[0]); } }
 
-// making books: Google or guest, three each, counted in the same batch
 await t('a book is not made without counting it', assertFails(setDoc(doc(A, 'books', 'x0'), { name: 'Book', owner: 'alice', at: serverTimestamp() })));
 await t('alice makes a book in one batch', assertSucceeds(make(A, 'alice', 'Alona', B, 1)));
 await t('the owner must use her account name', assertFails(make(A, 'alice', 'Queen', 'x1', 2)));
@@ -51,7 +49,6 @@ await t('a guest owner renames her book', assertSucceeds(updateDoc(doc(G, 'books
 await t('a Google member cannot make a book as a guest', assertFails(make(C, 'carol', 'Carol', 'c1', 1, CODE, true)));
 await t('bob cannot make a book owned by alice', assertFails(setDoc(doc(Bo, 'books', 'b3'), { name: 'x', owner: 'alice', at: serverTimestamp() })));
 
-// reading and joining
 await t('alice writes her ink', assertSucceeds(setDoc(doc(A, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mine'))));
 await t('anon cannot read the book', assertFails(getDoc(doc(anon, 'books', B))));
 await t('eve cannot read the book', assertFails(getDoc(doc(E, 'books', B))));
@@ -72,7 +69,6 @@ await t('bob reads the book', assertSucceeds(getDoc(doc(Bo, 'books', B))));
 await t('bob reads the ink', assertSucceeds(getDocs(collection(Bo, 'books', B, 'ink'))));
 await t('bob reads the invite', assertSucceeds(getDoc(doc(Bo, 'books', B, 'invite', 'code'))));
 
-// ink belongs to its hand
 await t('bob writes his ink', assertSucceeds(setDoc(doc(Bo, 'books', B, 'ink', '1_bob'), ink('bob', 1, 'His'))));
 await t('bob cannot pass his doc off as alice ink', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('bob', 1, ''))));
 await t('bob cannot change alice ink unmarked', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi'))));
@@ -97,7 +93,6 @@ await t('keys must be one string', assertFails(setDoc(doc(Bo, 'books', B, 'ink',
 await t('a guest cannot delete her own ink doc (it is emptied instead)', assertFails(deleteDoc(doc(G, 'books', B, 'ink', '1_gina'))));
 await t('alice empties her own ink', assertSucceeds(setDoc(doc(A, 'books', B, 'ink', '1_alice'), ink('alice', 1, ''))));
 
-// owner only
 await t('bob cannot rename the book', assertFails(updateDoc(doc(Bo, 'books', B), { name: 'Mine' })));
 await t('bob cannot take the book', assertFails(updateDoc(doc(Bo, 'books', B), { owner: 'bob' })));
 await t('bob cannot change the invite', assertFails(setDoc(doc(Bo, 'books', B, 'invite', 'code'), { code: CODE2 })));
@@ -105,7 +100,6 @@ await t('bob cannot remove alice', assertFails(deleteDoc(doc(Bo, 'books', B, 'me
 await t('bob cannot read alice shelf', assertFails(getDocs(collection(Bo, 'users', 'alice', 'books'))));
 await t('bob cannot rename himself', assertFails(updateDoc(doc(Bo, 'books', B, 'members', 'bob'), { name: 'Alona' })));
 
-// a new link, leaving, removing
 await t('alice makes a new invite', assertSucceeds(setDoc(doc(A, 'books', B, 'invite', 'code'), { code: CODE2 })));
 await t('carol cannot join with the old code', assertFails(setDoc(doc(C, 'books', B, 'members', 'carol'), member('Carol', CODE))));
 await t('carol joins with the new code', assertSucceeds(setDoc(doc(C, 'books', B, 'members', 'carol'), member('Carol', CODE2))));
@@ -114,7 +108,6 @@ await t('carol can no longer read', assertFails(getDocs(collection(C, 'books', B
 await t('bob leaves', assertSucceeds(deleteDoc(doc(Bo, 'books', B, 'members', 'bob'))));
 await t('bob can no longer write', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_bob'), ink('bob', 1, 'again'))));
 
-// any number of keepers with one link, and what the owner allows each of them
 const many = Array.from({ length: 30 }, (_, i) => 'k' + i);
 await t('thirty guests join with one link', assertSucceeds(Promise.all(many.map(u => setDoc(doc(guest(u), 'books', B, 'members', u), member('Guest', CODE2, true))))));
 const K1 = guest('k1'), K2 = guest('k2'), K3 = guest('k3');
@@ -147,7 +140,6 @@ await t('k2 cannot come back with the link', assertFails(setDoc(doc(K2, 'books',
 await t('k2 sees why', assertSucceeds(getDoc(doc(K2, 'books', B, 'access', 'k2'))));
 await t('alice lets k2 back', assertSucceeds(deleteDoc(doc(A, 'books', B, 'access', 'k2'))));
 await t('k2 comes back with the link', assertSucceeds(setDoc(doc(K2, 'books', B, 'members', 'k2'), member('Guest', CODE2, true))));
-// sent away, then let back in by the owner: her place returns, so any link lets her in again
 await t('k3 is in the book', assertSucceeds(getDocs(collection(K3, 'books', B, 'ink'))));
 await t('alice sends k3 away, saying she is a guest', assertSucceeds((async ()=>{
   const b = writeBatch(A);
@@ -187,7 +179,6 @@ await t('alice cannot make a member of someone never sent away', assertFails((as
 await t('alice lets k1 write again', assertSucceeds(deleteDoc(doc(A, 'books', B, 'access', 'k1'))));
 await t('k1 writes again', assertSucceeds(setDoc(doc(K1, 'books', B, 'ink', '1_k1'), ink('k1', 1, 'x'))));
 
-// deleting a book: its ink and keepers first, then the book with the count going down
 const A3 = 'a3';
 await t('bob joins a3', assertSucceeds((async ()=>{
   await setDoc(doc(A, 'books', A3, 'invite', 'code'), { code: CODE });
@@ -221,7 +212,6 @@ await t('the count cannot go down twice for one book', assertFails(setDoc(doc(A,
 await t('the freed place makes a new book', assertSucceeds(make(A, 'alice', 'Alona', 'a5', 3)));
 await t('still no fourth book', assertFails(make(A, 'alice', 'Alona', 'a6', 4)));
 
-// the private book's copy
 const part = (i, n, d = 'x') => ({ d, v: 'v1', i, n, p: 1, at: serverTimestamp() });
 await t('alice keeps a copy', assertSucceeds(setDoc(doc(A, 'users', 'alice', 'keep', '0'), part(0, 1))));
 await t('alice reads her copy', assertSucceeds(getDocs(collection(A, 'users', 'alice', 'keep'))));

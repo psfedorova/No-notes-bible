@@ -1,4 +1,3 @@
-/* embers and smoke off the letters as they burn in */
 import * as THREE from 'three';
 import { clamp, smooth } from '../lib/textures.js';
 import { scene } from '../scene/renderer.js';
@@ -6,8 +5,6 @@ import { glyphBox } from '../ink/layout.js';
 import { BURN_CAP, BURN_T } from '../ink/paint.js';
 import { pagePointWorld } from '../book/leaves.js';
 
-/* a few embers lifting off a freshly burned letter: slow, drifting,
-   breathing in and out rather than spitting out */
 const SPARKS = 240;
 const sparkGeo = new THREE.BufferGeometry();
 const sparkPos = new Float32Array(SPARKS*3), sparkVel = new Float32Array(SPARKS*3), sparkLife = new Float32Array(SPARKS);
@@ -22,7 +19,6 @@ const sparkMat = new THREE.ShaderMaterial({
   fragmentShader: `varying float vA;
     void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d)*vA; gl_FragColor = vec4(vec3(1.0, 0.82, 0.5)*1.6*a, a); }`
 });
-/* the burn's own motes: a white-gold ember in a soft orange halo */
 const inkSparkMat = sparkMat.clone();
 inkSparkMat.vertexShader = `attribute float alpha; varying float vA; uniform float uScale;
     void main(){ vA = alpha; vec4 mv = modelViewMatrix*vec4(position,1.0); gl_Position = projectionMatrix*mv; gl_PointSize = uScale*(0.8 + 1.1*alpha)/max(0.1, -mv.z); }`;
@@ -33,7 +29,6 @@ const sparks = new THREE.Points(sparkGeo, inkSparkMat);
 sparks.frustumCulled = false;
 scene.add(sparks);
 let sparkNext = 0;
-/* lift: the ink leaving the sheet when a page is wiped, a little livelier */
 function emitSparks(n, lay, text, at, count, lift){
   for(let i=at; i<at+count; i++){
     const gb = glyphBox(lay, text, i);
@@ -50,9 +45,6 @@ function emitSparks(n, lay, text, at, count, lift){
     sparkSeed[s] = Math.random()*6.283;
   }
 }
-/* a thread of smoke off each burning letter: a few soft puffs that rise,
-   curl and widen, lit amber by the ember at first, then a cool grey veil
-   over the sheet, gone within two seconds */
 const SMOKE = 160;
 const smokeGeo = new THREE.BufferGeometry();
 const smokePos = new Float32Array(SMOKE*3), smokeVel = new Float32Array(SMOKE*3);
@@ -92,7 +84,6 @@ smoke.frustumCulled = false;
 scene.add(smoke);
 let smokeNext = 0;
 function nextSmoke(){ const s = smokeNext; smokeNext = (smokeNext + 1) % SMOKE; return s; }
-/* the forest breeze the smoke leans into */
 const SMOKE_WIND = [0.16, 0, -0.08];
 function emitSmoke(n, lay, text, at, count, vapor){
   for(let i=at; i<at+count; i++){

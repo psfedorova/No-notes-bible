@@ -1,13 +1,10 @@
-/* the little windows: a page to turn to, the list of spells */
 import { ALT, MOD, N } from '../core/config.js';
 import { st } from '../book/state.js';
 import { quill, writing } from '../ink/writing.js';
 import { turnToPage } from '../book/seek.js';
 import { closeMenu, refreshUI, toggleBook } from './controls.js';
 
-/* ---------------- the little windows: a page to turn to, the list of spells ---------------- */
 const spellsEl = document.getElementById('spells');
-/* the page field in the pager: tap it, type a number, Go */
 const seekIn = document.getElementById('pageIn');
 function openSeek(first){
   closeSpells(); closeMenu();

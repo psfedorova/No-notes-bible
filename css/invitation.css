@@ -1,7 +1,4 @@
-/* the invitation a friend's link opens: a leaf of the book's own paper with the
-   rules, the vow and a signature */
 
-/* the invitation: a leaf of the book's story, a magic circle at the head, written in brown ink */
 .shelf.locked .close{ display:none; }
 .shelf .hint{ margin:6px 0 0; text-align:center; font-style:italic; color:var(--gold-dim); font-size:14px; }
 .shelf.over{ z-index:36; }
@@ -13,7 +10,6 @@
   box-shadow:0 26px 70px rgba(0,0,0,.7), 0 3px 8px rgba(0,0,0,.45);
   animation:invite .8s cubic-bezier(.2,.7,.2,1);
 }
-/* one sheet for the invitation and the vow alike, so taking it never resizes the card */
 .shelf.invite .card > .body{ margin:auto 0; }
 @keyframes invite{ from{ opacity:0; transform:translateY(18px) rotate(-1.2deg) scale(.97); } to{ opacity:1; transform:none; } }
 .shelf.invite h2{ padding:16px 0 0; color:var(--ink); font:600 var(--fs-s) var(--text-font); letter-spacing:6px; text-transform:uppercase; text-shadow:none; }
@@ -37,9 +33,6 @@
 .shelf.invite .sign input[type=text]::placeholder{ color:rgba(59,38,18,.3); }
 .shelf.invite .sign .cap{ margin-top:6px; font:600 var(--fs-s) var(--text-font); letter-spacing:2.5px; text-transform:uppercase; color:var(--ink); }
 .shelf.invite .acts{ margin-top:var(--gap-act); align-items:center; gap:4px; }
-/* the button speaks the book's own button language, the pager's and the Share card's:
-   a dark face with rounded ends, one gilt hairline, gold letters. On the pale card it
-   is plainly the thing to press. It never grows: the gilt only warms under the pointer */
 .shelf.invite .btn.main{
   min-width:min(270px, 100%); min-height:50px; padding:0 36px; border:1px solid var(--hairline); border-radius:999px;
   background:var(--face); color:var(--gold); font:500 var(--fs-m) var(--text-font);
@@ -49,20 +42,16 @@
 .shelf.invite .btn.main:hover, .shelf.invite .btn.main:focus-visible{ color:#ffe6ae; box-shadow:0 0 0 1px rgba(236,192,102,.35), 0 4px 14px rgba(40,24,8,.4); }
 .shelf.invite .btn.main:focus-visible{ outline:1px solid rgba(59,38,18,.6); outline-offset:3px; }
 .shelf.invite .btn.main:active{ transform:translateY(1px); box-shadow:0 2px 5px rgba(40,24,8,.35); }
-/* the card's magic (src/sharing/invite-magic.js): the letters and their light are drawn over the card
-   while the text itself waits unseen, and the ornaments follow the words */
 .shelf.invite .card canvas.magic{ position:absolute; left:0; top:0; z-index:2; pointer-events:none; }
 .shelf.invite .card canvas.magic.glow{ filter:blur(1.5px); mix-blend-mode:screen; }
 .shelf.invite .body.ghost :not(.btn){ color:transparent; text-shadow:none; caret-color:transparent; }
 .shelf.invite .body.ghost .sign:not(.lit) ::placeholder{ color:transparent; }
 .shelf.invite .body.ghost .btn[disabled]{ opacity:1; }
-/* a button comes and goes whole, its words with it, in a breath of gold */
 .shelf.invite .body .orn, .shelf.invite .body h2::after, .shelf.invite .body .amen::after, .shelf.invite .body .sign{ transition:opacity .7s ease, filter .7s ease; }
 .shelf.invite .body .btn{ transition:opacity .8s ease, filter .8s ease, color .25s, box-shadow .25s, transform .08s; }
 .shelf.invite .body.leaving, .shelf.invite .body.arriving{ pointer-events:none; }
 .shelf.invite .body.leaving :is(.orn, .sign, .btn).gone, .shelf.invite .body.leaving :is(h2, .amen).gone::after{ opacity:0; filter:drop-shadow(0 0 6px rgba(255,214,140,.9)); }
 .shelf.invite .body.arriving :is(.orn, .sign, .btn):not(.lit), .shelf.invite .body.arriving :is(h2, .amen):not(.lit)::after{ opacity:0; filter:drop-shadow(0 0 6px rgba(255,214,140,.9)); }
-/* the vow taken, the card fades off the loading circle and the opening begins */
 .shelf.invite{ transition:opacity .9s ease; }
 .shelf.invite .card{ transition:transform 1.1s cubic-bezier(.4,0,.2,1); }
 .shelf.invite.away{ opacity:0; pointer-events:none; }

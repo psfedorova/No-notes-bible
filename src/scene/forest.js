@@ -1,4 +1,3 @@
-/* the forest all round: the Blender panorama ray-marched against its depth */
 import * as THREE from 'three';
 import { cv } from '../lib/textures.js';
 import { GROUND_Y, HI_RES, VH, VW } from '../core/config.js';
@@ -6,19 +5,10 @@ import { camera, DPR, FOREST_YAW, renderer, SUN_DIR } from './renderer.js';
 import { shed } from '../assets/loaders.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
-/* the forest all round: built in Blender (blender/build_forest.py) and rendered as a
-   360 panorama from 1 m over the boulder, with its distance from that point for every
-   direction. Each pixel of the dome is found where the eye's ray meets that surface,
-   so the forest keeps its true shape and parallax as one walks round the rock. Where
-   walking round uncovers what a near trunk or fern hid, a second render with those
-   left out shows it. The water, known from its own render pass, runs the way the
-   stream runs */
-const FOREST_CAP = new THREE.Vector3(0, GROUND_Y + 10, 0);      // the capture point, 1 m over the floor
-const FOREST_GAIN = 2.0;                                         // the picture is stored at half its light
-const FOREST_EXPOSURE = 2.2;                                     // and shown a little brighter than it was rendered
-const DEPTH_NEAR = 5, DEPTH_FAR = 4000;                          // its distance range, in tenths of a metre
-/* how far the boulder reaches out over the floor round its foot, by bearing in the
-   panorama's own frame (the rock's, before FOREST_YAW), filled once the rock is in */
+const FOREST_CAP = new THREE.Vector3(0, GROUND_Y + 10, 0);
+const FOREST_GAIN = 2.0;
+const FOREST_EXPOSURE = 2.2;
+const DEPTH_NEAR = 5, DEPTH_FAR = 4000;
 const ROCK_FOOT_N = 64;
 const rockFoot = new Float32Array(ROCK_FOOT_N);
 function measureFoot(rock, grp){
@@ -31,9 +21,6 @@ function measureFoot(rock, grp){
     rockFoot[k] = Math.max(rockFoot[k], Math.hypot(v.x, v.z));
   }
 }
-/* the depth pictures are decoded in a worker (assets/depth-worker.js), so neither the
-   loading circle nor a book already in the reader's hands stalls while a 6k one is read;
-   a browser without a worker canvas does it here, as before */
 let depthWorker = null, depthJobs = 0;
 const depthWaits = new Map();
 function inWorker(url, smooth){
@@ -50,10 +37,6 @@ function inWorker(url, smooth){
 }
 function depthTexture(out, w, h, smooth){
   const t = new THREE.DataTexture(out, w, h, THREE.RedFormat, THREE.HalfFloatType);
-  /* the forest's own layer is read nearest, not filtered: a leaf against the sky must not
-     blend into a surface halfway between. The layer behind only fills the strips a near
-     trunk uncovers, and is read filtered, so what shows there is stretched smoothly over
-     its own edges instead of breaking into blocks */
   t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter; t.needsUpdate = true;
   return t;
 }
@@ -76,8 +59,7 @@ async function decodeDepth(url, smooth){
   const blob = await res.blob();
   const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   const w = bmp.width, h = bmp.height, q = new Uint16Array(w*h);
-  /* read through a strip: iOS Safari refuses any canvas over 4096 x 4096 pixels, and a
-     phone reads a thin one, so the strip and its pixel copy stay small */
+  /* iOS Safari refuses canvases over 4096 x 4096 px */
   const band = Math.max(1, Math.min(h, ((HI_RES ? 4194304 : 1048576)/w)|0));
   const c = cv(w, band), x = c.getContext('2d', { willReadFrequently: true });
   for(let y0=0;y0<h;y0+=band){
@@ -89,7 +71,6 @@ async function decodeDepth(url, smooth){
   }
   bmp.close && bmp.close();
   const out = new Uint16Array(w*h);
-  /* stored top row first; textures read bottom row first */
   for(let y=0;y<h;y++){
     const src = (h - 1 - y)*w, dst = y*w;
     for(let i=0;i<w;i++) out[dst + i] = THREE.DataUtils.toHalfFloat(q[src + i]/65535);
@@ -98,10 +79,6 @@ async function decodeDepth(url, smooth){
   if(!smooth) t.userData.soft = softDepth(q, w, h, Math.max(1, Math.round(w/768)));
   return shed(t);
 }
-/* the canopy overhead seen as one soft surface: thousands of leaves against the sky
-   leap in distance from texel to texel, and stepping aside from the capture point would
-   break them into a mosaic of blocks. Averaged over a few leaves and blurred, the
-   crown only bends a little as one walks round, the way a far crown does */
 function softDepth(q, w, h, k){
   const W = w/k|0, H = h/k|0, a = new Float32Array(W*H), b = new Float32Array(W*H);
   for(let y=0;y<H;y++) for(let x=0;x<W;x++){
@@ -137,13 +114,7 @@ function makeBackdrop(pano, depth, water, back, backDepth){
       vec3 unyaw(vec3 v){ return vec3(uYaw.x*v.x - uYaw.y*v.z, v.y, uYaw.y*v.x + uYaw.x*v.z); } uniform vec3 uCam, uCap, uSun; uniform float uTime, uGain, uNear, uFar, uBackOn, uSwap, uDetail;
       uniform float uFoot[${ROCK_FOOT_N}];
       uniform sampler2D tGround, tAO, tHeld; uniform vec4 uGround; uniform vec2 uAO; uniform float uHeldOn;
-      /* the near stones are drawn in 3D; the render only hid them from its camera, so where
-         they stood it kept the floor in their shade, black, and through the water their
-         sunk parts, pale. Seen from beside the capture point those lay on the floor and the
-         water as dark slabs and white wedges: they take the colour of what lies round them */
       float heldAt(vec2 u){ return uHeldOn > 0.5 ? 1.0 - textureLod(tHeld, u, 0.0).a : 0.0; }
-      /* only what is far darker or paler than the water or ground round it is filled: the
-         rest within a stone's outline is the ground behind it, which the render kept */
       float heldOdd(vec2 u, out vec3 f){
         float h = heldAt(u);
         if(h <= 0.0) return 0.0;
@@ -160,21 +131,11 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), u.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), u.x), u.y); }
       vec2 eqUv(vec3 q){ return vec2(atan(q.z, q.x)*0.15915494 + 0.5, asin(clamp(q.y, -1.0, 1.0))*0.31830989 + 0.5); }
       float unpack(float inv){ return 1.0/(inv*(1.0/uNear - 1.0/uFar) + 1.0/uFar); }
-      /* the far wood is read from the soft surface too, not only the crown overhead: a
-         few metres off the capture point each texel of the sharp one would stand out as
-         a block of leaves and sky, and that far off the soft one hardly bends */
       float distF(vec3 q){ vec2 u = eqUv(q); float a = textureLod(tDepth, u, 0.0).r;
         float w = max(smoothstep(0.14, 0.42, q.y), smoothstep(120.0, 300.0, unpack(a)));
         if(w > 0.0) a = mix(a, textureLod(tSoft, u, 0.0).r, w);
         return unpack(a); }
       float distB(vec3 q){ return unpack(textureLod(tBackDepth, eqUv(q), 0.0).r); }
-      /* march the eye's ray out from the camera until it passes behind one layer's
-         surface (as the capture point saw it), then close in on the crossing. Where the
-         surface is the same on both sides of the crossing the ray has met it. Where it
-         leaps away (the edge of a trunk) the ray has only slipped into the trunk's shadow
-         as the capture point saw it, so it walks on to whatever lies beyond. gap is that
-         leap, kept when nothing beyond is met: the ray then ends where the capture point
-         could not see, on the far side of the edge rather than smeared along the trunk */
       #define SLIP 0.04
       #define MARCH(DIST, d, o, T, GAP) { float ta = 2.0, tb = 2.0, fa = -1.0, tS = -1.0, gS = 0.0; T = -1.0; GAP = 0.0; \
         for(int i=1;i<=MARCH_STEPS;i++){ tb = 2.0*pow(3000.0, float(i)/float(MARCH_STEPS)); vec3 P_ = o + tb*d; float L_ = length(P_), f_ = L_ - DIST(P_/L_); \
@@ -189,45 +150,26 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         vec3 d = unyaw(normalize(vDir)), o = unyaw(uCam - uCap);
         float t, gap, tAlt, gapAlt;
         MARCH(distF, d, o, t, gap);
-        /* the layer behind only fills what a near thing hid, never with open sky, and
-           fades in rather than switching, so no hard-edged patch shows */
         float wBack = 0.0;
         if(uBackOn > 0.5 && gap > 0.04){ MARCH(distB, d, o, tAlt, gapAlt); if(gapAlt < gap && tAlt < 2500.0) wBack = smoothstep(0.04, 0.16, gap - gapAlt); }
         vec3 P = o + t*d, q = normalize(P);
         vec2 uv = eqUv(q);
         vec2 uvB = eqUv(normalize(o + (wBack > 0.0 ? tAlt : t)*d));
-        /* gradients taken across the wrap as well, so the seam where the panorama
-           closes on itself does not drop to the coarsest mip */
         vec2 gx = dFdx(uv), gy = dFdy(uv);
         vec2 uw = vec2(fract(uv.x + 0.5), uv.y), gxw = dFdx(uw), gyw = dFdy(uw);
         if(abs(gxw.x) + abs(gyw.x) < abs(gx.x) + abs(gy.x)){ gx = gxw; gy = gyw; }
-        /* where neighbouring pixels meet different surfaces the picture's gradient leaps
-           and would fetch a coarse, blocky mip: it is held near what the eye's own ray
-           sweeps, grown by how much farther the surface is from the eye than from the
-           capture point */
         vec2 ud = eqUv(d), hx = dFdx(ud), hy = dFdy(ud);
         vec2 udw = vec2(fract(ud.x + 0.5), ud.y), hxw = dFdx(udw), hyw = dFdy(udw);
         if(abs(hxw.x) + abs(hyw.x) < abs(hx.x) + abs(hy.x)){ hx = hxw; hy = hyw; }
         float lim = 3.0*max(length(hx), length(hy))*t/length(P);
         gx *= min(1.0, lim/max(length(gx), 1e-7)); gy *= min(1.0, lim/max(length(gy), 1e-7));
-        /* past the book the lens lets the far wood go soft */
         float soft = mix(1.0, 2.6, smoothstep(150.0, 700.0, t));
         gx *= soft; gy *= soft;
-        /* read with the same gradients: along the seam an implicit fetch drops to the
-           coarsest mip, the whole stream averaged, and a line of sun glints ran over the grass */
         vec4 wf = textureGrad(tWater, uv, gx/soft, gy/soft);
-        /* a stone in the stream leaves a hole in the water's own pass too: it runs on there */
         vec3 hf; float held = heldOdd(uv, hf);
         if(held > 0.0){ vec4 wc = textureLod(tWater, uv, 5.5); wf = mix(wf, vec4(1.0, wc.gba), held*smoothstep(0.25, 0.55, wc.r)); }
         vec3 col;
         if(wf.r > 0.02){
-          /* running water: ripples of three sizes carried downstream bend what shows
-             through and tilt the surface, which mirrors the canopy more as one looks along
-             it and catches glints of sun on the steeper crests. Each size calms to a mirror
-             only where a pixel spans more than its own wavelength, so far off the stream
-             still moves in its long swells and never boils into glitter up close. Two
-             patterns slide at different speeds in each size, so the surface keeps changing
-             instead of scrolling past like a belt, and slow bands of light drift down it */
           float wr = smoothstep(0.02, 0.35, wf.r);
           vec3 W = P + uCap;
           vec2 fl = normalize(wf.gb*2.0 - 1.0 + 1e-4), fr = vec2(-fl.y, fl.x);
@@ -259,13 +201,9 @@ function makeBackdrop(pano, depth, water, back, backDepth){
           col += vec3(1.0, 0.94, 0.82)*(pow(sr, 600.0)*3.0*calm + pow(sr, 40.0)*0.06)*wr;
         }else{
           col = textureGrad(tPano, uv, gx, gy).rgb;
-          /* the sharper forest is crossfaded in over the first one, never cut in */
           if(uSwap < 1.0) col = mix(textureGrad(tPanoWas, uv, gx, gy).rgb, col, uSwap);
           if(wBack > 0.0) col = mix(col, textureGrad(tBack, uvB, gx*2.0, gy*2.0).rgb, wBack);
           col = unheld(col, uv);
-          /* the floor under the boulder's foot, black in the render, shows as a crack where
-             the stone's cut meets it: there it takes the moss a step further out, deep in the
-             stone's shade. Outside the foot the render's own shadow and occlusion are kept */
           vec3 Wg = P + uCap;
           float rg = length(Wg.xz);
           if(Wg.y < ${(GROUND_Y + 1.0).toFixed(2)} && rg < 9.0){
@@ -277,11 +215,16 @@ function makeBackdrop(pano, depth, water, back, backDepth){
               vec3 moss = textureGrad(tPano, eqUv(normalize(Po)), gx, gy).rgb;
               float shade = mix(0.3, 0.5, smoothstep(rf - 1.0, rf, rg));
               col = max(col, moss*shade);
+            }else if(rf > 0.0 && rg < rf + 3.5){
+              vec2 o = Wg.xz/rg, s = vec2(-o.y, o.x);
+              vec3 fo = vec3(0.0);
+              for(int k=0;k<4;k++){
+                vec2 q = o*(rf + 3.0 + float(k/2)*1.5) + s*(float(k%2)*2.0 - 1.0)*1.2;
+                fo += textureLod(tPano, eqUv(normalize(vec3(q.x, Wg.y, q.y) - uCap)), 2.0).rgb;
+              }
+              col = max(col, fo*0.25*mix(0.3, 0.6, smoothstep(rf, rf + 3.5, rg)));
             }
           }
-          /* where the grass stands (src/scene/plants.js) the floor between its blades is
-             the shaded, soft ground at their feet, not the render's sharp moss with the
-             shadows of plants lying on it like cut-outs; those shadows fall on the blades */
           if(uGround.x > 0.0 && rg < uGround.w){
             vec2 gu = (Wg.xz/uGround.y + 0.5)*(uGround.x - 1.0)/uGround.x + 0.5/uGround.x;
             float onFloor = 1.0 - smoothstep(0.25, 0.6, abs(Wg.y - textureLod(tGround, gu, 0.0).r));
@@ -289,9 +232,6 @@ function makeBackdrop(pano, depth, water, back, backDepth){
             float hue = (fs.g - fs.b)/max(fs.r - fs.b, 1e-3);
             float grassy = onFloor*(1.0 - smoothstep(uGround.z, uGround.w, rg))
               *max(smoothstep(0.45, 0.75, hue), smoothstep(0.02, 0.15, textureLod(tWater, uv, 5.0).r));
-            /* the colour taken wide and soft, so none of the render's plants lies there as a
-               ghost, and the grain of the ground laid back on it from the moss itself, so
-               the floor between the blades is earth and moss, not a smear */
             vec3 base = vec3(0.0);
             for(int k=0;k<8;k++){
               float a = float(k)*0.785398 + 0.4, r = k < 4 ? 1.6 : 3.2;
@@ -306,10 +246,6 @@ function makeBackdrop(pano, depth, water, back, backDepth){
             if(uAO.y > 0.0) col *= 1.0 - textureLod(tAO, (Wg.xz + uAO.x)/uAO.y, 0.0).r*onFloor;
           }
         }
-        /* how far the eye is from a trunk or a bush that stands up off the floor, kept with
-           the picture: the dome lays it in the depth, so a fern growing behind a trunk is
-           hidden by it instead of showing through. The floor keeps none, or it would cut
-           off the grass and ferns rooted in it */
         float zFar = 0.0;
         { float tz = wBack > 0.5 ? tAlt : t;
           vec3 Wz = o + tz*d + uCap;
@@ -321,8 +257,6 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         #include <colorspace_fragment>
       }`
   });
-  /* the march is the costliest thing on screen, so it runs once per CSS pixel into a
-     picture of its own, and the dome in the scene shows that picture over the frame */
   const march = new THREE.Mesh(new THREE.SphereGeometry(300, 96, 48), m);
   march.frustumCulled = false;
   const marchScene = new THREE.Scene();
@@ -348,10 +282,6 @@ function makeBackdrop(pano, depth, water, back, backDepth){
   backdrop = {
     material: m,
     picture: rt.texture,
-    /* laid in once the book is shown: the layer behind the near trunks, then on a
-       computer the 6k forest and its depth in place of the 4k ones */
-    /* the grain of the ground between the blades: a seamless moss picture, and its mean
-       brightness, so it only shades the floor's own colour up and down */
     setDetail(img){
       const c = document.createElement('canvas'); c.width = c.height = 1;
       const x = c.getContext('2d'); x.drawImage(img, 0, 0, 1, 1);
@@ -361,10 +291,6 @@ function makeBackdrop(pano, depth, water, back, backDepth){
       m.uniforms.tDetail.value = shed(t);
       m.uniforms.uDetail.value = lin(d[0])*0.3 + lin(d[1])*0.59 + lin(d[2])*0.11;
     },
-    /* where the near stones (plants.js) rise out of the floor and the water, as the
-       capture point saw them, grown by a few texels for their sunk parts the water bent
-       into view, and the picture with them taken out, in mips: alpha is what is left, so
-       a coarser mip divided by its alpha is the colour round a stone */
     setHeld(stones, floorGeo){
       const W = HI_RES ? 2048 : 1024, H = W/2;
       const cube = new THREE.WebGLCubeRenderTarget(W/2);
@@ -388,7 +314,6 @@ function makeBackdrop(pano, depth, water, back, backDepth){
           void main(){
             float h = 0.0;
             for(int j=-8;j<=2;j++) for(int i=-3;i<=3;i++) h = max(h, textureCube(tCube, dirAt(vUv + vec2(i, j)*uTexel)).r*smoothstep(4.5, 2.5, length(vec2(i, j < 0 ? float(j)*0.5 : float(j)))));
-            /* in the stream only the water round a stone is taken, not its bank */
             float w = (1.0 - h)*mix(1.0, smoothstep(0.3, 0.7, texture2D(tWater, vUv).r), smoothstep(0.2, 0.4, textureLod(tWater, vUv, 5.0).r));
             gl_FragColor = vec4(texture2D(tPano, vUv).rgb*w, w);
           }`
@@ -429,7 +354,6 @@ function makeBackdrop(pano, depth, water, back, backDepth){
   };
   return dome;
 }
-/* a phone marches the forest at half its frame's pixels, the picture is hazy enough to bear it */
 const MARCH_PX = 2.1e6;
 const backdropPR = ()=> HI_RES ? Math.min(DPR, 1, Math.sqrt(MARCH_PX/(VW*VH))) : DPR*0.5;
 let backdrop = null;

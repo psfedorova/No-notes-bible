@@ -1,4 +1,3 @@
-/* the leather scans dyed and tooled onto the boards, the spine and the doublures */
 import { clamp, lerp, smooth, fbm, upsample, cv, tex, crackCanvas, fieldFromCanvas } from '../lib/textures.js';
 import { CH, CW } from '../core/config.js';
 import { matCoverBack, matCoverFront, matLeatherEdge } from './materials.js';
@@ -7,7 +6,6 @@ import { spiralPath } from './print.js';
 import { paintSpine } from './spine.js';
 import { shed } from '../assets/loaders.js';
 
-/* navy-dyed leather from the scan's luminance, so the grain and creases survive */
 function dyeLeather(img, size, pal){
   const c = cv(size, size), x = c.getContext('2d');
   x.drawImage(img, 0, 0, size, size);
@@ -30,8 +28,6 @@ function tiled(src, W, H, tile){
   for(let y=0;y<H;y+=tile) for(let xx=0;xx<W;xx+=tile) x.drawImage(src, xx, y, tile, tile);
   return c;
 }
-/* one board's maps: tiled grain, worn edges, and the leather pressed down and
-   darkened where the tool bit around the gilt */
 function composeBoard(dyed, norImg, roughImg, mask, flipY){
   const W = 1024, H = Math.round(W*CH/CW), tile = 560;
   const col = tiled(dyed, W, H, tile);
@@ -64,7 +60,6 @@ function composeBoard(dyed, norImg, roughImg, mask, flipY){
         v = lerp(v, [120, 86, 34][k], s*0.35);
         cp[p+k] = clamp(v, 0, 255);
       }
-      /* emboss: the tooled groove around each line of gilt */
       const xm = Math.max(0,x-1), xp = Math.min(W-1,x+1), ym = Math.max(0,y-1), yp = Math.min(H-1,y+1);
       const dx = (tight[(y*W+xp)*4] - tight[(y*W+xm)*4])/255;
       const dy = (tight[(yp*W+x)*4] - tight[(ym*W+x)*4])/255;
@@ -89,9 +84,6 @@ function setBoardMaps(mat, maps){
   mat.color.set(0xffffff); mat.roughness = 1;
   mat.needsUpdate = true;
 }
-/* gilt tooling of the doublure, drawn in book units from the panel's top left */
-/* an open-work leaf: outline, midrib and a few side veins, the way a tooled
-   leaf reads in gold, instead of a solid blot */
 function laceLeaf(g, x, y, ang, L, W, lw){
   g.save(); g.translate(x, y); g.rotate(ang);
   g.lineWidth = lw;
@@ -116,8 +108,6 @@ function doublureGilt(g, w, h){
   dots(0.108, 0.034, 0.0065);
   rule(0.14, 0.005); rule(0.163, 0.012);
   const ci = 0.163;
-  /* a filigree corner piece: two scrolled arms running along the panel's edges,
-     each budding small leaves and tendrils, an acanthus spray on the diagonal */
   const corner = (x, y, sx, sy)=>{
     g.save(); g.translate(x, y); g.scale(sx, sy); g.scale(1.9, 1.9);
     const lozenge = (cx, cy, r)=>{ g.beginPath(); g.moveTo(cx, cy-r); g.lineTo(cx+r, cy); g.lineTo(cx, cy+r); g.lineTo(cx-r, cy); g.closePath(); g.fill(); };
@@ -128,24 +118,19 @@ function doublureGilt(g, w, h){
       const bz = (a, b, c, d, lw)=>{ g.lineWidth = lw; g.beginPath(); g.moveTo(...P(...a)); g.bezierCurveTo(...P(...b), ...P(...c), ...P(...d)); g.stroke(); };
       const sp = (cx, cy, r0, r1, a0, turns, cw, lw)=>{ g.lineWidth = lw; const [X, Y] = P(cx, cy); g.beginPath(); spiralPath(g, X, Y, r0, r1, sw ? Math.PI/2 - a0 : a0, turns, sw ? -cw : cw); g.stroke(); };
       const leaf = (px, py, ang, L, Wd)=>{ const [X, Y] = P(px, py); laceLeaf(g, X, Y, sw ? Math.PI/2 - ang + Math.PI : ang, L, Wd, 0.0028); };
-      /* the long arm with its end scroll */
       bz([0.05, 0.026], [0.14, 0.004], [0.26, 0.05], [0.36, 0.034], 0.0062);
       sp(0.385, 0.058, 0.026, 0.003, -Math.PI*0.6, 1.4, 1, 0.0052);
-      /* a second, inner arm curling back toward the corner */
       bz([0.08, 0.05], [0.16, 0.05], [0.21, 0.09], [0.18, 0.13], 0.005);
       sp(0.158, 0.118, 0.02, 0.003, -Math.PI*0.05, 1.3, 1, 0.0042);
-      /* tendrils off the long arm */
       bz([0.2, 0.031], [0.22, 0.055], [0.25, 0.075], [0.235, 0.092], 0.0036);
       sp(0.222, 0.085, 0.013, 0.002, 0.2, 1.2, -1, 0.0032);
       bz([0.3, 0.04], [0.31, 0.012], [0.33, 0.004], [0.345, 0.008], 0.0032);
-      /* small leaves budding along the arms */
       leaf(0.12, 0.016, Math.PI*0.62, 0.05, 0.015);
       leaf(0.27, 0.046, Math.PI*0.42, 0.045, 0.013);
       leaf(0.33, 0.036, Math.PI*0.85, 0.04, 0.012);
       leaf(0.19, 0.075, Math.PI*0.95, 0.045, 0.013);
       [[0.43, 0.026, 0.0065], [0.405, 0.012, 0.004], [0.29, 0.1, 0.005], [0.245, 0.012, 0.004], [0.11, 0.095, 0.0045]].forEach(([px, py, r])=>bead(...P(px, py), r));
     }
-    /* acanthus spray on the diagonal */
     laceLeaf(g, 0.05, 0.05, Math.PI*0.75, 0.17, 0.036, 0.0032);
     laceLeaf(g, 0.062, 0.062, Math.PI*0.75 - 0.66, 0.105, 0.024, 0.0028);
     laceLeaf(g, 0.062, 0.062, Math.PI*0.75 + 0.66, 0.105, 0.024, 0.0028);
@@ -155,7 +140,6 @@ function doublureGilt(g, w, h){
     g.restore();
   };
   corner(ci, ci, 1, 1); corner(w-ci, ci, -1, 1); corner(ci, h-ci, 1, -1); corner(w-ci, h-ci, -1, -1);
-  /* small fleurons at the middle of each side of the panel */
   const mid = (x, y, a)=>{
     g.save(); g.translate(x, y); g.rotate(a);
     laceLeaf(g, 0, 0.012, Math.PI, 0.13, 0.032, 0.0034);

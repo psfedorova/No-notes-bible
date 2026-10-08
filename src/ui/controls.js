@@ -1,4 +1,3 @@
-/* the controls: buttons, the menu, the pager and the keys */
 import { sharingOn } from '../sharing/shelf.js';
 import { N } from '../core/config.js';
 import { st } from '../book/state.js';
@@ -23,13 +22,11 @@ btnNext.addEventListener('click', ()=> pageStep(1));
 btnWrite.addEventListener('click', ()=> writing ? exitWriting() : writePose());
 btnBook.addEventListener('click', ()=> toggleBook());
 
-/* everything that otherwise lives on a key, for a phone */
 const btnMore = document.getElementById('btnMore');
 const menuEl = document.getElementById('menu');
 const menuBtn = act => menuEl.querySelector(`[data-act="${act}"]`);
 const eraseLabel = list => list.length > 1 ? `Erase pages ${list[0] + 1} and ${list[1] + 1}` : `Erase page ${list[0] + 1}`;
 const eraseFresh = ()=> !readOnly() && lastErase && performance.now() - lastErase.at <= 60000;
-/* the pages whose history the menu opens: the one under the quill, else the open spread */
 const historyPages = ()=> writing ? [writing.n] : st.open ? [2*st.k - 1, 2*st.k].filter(n => n >= 1 && n < 2*N) : [];
 function menuView(name){
   menuEl.querySelectorAll('.view').forEach(v=>{ v.hidden = v.dataset.view !== name; });
@@ -115,8 +112,6 @@ function refreshUI(){
   btnWrite.title = writing ? 'Set the quill down' : readOnly() ? 'You can only read this book' : 'Lay the book open and write';
 }
 
-/* keys instead of buttons, read by position so a Cyrillic layout works the
-   same; SPELLS lists them */
 function toggleBook(){
   if(!st.open){ seekSpread(homeSpread(), { flourish: false }); return; }
   if(!st.flight && !st.riffle) setOpen(false);

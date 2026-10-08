@@ -1,4 +1,3 @@
-/* the shaft of sun on the book: its spot light, the beam pass and the motes in it */
 import * as THREE from 'three';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { mulberry32, cv, makeSpriteCanvas, makeRayAlpha } from '../lib/textures.js';
@@ -7,17 +6,10 @@ import { NOISE_GLSL, noiseTex } from '../lib/noise.js';
 import { camera, scene, SUN_DIR } from './renderer.js';
 import { GUST_GLSL, nearGust } from './plants.js';
 
-/* a shaft of sun through a gap in the canopy, landing on the book: the book and the
-   crown of the boulder stand in a pool of light brighter than the wood round them */
 const BEAM_AT = new THREE.Vector3(0, 0.3, 0);
-const BEAM_R = 4.6;                      // its radius where it lands
-const BEAM_FROM = 34;                    // how far up the gap in the leaves is
-/* it is the forest's own sun, so the shaft runs the way every other ray in the wood
-   runs, up toward the bright gap behind the book */
+const BEAM_R = 4.6;
+const BEAM_FROM = 34;
 const BEAM_DIR = SUN_DIR;
-/* the gap is not round and clean: light comes through between leaves, so the shaft is
-   made of many soft rays. The pool on the book stays whole: flecks of it on the pages
-   read as stains on the parchment */
 const goboTex = (()=>{
   const S = 256, c = cv(S, S), x = c.getContext('2d'), rnd = mulberry32(4711);
   x.fillStyle = '#262626'; x.fillRect(0, 0, S, S);
@@ -42,8 +34,6 @@ beam.shadow.camera.near = BEAM_FROM - 12; beam.shadow.camera.far = BEAM_FROM + 1
 beam.shadow.bias = -0.0004; beam.shadow.normalBias = 0.02; beam.shadow.radius = 4;
 scene.add(beam, beam.target);
 
-/* shafts of light falling through the canopy, all parallel to the sun */
-/* the forest render carries its own shafts of light now; these stay hidden */
 const rayGroup = new THREE.Group();
 rayGroup.visible = false;
 scene.add(rayGroup);
@@ -75,7 +65,6 @@ scene.add(rayGroup);
   rayGroup.add(shaft);
 }
 
-/* warm motes drifting in the light */
 let dust;
 {
   const NP = 170;
@@ -95,12 +84,6 @@ let dust;
   scene.add(dust);
 }
 
-/* the shaft itself, seen in the forest's haze. It is a pass over the finished picture:
-   each eye ray is marched through the beam up to the first thing it meets (the depth
-   the scene left behind), so the light falls on the book, the stone and the ground and
-   passes behind them, with no surface of its own to show an edge. The haze is thin and
-   drifts, the rays are the gaps in the leaves, and it scatters forward, so it glows
-   most when one looks up it toward the sun and almost vanishes from behind */
 const beamU = {
   uA: { value: BEAM_AT }, uD: { value: BEAM_DIR }, uSig: { value: BEAM_R*0.5 }, uLen: { value: BEAM_FROM*1.1 },
   uTime: { value: 0 }, uK: { value: 1 }, uGobo: { value: BEAM_R*2.5 },
@@ -109,11 +92,6 @@ const beamU = {
 };
 beamU.uX.value.crossVectors(new THREE.Vector3(0, 1, 0), BEAM_DIR).normalize();
 beamU.uY.value.crossVectors(BEAM_DIR, beamU.uX.value).normalize();
-/* the march runs at half the frame's pixels each way: the haze has no edge of its own.
-   The pass only fills its small picture; the last pass of the frame (scene/post.js)
-   lays it over the scene with BEAM_MIX, taking each pixel from the nearby small ones at
-   the same distance as its own, so the haze stays behind the book and the stones where
-   it passes behind them */
 const VIEW_DIST = `float viewDist(float z){
   vec4 v = uInvProj*vec4(vUv*2.0 - 1.0, z*2.0 - 1.0, 1.0); v /= v.w;
   return z > 0.99999 ? 800.0 : length(v.xyz); }`;
@@ -192,7 +170,6 @@ class BeamPass extends Pass {
   }
 }
 
-/* motes drifting in the shaft, catching the sun and going dark as they leave it */
 const BEAM_MOTES = HI_RES ? 320 : 180;
 const beamMotes = (()=>{
   const g = new THREE.BufferGeometry(), seed = new Float32Array(BEAM_MOTES*4), rnd = mulberry32(913);
@@ -215,7 +192,7 @@ const beamMotes = (()=>{
         float s = seed.x + sin(t*1.3 + ph)*0.8;
         float a = seed.y + t*0.4, r = seed.z*(1.0 + 0.12*sin(t*0.9 + ph));
         vec3 p = uA + uD*s + (n1*cos(a) + n2*sin(a))*r + vec3(sin(t*2.1 + ph), cos(t*1.7 + ph*1.3), sin(t*1.9 + ph*0.7))*0.35;
-        vec2 gw = gustAt(p.xz, 2.5)*(0.6 + 0.8*seed.w)*exp(-max(p.y, 0.0)*0.12);
+        vec2 gw = gustAt(p.xz)*exp(-max(p.y, 0.0)*0.12);
         p += vec3(gw.x, length(gw)*0.5, gw.y)*1.6;
         float lit = exp(-r*r/(uSig*uSig*1.3))*smoothstep(-0.2, 1.5, s);
         float glint = pow(0.5 + 0.5*sin(uTime*(0.7 + 1.6*seed.w) + ph), 6.0);

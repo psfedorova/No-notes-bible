@@ -1,12 +1,4 @@
-/* Shoots the opening film (src/film/capture.js) from the live scene and encodes it.
-
-     python3 -m http.server 8123          (in the repo, if it is not running yet)
-     node tools/film/shoot.mjs            (both cuts; or: node tools/film/shoot.mjs wide)
-
-   Starts its own headless Chrome (Metal), steps the film frame by frame, screenshots
-   each frame at twice the size and encodes it down with ffmpeg into
-   assets/intro/{wide,tall}.mp4 (and a _lite cut of each), and records the camera's
-   first and last pose into assets/intro/poses.json for the hand-over to the live book */
+/* usage: python3 -m http.server 8123 in the repo, then node tools/film/shoot.mjs [wide|tall] */
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,7 +9,6 @@ const OUT = path.join(ROOT, 'assets/intro');
 const SITE = process.env.SITE || 'http://localhost:8123';
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9341;
-/* css size, the encoded size; rendered at 2x and scaled down */
 const CUTS = {
   wide: { w: 1920, h: 1080, out: [1920, 1080], lite: [960, 540] },
   tall: { w: 600, h: 1300, out: [720, 1560], lite: [480, 1040] }
@@ -74,17 +65,15 @@ try{
     c.close();
     poses[k] = { start, end };
     const [W, H] = C.out, scale = `scale=${W}:${H}:flags=lanczos`;
-    /* tagged bt709 limited range, so every browser decodes the colours alike */
+    /* tagged bt709 limited range, or browsers decode the colours differently */
     const tag = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
     const yuv = ':out_color_matrix=bt709:out_range=tv,format=yuv420p';
-    /* the film's own music (ElevenLabs) goes in with the pictures */
     const score = path.join(OUT, `score_${k}.m4a`);
     const sound = fs.existsSync(score);
     const audioIn = sound ? ['-i', score] : [], audio = sound ? ['-map', '0:v', '-map', '1:a', '-af', 'apad', '-c:a', 'aac', '-b:a', '128k', '-shortest'] : ['-an'];
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-framerate', String(fps), '-i', path.join(frames, 'f%04d.jpg'), ...audioIn,
       '-vf', scale + yuv, ...tag, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '29', '-x264-params', 'aq-mode=3', '-profile:v', 'high', '-level', '4.2',
       '-movflags', '+faststart', ...audio, path.join(OUT, `${k}.mp4`)]);
-    /* a lighter cut for slow connections */
     const [lw, lh] = C.lite;
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-framerate', String(fps), '-i', path.join(frames, 'f%04d.jpg'), ...audioIn,
       '-vf', `scale=${lw}:${lh}:flags=lanczos` + yuv, ...tag, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '30', '-x264-params', 'aq-mode=3', '-profile:v', 'high', '-level', '4.0',

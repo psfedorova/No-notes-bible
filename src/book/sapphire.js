@@ -1,14 +1,7 @@
-/* the sapphire on the front board: an oval brilliant, cut and set like a jewel */
 import * as THREE from 'three';
 import { sun, SUN_DIR } from '../scene/renderer.js';
 import { st } from './state.js';
 
-/* ---------------- the sapphire: an oval brilliant, cut and set like a jewel ----------------
-   only the crown is modelled; the shader traces each ray that enters it through the
-   whole stone: down to a virtual pavilion, round by total internal reflection, out
-   through a facet (split a little into its colours) into the forest and the sun, the
-   blue deepening with every millimetre of corundum the light has crossed; the
-   pavilion is backed with foil, so what goes down comes back up as brilliance */
 const GEM_A = 0.21, GEM_B = 0.29, GEM_H = 0.095, GEM_G = 0.02, GEM_D = 0.22;
 const GEMS = [];
 function gemCrownGeometry(){
@@ -20,10 +13,10 @@ function gemCrownGeometry(){
   const v = [], f = (a, b, c)=>v.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
   for(let k=0;k<8;k++){
     const k1 = (k+1)%8, km = (k+7)%8, g0 = G[2*k], g1 = G[2*k+1], g2 = G[(2*k+2)%16];
-    f(top, T[k], T[k1]);                              // table
-    f(T[k], S[k], T[k1]);                             // star
-    f(T[k], g0, S[k]); f(T[k], S[km], g0);            // bezel kite
-    f(S[k], g0, g1); f(S[k], g1, g2);                 // upper girdle
+    f(top, T[k], T[k1]);
+    f(T[k], S[k], T[k1]);
+    f(T[k], g0, S[k]); f(T[k], S[km], g0);
+    f(S[k], g0, g1); f(S[k], g1, g2);
   }
   for(let j=0;j<16;j++){
     const j1 = (j+1)%16;
@@ -34,8 +27,6 @@ function gemCrownGeometry(){
   g.computeVertexNormals();
   return g;
 }
-/* the stone as a convex solid: the crown's facets, the girdle, and a pavilion of eight
-   mains to the culet with sixteen lower-girdle facets, turned off the crown's star */
 function gemPlanes(crown){
   const out = [], add = (n, w)=>{
     if(!out.some(p=>p.x*n.x + p.y*n.y + p.z*n.z > 0.99999 && Math.abs(p.w - w) < 1e-5)) out.push(new THREE.Vector4(n.x, n.y, n.z, w));
@@ -97,7 +88,6 @@ const GEM_GLSL = n => `
       p += rd*tm;
       T *= exp(-uGemSig*tm);
       float c = dot(rd, nh), k = 1.0 - 3.1329*(1.0 - c*c);
-      /* below the girdle the stone sits on bright foil in a closed collet, as old jewels did */
       if(nh.z < 0.05) T *= 0.9;
       else if(k > 0.0){
         float F = 0.077 + 0.923*pow(1.0 - sqrt(k), 5.0);
@@ -109,7 +99,6 @@ const GEM_GLSL = n => `
       rd = reflect(rd, nh);
     }
     L += T*vec3(0.01, 0.02, 0.08)*uGemEnv;
-    /* when the book wakes, a light kindles inside the stone */
     L += uGemGlow*vec3(0.1, 0.3, 1.0)*(0.25 + 0.75*exp(-dot(p.xy, p.xy)*40.0));
     return L;
   }`;
@@ -126,16 +115,13 @@ function gemMaterial(uni, nPlanes){
     sh.fragmentShader = sh.fragmentShader
       .replace('void main() {', GEM_GLSL(nPlanes) + '\nvoid main() {')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat gemF; vec3 gemL = gemTrace(gemF); if(any(isnan(gemL)) || any(isinf(gemL)) || isnan(gemF)) { gemL = vec3(0.0); gemF = 1.0; } totalEmissiveRadiance += gemL*(1.0 - gemF);')
-      /* a mirror facet catching the sun is one HDR pixel the bloom blows into a square */
       .replace('#include <opaque_fragment>', 'outgoingLight *= min(1.0, 7.0/max(1e-4, max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b))));\n#include <opaque_fragment>');
   };
   m.customProgramCacheKey = ()=>'gem-trace';
   return m;
 }
-/* polished yellow gold for the setting, brighter than the gilt tooling */
 const matJewelGold = new THREE.MeshPhysicalMaterial({
   color: 0xe0b45c, metalness: 1, roughness: 0.17, envMapIntensity: 1.6, emissive: 0xffc56e, emissiveIntensity: 0 });
-/* a breath of blue on the leather round the bezel, only while the book wakes */
 const haloMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
@@ -145,7 +131,6 @@ const haloMat = new THREE.ShaderMaterial({
     void main(){ float d = length(vU); float a = pow(1.0 - smoothstep(0.3, 1.0, d), 2.2)*uHalo;
       gl_FragColor = vec4(vec3(0.16, 0.36, 1.0)*a, a); }`
 });
-/* seat: how far the group's origin stands off the leather */
 function sapphire(scale, seat, flareW){
   const grp = new THREE.Group();
   const crown = gemCrownGeometry(), planes = gemPlanes(crown);
@@ -161,7 +146,6 @@ function sapphire(scale, seat, flareW){
   halo.userData.noPick = true; halo.raycast = ()=>{};
   halo.renderOrder = 1;
   grp.add(halo);
-  /* collet: a slim rim round the girdle, edged with milgrain */
   const ZG = gem.position.z;
   const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 12, 96), matJewelGold);
   rim.scale.set(GEM_A + 0.012, GEM_B + 0.012, 0.32); rim.position.z = ZG - GEM_G*0.5;
@@ -174,7 +158,6 @@ function sapphire(scale, seat, flareW){
     bead.setMatrixAt(i, _m);
   }
   grp.add(bead);
-  /* eight claws, leaning in over the girdle to hold the stone */
   const clawGeo = new THREE.CapsuleGeometry(0.013, 0.022, 4, 10);
   const up = new THREE.Vector3(0, 1, 0);
   for(let k=0;k<8;k++){
@@ -194,17 +177,16 @@ function sapphire(scale, seat, flareW){
 }
 const _gemM4 = new THREE.Matrix4();
 function stepGems(){
-  matJewelGold.emissiveIntensity = st.aura*0.12 + st.gemFlare*0.2;
+  matJewelGold.emissiveIntensity = st.aura*0.12 + st.glow*0.12 + st.gemFlare*0.2;
   GEMS.forEach(G=>{
     const fl = st.gemFlare*G.flareW;
     G.uni.uGemRot.value.setFromMatrix4(_gemM4.extractRotation(G.gem.matrixWorld));
     G.uni.uSunCol.value.copy(sun.color).multiplyScalar(sun.intensity);
-    G.uni.uGemGlow.value = fl*0.9 + st.aura*0.35;
-    G.halo.uniforms.uHalo.value = fl*0.4 + st.aura*0.22;
+    G.uni.uGemGlow.value = fl*0.9 + st.aura*0.35 + st.glow*0.4;
+    G.halo.uniforms.uHalo.value = fl*0.4 + st.aura*0.22 + st.glow*0.2;
   });
 }
 
-/* back board: local z from -CVR (outer) to 0 (inner) */
 const backGrp = new THREE.Group();
 
 export {

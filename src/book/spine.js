@@ -1,4 +1,3 @@
-/* the spine: one hide of leather from board to board, the lining and headbands */
 import * as THREE from 'three';
 import { clamp, lerp, smooth, mulberry32, fbm, upsample, cv, tex } from '../lib/textures.js';
 import { BACK_GAP, CH, CVR, HI_RES, N, OPEN, PH, ZB } from '../core/config.js';
@@ -10,7 +9,6 @@ import { backDir, hingeOf } from './leaves.js';
 import { _H } from './state.js';
 import { shed } from '../assets/loaders.js';
 
-/* ---------------- spine leather: one hide from board to board ---------------- */
 const SP_U = 72, SP_V = 96, SP_LAP = 0.07, SP_BAND = 0.06;
 const BANDS = [0.19, 0.40, 0.60, 0.81];
 const spineGeo = new THREE.BufferGeometry();
@@ -31,9 +29,6 @@ const spineMesh = new THREE.Mesh(spineGeo, matSpine);
 spineMesh.castShadow = true; spineMesh.receiveShadow = true;
 spineMesh.userData.grab = 'spine';
 bookRoot.add(spineMesh);
-/* the back is tooled like the boards: gold leaf pressed into the leather, and blind
-   tooling (the same tools pressed without gold) for frames and runes. Both go into
-   masks that become colour, relief, and metal where the gold lies */
 function paintSpine(tile, norImg, roughImg){
   const SW = HI_RES ? 1024 : 512, SH = SW*3, K = SW/512;
   const col = cv(SW, SH), x = col.getContext('2d');
@@ -55,8 +50,6 @@ function paintSpine(tile, norImg, roughImg){
     for(let px=SW*0.1; px<SW*0.9; px+=14*K){ g.beginPath(); g.arc(px, y, 2.2*K, 0, 7); g.fill(); }
   });
 
-  /* a canvas pixel across the round covers less leather than one along the spine:
-     each panel is drawn wide by that ratio so its tooling lands undistorted */
   const stretch = (SW*(1 - 2*SP_UV_EDGE)/spineArc)/(SH/CH);
   const across = SW*(1 - 2*SP_UV_EDGE);
   const panel = (v0, v1, draw)=>{
@@ -70,7 +63,6 @@ function paintSpine(tile, norImg, roughImg){
     c.closePath();
   };
   const sparkle = (cx, cy, r)=>{ starPath(g, cx, cy, r, r*0.28, 4); g.fill(); };
-  /* every panel sits in a blind double fillet with a gilt sparkle at each corner */
   const frame = (w, h)=>{
     const fx = w*0.40, fy = h/2 - SH*0.038, d = 7*K;
     b.lineWidth = 2.4*K; b.strokeRect(-fx, -fy, fx*2, fy*2);
@@ -86,7 +78,6 @@ function paintSpine(tile, norImg, roughImg){
     g.fillText(text, 0, cy);
   };
 
-  /* head: the magic circle of the pages' watermark, in gold, runes pressed blind round it */
   panel(BANDS[3], 0.985, (w, h)=>{
     frame(w, h);
     const R = Math.min(w*0.27, h*0.27), rnd = mulberry32(777);
@@ -107,7 +98,6 @@ function paintSpine(tile, norImg, roughImg){
   });
   panel(BANDS[2], BANDS[3], (w, h)=>{ const f = frame(w, h); word('LIBER', 0, f.fx*1.5, f.fy*0.8); });
   panel(BANDS[1], BANDS[2], (w, h)=>{ const f = frame(w, h); word('ARCANUM', 0, f.fx*1.6, f.fy*0.8); });
-  /* the moon waxing, full and waning, under a little constellation */
   panel(BANDS[0], BANDS[1], (w, h)=>{
     const f = frame(w, h), r = f.fx*0.27, cy = f.fy*0.18;
     b.beginPath(); b.arc(0, cy, r*0.86, 0, 7); b.fill();
@@ -126,7 +116,6 @@ function paintSpine(tile, norImg, roughImg){
     b.setLineDash([]);
     pts.forEach(([px, py], i)=>sparkle(px, py, (i%2 ? 7 : 10)*K));
   });
-  /* tail: the book's motto, "what is written remains" */
   panel(0.015, BANDS[0], (w, h)=>{
     const f = frame(w, h);
     word('SCRIPTA', -f.fy*0.3, f.fx*1.45, f.fy*0.42, 600);
@@ -183,16 +172,13 @@ function bandBump(v){
   return b;
 }
 const _sp = { px:new Float32Array(SP_U+1), pz:new Float32Array(SP_U+1), nx:new Float32Array(SP_U+1), nz:new Float32Array(SP_U+1), w:new Float32Array(SP_U+1), u:new Float32Array(SP_U+1) };
-const SP_UV_EDGE = 0.06;            // canvas margin each side for the laps onto the boards
-let spineArc = 0.81;                // the round of the back, board edge to board edge, as last laid out
-const SP_LAPN = 5;                  // columns of the hide lapped onto each board
-/* head and tail: the hide is turned in at either end, so its edge shows the leather's
-   thickness, and once the back has gone hollow the tube between the leather and the
-   sewn backs opens under the headband, its paper lining fading into the dark */
-const SP_TH = 0.011, SP_TURN = 0.035;   // leather thickness at the turn-in, and its depth inside
-const SP_SAG = 0.032;                   // the round the hollow back keeps when the book lies open, down to the boards' outer faces
-const SP_JOINT = 1.1;                   // reach of the leather's turn onto the round, per unit of its span
-const SP_EDGE = 1.2*CVR;                // reach of its turn round a board's edge
+const SP_UV_EDGE = 0.06;
+let spineArc = 0.81;
+const SP_LAPN = 5;
+const SP_TH = 0.011, SP_TURN = 0.035;
+const SP_SAG = 0.032;
+const SP_JOINT = 1.1;
+const SP_EDGE = 1.2*CVR;
 const matHollow = new THREE.MeshStandardMaterial({ color: 0x4a3622, roughness: 1, metalness: 0, side: THREE.DoubleSide, vertexColors: true });
 const spineCaps = [-1, 1].map(side=>{
   const lip = ribbon(SP_U - 2*SP_LAPN + 1, 3, matSpine);
@@ -206,9 +192,6 @@ const spineCaps = [-1, 1].map(side=>{
   return { side, lip, hollow };
 });
 const _spTight = Array.from({length:SP_U+1}, ()=>[0, 0]);
-/* the hide runs from the back board, round the sewn backs of the leaves (offset
-   outwards by BACK_GAP), to the front board. Closed it is the rounded spine; open
-   it rounds under the block from joint to joint and rests on what the boards rest on. */
 function updateSpine(C){
   const ax = C.xb, az = ZB - CVR;
   const bx = C.ex - C.nx*CVR, bz = C.ez - C.nz*CVR;
@@ -221,15 +204,10 @@ function updateSpine(C){
   const P = [];
   const LAPN = SP_LAPN, TR = 8, NB = SP_U + 1 - 2*LAPN - 2*TR;
   for(let i=0;i<LAPN;i++){ const t=i/LAPN; P.push([ax + SP_LAP*(1-t), az, 0]); }
-  /* the round of the back, first and last sewn back included. Hollow back: as the
-     boards go down flat the hide lets go of the sewn backs and rounds under them,
-     a narrow tube between, instead of arching up with them */
   const hol = smooth(clamp((C.theta/OPEN - 0.45)/0.55, 0, 1));
   const L0 = back[0], L1 = back[back.length-1];
   const cl = Math.hypot(L1[0] - L0[0], L1[1] - L0[1]) || 1;
   const sgx = (L0[1] - L1[1])/cl*SP_SAG, sgz = (L1[0] - L0[0])/cl*SP_SAG;
-  /* drawn tight from board to board the leather spans the backs it cannot reach:
-     only the sewn backs on the outside of the band carry it */
   const band = [[ax, az]];
   for(const p of back.concat([[bx, bz]])){
     while(band.length > 1){
@@ -254,9 +232,6 @@ function updateSpine(C){
     const hx = lerp(L0[0], L1[0], s) + sgx*bow, hz = lerp(L0[1], L1[1], s) + sgz*bow;
     mid.push([lerp(tx, hx, hol), lerp(tz, hz, hol)]);
   }
-  /* each board edge turns onto the round as a cubic that leaves the board along its
-     face and meets the round along the round's own direction, so the leather has no
-     crease at the joint at any angle of the board */
   const joint = (px, pz, mx, mz, qx, qz, nx2, nz2, i, from)=>{
     const t = i/TR, t2 = t*t, t3 = t2*t;
     const h00 = 2*t3 - 3*t2 + 1, h10 = t3 - 2*t2 + t, h01 = 3*t2 - 2*t3, h11 = t3 - t2;
@@ -272,9 +247,6 @@ function updateSpine(C){
   for(let i=1;i<=LAPN;i++){ const t=i/LAPN; P.push([bx + C.dx*SP_LAP*t, bz + C.dz*SP_LAP*t, 0]); }
   for(let i=LAPN;i<LAPN+TR;i++){ _spTight[i][0] = P[i][0]; _spTight[i][1] = P[i][1]; }
   for(let i=SP_U-LAPN-TR+1;i<=SP_U-LAPN;i++){ _spTight[i][0] = P[i][0]; _spTight[i][1] = P[i][1]; }
-  /* the leather's artwork is laid by arc length: the round of the back (board edge to
-     board edge) takes the middle of the canvas, the laps onto the boards its margins,
-     so lettering keeps its shape and never wraps under the boards */
   const r0 = LAPN, r1 = SP_U - LAPN;
   let arc = 0;
   _sp.u[r0] = 0;
@@ -331,7 +303,6 @@ function updateSpine(C){
   });
 }
 
-/* ---------------- block back: lining, headbands, endpaper joints ---------------- */
 function ribbon(cols, rows, mat){
   const g = new THREE.BufferGeometry();
   const cnt = cols*rows;
@@ -347,15 +318,12 @@ function ribbon(cols, rows, mat){
   return m;
 }
 const lining = ribbon(N, 2, matLining);
-/* the hinge strips carry on the doublure's leather: u runs from its spine edge
-   (HINGE_U) down to the gutter (0) */
 const jointF = ribbon(10, 2, matEndpaper);
 const jointB = ribbon(10, 2, matEndpaper);
 [jointF, jointB].forEach(j=>{
   const uv = j.geometry.attributes.uv;
   for(let i=0;i<uv.count;i++) uv.setX(i, HINGE_U*(1 - uv.getX(i)));
 });
-/* headbands: silk wound round a core, cream and madder, sitting on the backs */
 const HB_SEG = 10, HB_R = 0.017;
 const headbandTex = (()=>{
   const c = cv(64, 32), x = c.getContext('2d');

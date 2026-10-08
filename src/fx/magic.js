@@ -1,4 +1,3 @@
-/* the quiet magic round the book: motes, the aura, bursts of gold, dust and the inner glow */
 import * as THREE from 'three';
 import { clamp, cv, fbm, lerp, smooth, mulberry32, makeSpriteCanvas } from '../lib/textures.js';
 import { damp, sdamp } from '../core/easing.js';
@@ -12,7 +11,6 @@ import { sparkMat } from './ink-fx.js';
 import { stepLife } from '../scene/forest-life.js';
 import { clock } from '../app/loop.js';
 
-/* small magic, the forest's and the book's: cool blue-white wisps, some gold */
 const flyMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   uniforms: { uScale: { value: 1 } },
@@ -23,7 +21,6 @@ const flyMat = new THREE.ShaderMaterial({
       float a = (core + halo*halo*halo*0.6)*vA;
       gl_FragColor = vec4(mix(vec3(0.62, 0.88, 1.0), vec3(1.0, 0.86, 0.55), vT)*a*3.0, a); }`
 });
-/* motes of gold rising slowly off the open pages */
 const MOTES = 90;
 const moteGeo = new THREE.BufferGeometry();
 const motePos = new Float32Array(MOTES*3), moteVel = new Float32Array(MOTES*3);
@@ -67,8 +64,6 @@ function stepMotes(dt){
   moteGeo.attributes.alpha.needsUpdate = true;
 }
 
-/* ---------------- quiet magic around the opening and closing ---------------- */
-/* gold sparks circling the book slowly while it opens or closes */
 const AURA = 120;
 const auraGeo = new THREE.BufferGeometry();
 const auraPos = new Float32Array(AURA*3), auraAlpha = new Float32Array(AURA);
@@ -82,15 +77,13 @@ aura.frustumCulled = false;
 scene.add(aura);
 const _ac = new THREE.Vector3();
 function stepAura(dt){
-  const lvl = Math.max(st.aura, 0.32);
-  aura.visible = lvl > 0.002;
-  if(!aura.visible) return;
+  const lvl = 0.32;
   spinGrp.getWorldPosition(_ac);
   const b = smooth(clamp(st.theta/OPEN, 0, 1));
   const rx = lerp(3.0, 4.6, b), rz = lerp(3.3, 3.4, b);
   for(let i=0;i<AURA;i++){
     const q = auraSeed[i];
-    q.a += q.w*dt*(0.6 + st.aura*0.8);
+    q.a += q.w*dt*0.6;
     q.h = (q.h + dt*0.07) % 1;
     auraPos[i*3]   = _ac.x + Math.cos(q.a)*rx*q.r;
     auraPos[i*3+1] = _ac.y - 0.25 + q.h*1.6;
@@ -101,8 +94,6 @@ function stepAura(dt){
   auraGeo.attributes.alpha.needsUpdate = true;
 }
 
-/* free particles: gold breathed off the pages as they open, dust knocked out
-   from under the boards when they shut */
 function particlePool(count, mat){
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(count*3), vel = new Float32Array(count*3), alpha = new Float32Array(count);
@@ -145,7 +136,7 @@ const dustMat = sparkMat.clone();
 dustMat.fragmentShader = `varying float vA;
   void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.05, d)*vA; gl_FragColor = vec4(vec3(1.0, 0.84, 0.62)*a, 1.0); }`;
 const dust2 = particlePool(140, dustMat);
-function emitOpenBurst(count = 150){
+function emitOpenBurst(count = 50){
   const pg = [];
   if(st.k > 0) pg.push(2*st.k - 1);
   if(st.k < N) pg.push(2*st.k);
@@ -158,9 +149,6 @@ function emitOpenBurst(count = 150){
       1.4 + Math.random()*1.6, 0.45 + Math.random()*0.4);
   }
 }
-/* the dust a shut book blows off the rock: soft billows of fine grit rolling out low
-   from under the boards, brighter on the sun's side, thinning as they spread, and a
-   few grains catching the light. Each billow is one of a few cloudy sprites */
 function puffTexture(S, seed){
   const n = fbm(S, S, 3, 3, 4, seed), n2 = fbm(S, S, 8, 8, 3, seed + 5);
   const c = cv(S, S), x = c.getContext('2d'), im = x.createImageData(S, S);
@@ -209,7 +197,6 @@ function stepPuffs(dt){
     P.sp.material.uniforms.uOp.value = P.peak*Math.min(1, P.age/0.07)*Math.pow(1 - k, 1.5);
   }
 }
-/* the closed book in world space: corners of its footprint on the rock */
 const _dc = new THREE.Vector3();
 function emitDustPuff(){
   for(let i=0;i<22;i++){
@@ -234,9 +221,7 @@ function emitDustPuff(){
     dust2.emit(_dc.x, _dc.y + 0.05, _dc.z, v.x*sp, 0.1 + Math.random()*0.2, v.z*sp, 1.2 + Math.random()*1.2, 0.035 + Math.random()*0.04);
   }
 }
-/* warm light spilling out of the gap as the board lifts: a breath of it, the colour
-   of the sun on the page, not an orange lamp inside the book */
-const innerGlow = new THREE.PointLight(0xffdcb0, 0, 6, 1.6);
+const innerGlow = new THREE.PointLight(0xffdcb0, 0, 8, 1.6);
 scene.add(innerGlow);
 const glowTex = new THREE.CanvasTexture(makeSpriteCanvas(128));
 glowTex.colorSpace = THREE.SRGBColorSpace;
@@ -259,9 +244,9 @@ function stepMagic(dt){
   _gp.set(lerp(CW*0.5, 0, smooth(clamp(st.theta/OPEN, 0, 1))), 0, T/2 + 0.8);
   bookRoot.localToWorld(_gp);
   innerGlow.position.copy(_gp);
-  innerGlow.intensity = gl*3.2;
+  innerGlow.intensity = gl*7.5;
   glowSprite.position.copy(_gp);
-  glowSprite.material.uniforms.uOp.value = gl*0.14;
+  glowSprite.material.uniforms.uOp.value = gl*0.3;
   glowSprite.visible = gl > 0.003;
 }
 

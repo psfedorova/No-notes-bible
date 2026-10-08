@@ -1,15 +1,11 @@
-/* the boulder the book lies on: granite and moss, laid on triplanar */
 import * as THREE from 'three';
 import { cv, normalFromHeight } from '../lib/textures.js';
 import { GROUND_Y } from '../core/config.js';
 import { SUN_DIR } from './renderer.js';
 import { shed } from '../assets/loaders.js';
 import { NOISE_GLSL, noiseTex } from '../lib/noise.js';
+import { CONTACT_GLSL, contactU } from './contact.js';
 
-/* the boulder: weathered granite under a thick cushion of moss that lies on its
-   crown and runs down its flanks in tongues, as in the reference. Both stones are
-   painted textures laid on triplanar (the rock has no UVs); the moss is given
-   depth by shells of strands standing off the surface */
 const MOSS_GLSL = `
   ${NOISE_GLSL}
   float mossMask(vec3 p, vec3 n){
@@ -17,13 +13,10 @@ const MOSS_GLSL = `
     float big = vn3(p*0.32) + 0.5*vn3(p*0.75 + 11.0);
     float drip = vn3(vec3(p.x*1.1, p.y*0.22, p.z*1.1) + 4.0);
     float high = smoothstep(-4.5, 0.0, p.y);
-    /* ragged edges: moss creeps over the stone in clumps, not in clean blots */
     float rag = (vn3(p*2.6 + 3.0) - 0.5)*0.35 + (vn3(p*7.5) - 0.5)*0.22 + (vn3(p*19.0) - 0.5)*0.12;
     float m = up*0.5 + (big - 0.75)*1.0 + (drip - 0.5)*0.8*(1.0 - up) + high*0.12 - 0.2 + rag;
     return smoothstep(0.1, 0.46, m);
   }
-  /* cushions: yellow-green where they swell into the light, deep olive between them,
-     and here and there a patch gone brown and dry */
   vec3 mossTone(vec3 c, vec3 p){
     c = mix(c, dot(c, vec3(0.3, 0.59, 0.11))*vec3(1.06, 1.0, 0.6), 0.3)*1.2;
     float cush = vn3(p*3.2 + 9.0), hue = vn3(p*0.55 + 2.0), dry = smoothstep(0.66, 0.8, vn3(p*1.1 + 20.0));
@@ -36,7 +29,6 @@ const MOSS_GLSL = `
   vec3 triW(vec3 n){ vec3 b = pow(abs(n), vec3(5.0)); return b/(b.x + b.y + b.z); }
   vec4 tri(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy)*w.x + texture2D(t, p.xz)*w.y + texture2D(t, p.xy)*w.z; }
 `;
-/* moss lets the low sun through: lit from behind, its tips glow */
 const MOSS_LIT = amt => `
   #if NUM_DIR_LIGHTS > 0
   { vec3 Vd = normalize(vWp - cameraPosition);
@@ -44,13 +36,17 @@ const MOSS_LIT = amt => `
     float fwd = pow(max(dot(Vd, uSunDir), 0.0), 3.0);
     reflectedLight.directDiffuse += directLight.color*diffuseColor.rgb*vec3(1.0, 0.96, 0.55)*(${amt})*wrapL*(0.12 + 0.9*fwd); }
   #endif
-  { /* the canopy between: the sun comes through in drifting patches, as on the forest floor */
+  {
     vec3 sq = vWp - uSunDir*dot(vWp, uSunDir);
     vec3 dq = vec3(sq.x*0.42 + uTime*0.035, sq.y*0.42 + sq.z*0.3, uTime*0.06);
     float leafy = vn3(dq) *0.6 + vn3(dq*2.7 + 3.0)*0.4;
     float dap = mix(0.3, 1.15, smoothstep(0.38, 0.62, leafy));
     reflectedLight.directDiffuse *= dap; reflectedLight.directSpecular *= dap; }
   #include <lights_fragment_end>`;
+const CONTACT_APPLY = `#include <aomap_fragment>
+  { float cs = contactShade(vWp);
+    reflectedLight.indirectDiffuse *= 1.0 - 0.8*cs; reflectedLight.indirectSpecular *= 1.0 - 0.8*cs;
+    reflectedLight.directDiffuse *= 1.0 - 0.5*cs; reflectedLight.directSpecular *= 1.0 - 0.5*cs; }`;
 function rockTex(im, srgb){
   const x = new THREE.Texture(im);
   x.wrapS = x.wrapT = THREE.RepeatWrapping;
@@ -58,7 +54,6 @@ function rockTex(im, srgb){
   x.anisotropy = 8; x.needsUpdate = true;
   return shed(x);
 }
-/* a tangent-space normal map from the painted stone's own light and shade */
 function heightNormal(im, strength){
   const S = 1024, c = cv(S, S), x = c.getContext('2d');
   x.drawImage(im, 0, 0, S, S);
@@ -77,7 +72,7 @@ function rockMaterial(img, skirt){
   const m = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 1.3 });
   if(skirt) m.defines = { SKIRT: '' };
   m.onBeforeCompile = sh=>{
-    Object.assign(sh.uniforms, u);
+    Object.assign(sh.uniforms, u, skirt ? {} : contactU);
     sh.vertexShader = 'varying vec3 vWp; varying vec3 vWn;\n#ifdef SKIRT\nattribute float aFade; varying float vFade;\n#endif\n' + sh.vertexShader.replace('#include <fog_vertex>',
       '#include <fog_vertex>\n vWp = (modelMatrix*vec4(position,1.0)).xyz; vWn = normalize(mat3(modelMatrix)*normal);\n#ifdef SKIRT\n vFade = aFade;\n#endif');
     sh.fragmentShader = `uniform sampler2D tGranite, tGraniteN, tMoss, tMossN, tStone, tStoneN; uniform float gScale, mScale, sScale, uTime; uniform vec3 uSunDir;
@@ -85,42 +80,33 @@ function rockMaterial(img, skirt){
       .replace('#include <map_fragment>', `
         vec3 Nw = normalize(vWn), Wt = triW(Nw);
         #ifdef SKIRT
-        /* the moss runs off the stone over the ground in a ragged cushion */
         float mm = 1.0;
         if(vFade < vn3(vWp*1.4)*0.55 + vn3(vWp*4.5)*0.3 + vn3(vWp*12.0)*0.15) discard;
         #else
-        /* the lower half of the boulder is buried: cut at the floor, or it hangs below the
-           forest's ground as a dark skirt that slides over the moss as one walks round */
         if(vWp.y < ${GROUND_Y.toFixed(2)}) discard;
-        /* a ledge of the stone just over the floor, facing the sky, holds the moss the
-           floor round it holds: bare, it lay there as a flat grey slab seen from above */
         float ledge = smoothstep(0.5, 0.8, Nw.y)*(1.0 - smoothstep(${(GROUND_Y + 0.7).toFixed(2)}, ${(GROUND_Y + 1.5).toFixed(2)}, vWp.y));
         float mm = max(mossMask(vWp, Nw), ledge*smoothstep(0.25, 0.5, vn3(vWp*1.6 + 5.0) + 0.2));
         #endif
-        /* the scanned stone gives the boulder its lichen, stains and cracks at the scale of
-           the whole rock; the granite's grain is laid over it for the eye that comes close */
         vec3 stone = tri(tStone, vWp*sScale + 0.37, Wt).rgb;
         float grain = dot(tri(tGranite, vWp*gScale, Wt).rgb, vec3(0.3, 0.59, 0.11));
         vec3 gran = stone*mix(1.0, grain/0.25, 0.45)*2.4;
         gran *= mix(0.78, 1.08, vn3(vWp*0.45 + 7.0));
         vec3 mos = mossTone(tri(tMoss, vWp*mScale, Wt).rgb, vWp);
-        /* the stone darkens and greens where the moss is about to take it */
         float edge = smoothstep(0.0, 0.35, mm)*(1.0 - smoothstep(0.35, 0.9, mm));
         gran *= 1.0 - edge*0.35;
         diffuseColor.rgb *= mix(gran, mos, smoothstep(0.25, 0.75, mm));
         #ifdef SKIRT
         diffuseColor.rgb *= mix(0.55, 0.85, vFade);
         #else
-        /* shade gathering low down, where the boulder sinks into the forest floor */
         diffuseColor.rgb *= mix(0.4, 1.0, smoothstep(${GROUND_Y.toFixed(2)} - 0.2, ${(GROUND_Y + 2.6).toFixed(2)}, vWp.y));
-        /* the earth it is sunk in: damp dark soil and rotted moss creep up its foot in an
-           uneven line, so it goes into the ground instead of standing on it */
         { float rise = 0.35 + 0.45*vn3(vWp*0.9 + 3.0) + 0.25*(vn3(vWp*4.0) - 0.5);
           float soil = 1.0 - smoothstep(${GROUND_Y.toFixed(2)} + rise*0.45, ${GROUND_Y.toFixed(2)} + rise, vWp.y);
           vec3 earth = mix(vec3(0.075, 0.062, 0.042), vec3(0.11, 0.12, 0.06), vn3(vWp*2.3 + 1.0));
           diffuseColor.rgb = mix(diffuseColor.rgb, earth, soil*0.85*(1.0 - ledge)); }
         #endif`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.82, 0.97, mm);')
+      .replace('#include <packing>', skirt ? '#include <packing>' : '#include <packing>\n' + CONTACT_GLSL)
+      .replace('#include <aomap_fragment>', skirt ? '#include <aomap_fragment>' : CONTACT_APPLY)
       .replace('#include <lights_fragment_end>', MOSS_LIT('smoothstep(0.3, 0.8, mm)'))
       .replace('#include <normal_fragment_maps>', `
         { vec3 p = vWp*mix(gScale, mScale, step(0.5, mm)), q = vWp*sScale + 0.37;
@@ -134,9 +120,6 @@ function rockMaterial(img, skirt){
   m.userData.u = u;
   return m;
 }
-/* the boulder's buried half is never seen (the stone and its moss are cut at the floor),
-   so its triangles are left out of the index: the rock, each shell and the shadow map no
-   longer work them through to throw every pixel away. Placed as it lies in the scene */
 function trimBuried(rock){
   rock.updateWorldMatrix(true, false);
   const g = rock.geometry, p = g.attributes.position, ix = g.index, v = new THREE.Vector3();
@@ -149,8 +132,6 @@ function trimBuried(rock){
   }
   g.setIndex(keep);
 }
-/* shells of moss strands: each a copy of the rock pushed out along its normals,
-   keeping only the strands tall enough to reach it, darker toward the roots */
 function mossShells(rock, u, count){
   const grp = new THREE.Group();
   grp.name = 'moss';
@@ -158,24 +139,22 @@ function mossShells(rock, u, count){
     const t = i/count;
     const m = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, envMapIntensity: 0.6, alphaToCoverage: true });
     m.onBeforeCompile = sh=>{
-      Object.assign(sh.uniforms, u, { uT: { value: t }, uLen: { value: 0.11 } });
+      Object.assign(sh.uniforms, u, contactU, { uT: { value: t }, uLen: { value: 0.11 } });
       sh.vertexShader = 'uniform float uT, uLen; varying vec3 vWp; varying vec3 vWn; varying float vBed;\n' + sh.vertexShader
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n' +
-          /* pressed flat where the book lies: the rock's book-rest ellipse (blender build_rock) */
           ' float bed = smoothstep(1.0, 1.4, (position.x*position.x)/21.16 + (position.y*position.y)/10.89);\n' +
           ' transformed += normal*uT*uLen*bed; vBed = bed;')
         .replace('#include <fog_vertex>', '#include <fog_vertex>\n vWp = (modelMatrix*vec4(transformed,1.0)).xyz; vWn = normalize(mat3(modelMatrix)*normal);');
       sh.fragmentShader = `uniform sampler2D tMoss; uniform float mScale, uT, uTime; uniform vec3 uSunDir; varying vec3 vWp; varying vec3 vWn; varying float vBed;` + MOSS_GLSL + sh.fragmentShader
         .replace('#include <lights_fragment_end>', MOSS_LIT('0.6 + 0.6*uT'))
+        .replace('#include <packing>', '#include <packing>\n' + CONTACT_GLSL)
+        .replace('#include <aomap_fragment>', CONTACT_APPLY)
         .replace('#include <map_fragment>', `
-          /* the cheap tests first: most of a high shell is thrown away by its strands
-             before the moss mask has to be worked out */
           if(vBed < 0.15 || vWp.y < ${GROUND_Y.toFixed(2)}) discard;
           vec3 sp = vWp*70.0;
           float strand = vn3(sp) *0.65 + vn3(sp*2.3 + 5.0)*0.35 - (0.32 + uT*0.42);
           float cover = clamp(strand/max(fwidth(strand), 1e-4) + 0.5, 0.0, 1.0);
           if(cover <= 0.0) discard;
-          /* cushions: the strands stand tall in clumps and lie low between them */
           float clump = vn3(vWp*3.2 + 9.0) - (uT*0.7 - 0.05);
           cover *= clamp(clump/max(fwidth(clump), 1e-4) + 0.5, 0.0, 1.0);
           if(cover <= 0.0) discard;

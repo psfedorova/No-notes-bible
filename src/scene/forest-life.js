@@ -1,25 +1,14 @@
-/* the forest alive round the rock: falling leaves and fireflies */
 import * as THREE from 'three';
 import { lerp, smooth } from '../lib/textures.js';
 import { GROUND_Y } from '../core/config.js';
 import { scene, SUN_DIR } from './renderer.js';
 import { clock } from '../app/loop.js';
 
-/* the forest is alive round the rock: now and then a leaf comes down from the crowns,
-   and fireflies wander low over the moss in the shade. Nothing drifts between the
-   camera and the book.
-   The leaves are real ones, photographed (Poly Haven, CC0), some still green, some
-   turning. A falling leaf does not sink and spin like a coin: it swings from side to
-   side like a pendulum, tilting into each swing, hanging a moment at the ends and
-   dropping fastest through the middle, while the breeze carries it along. One in four
-   tumbles end over end instead and glides off sideways */
 const leafTex = new THREE.TextureLoader().load('assets/leaves/fall_leaves.png');
 leafTex.colorSpace = THREE.SRGBColorSpace; leafTex.anisotropy = 4;
 const leafSun = { value: SUN_DIR }, leafHaze = { value: null };
 const leafMats = [0xd6dcc4, 0xe8dc9a, 0xd8b06c, 0xa88660].map(tint=>{
   const m = new THREE.MeshStandardMaterial({ map: leafTex, color: tint, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85, metalness: 0, envMapIntensity: 0.55 });
-  /* a thin leaf lets the light through, most of all with the low sun behind it, and
-     stands in the same haze as the wood behind it */
   m.onBeforeCompile = sh=>{
     sh.uniforms.uSunW = leafSun; sh.uniforms.tHaze = leafHaze;
     sh.vertexShader = 'varying vec4 vScr;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvScr = gl_Position;');
@@ -33,8 +22,6 @@ const leafMats = [0xd6dcc4, 0xe8dc9a, 0xd8b06c, 0xa88660].map(tint=>{
   };
   return m;
 });
-/* each leaf of the atlas on its own little sheet, curled along its length and cupped
-   across, as a dry leaf is */
 const leafGeos = Array.from({length: 8}, (_, c)=>{
   const g = new THREE.PlaneGeometry(0.42, 0.84, 2, 6);
   const p = g.attributes.position, uv = g.attributes.uv;
@@ -57,12 +44,8 @@ const fallers = Array.from({length: 14}, (_, i)=>{
   scene.add(m);
   return m;
 });
-/* the book and its boulder stand in the leaves' way. The breeze parts round them as
-   water parts round a stone (flow past a cylinder), so a leaf drifting at them is
-   turned aside, and one that still comes down on the boulder slides off its flank.
-   The boulder's girth is measured from its mesh, at every bearing and height */
-const KEEP_BOOK = 4.4;              // an open book, turned any way, stays inside this
-const KEEP_PAD = 0.55;              // half a leaf
+const KEEP_BOOK = 4.4;
+const KEEP_PAD = 0.55;
 const KEEP_NA = 48, KEEP_NY = 24, KEEP_Y0 = GROUND_Y - 0.5, KEEP_DY = 0.25;
 let keepRock = null;
 function keepAt(x, y, z){
@@ -85,7 +68,6 @@ function measureRock(mesh){
     const k = j*KEEP_NA + Math.floor((Math.atan2(v.z, v.x)/(2*Math.PI) + 1)*KEEP_NA) % KEEP_NA;
     raw[k] = Math.max(raw[k], Math.hypot(v.x, v.z));
   }
-  /* widened by a cell each way, so a leaf between two bearings never clips the stone */
   keepRock = new Float32Array(raw.length);
   for(let j=0;j<KEEP_NY;j++) for(let a=0;a<KEEP_NA;a++){
     let r = 0;
@@ -115,10 +97,6 @@ function spawnLeaf(m, anywhere){
 }
 fallers.forEach(m=>spawnLeaf(m, true));
 
-/* fireflies: the warm yellow-green of the real ones, a few among the shade. Each
-   drifts lazily on its own, dark most of the time, and now and then lights: a quick
-   swell and a slow fade, sometimes twice, lifting a little as it glows. So at any
-   moment only a handful shine, each in its own time, never all breathing together */
 const FLIES = 44;
 const fireflyMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -156,7 +134,6 @@ function stepLife(dt){
     u.ph += u.w*dt; u.dir += u.dirW*dt; u.spin += u.spinW*dt;
     const s = Math.sin(u.ph), c = Math.cos(u.ph), dx = Math.cos(u.dir), dz = Math.sin(u.dir);
     let vx = wx + (u.tumble ? dx*0.9 : 0), vz = wz + (u.tumble ? dz*0.9 : 0);
-    /* past a cylinder of radius a: w = V - conj(V) a^2/conj(z)^2, a widened by the swing */
     const a = keepAt(u.x, u.y, u.z) + (u.tumble ? 0 : u.A), r2 = u.x*u.x + u.z*u.z;
     if(r2 > a*a){
       const k = a*a/(r2*r2), A = u.x*u.x - u.z*u.z, B = 2*u.x*u.z;
@@ -179,7 +156,6 @@ function stepLife(dt){
       _qc.setFromAxisAngle(AX_Y, u.spin);
       m.quaternion.copy(_qa).multiply(_qb).multiply(_qc).multiply(LEAF_FLAT);
     }
-    /* whatever still reaches the stone or the book is pushed back out along the radius */
     const px = m.position.x, pz = m.position.z, pr = Math.hypot(px, pz), K = keepAt(px, m.position.y, pz);
     if(pr < K){
       const e = (K - pr)/Math.max(pr, 1e-3);

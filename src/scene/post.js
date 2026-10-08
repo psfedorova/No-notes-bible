@@ -1,4 +1,3 @@
-/* post-processing: bloom for the gilt and the magic, then a warm grade */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -9,13 +8,8 @@ import { camera, DPR, renderer, scene } from './renderer.js';
 import { BEAM_MIX, BeamPass } from './sunbeam.js';
 import { SOFT_MIX, SoftPass } from './soft.js';
 
-/* post: bloom for the gilt and the magic, the shaft of sun, then a warm grade. Only the
-   scene is drawn at full size, with MSAA; the shaft and the glow are worked out on small
-   pictures of their own, and the last pass lays both over the scene as it tone maps and
-   grades it, so no pass but that one touches every pixel again */
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(VW*DPR, VH*DPR, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(VW*DPR, VH*DPR) }));
-/* the second target's clone shares the first's depth source; it is never drawn into now
-   (no pass swaps), but keeps a depth of its own so that it never could share one */
+/* Safari draws a black canvas when both composer targets share one DepthTexture */
 composer.renderTarget2.samples = 0;
 composer.renderTarget2.depthTexture = new THREE.DepthTexture(VW*DPR, VH*DPR);
 composer.setPixelRatio(DPR);
@@ -24,8 +18,6 @@ const beamPass = new BeamPass();
 composer.addPass(beamPass);
 const softPass = new SoftPass();
 composer.addPass(softPass);
-/* the glow without its last step: the blurred mips are added in the final pass instead
-   of being blended over the whole frame here */
 class GlowPass extends UnrealBloomPass {
   render(renderer, writeBuffer, readBuffer){
     renderer.getClearColor(this._oldClearColor);
@@ -67,11 +59,8 @@ class GlowPass extends UnrealBloomPass {
   }
 }
 const bloom = new GlowPass(new THREE.Vector2(VW, VH), 0.34, 0.6, 0.9);
-/* the glow is soft anyway: a phone blurs it from a sixteenth of the pixels */
 if(!HI_RES){ const setSize = bloom.setSize.bind(bloom); bloom.setSize = (w, h)=>setSize(w/4, h/4); }
 composer.addPass(bloom);
-/* the shaft and the glow added to the scene, tone mapped (three adds the ACES curve and
-   the sRGB transfer for a pass drawn to the screen) and graded */
 class FinalPass extends Pass {
   constructor(){
     super();
@@ -89,8 +78,6 @@ class FinalPass extends Pass {
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           c = gl_FragColor.rgb;
-          /* one grade over the forest, the stone and the book alike: cool blue-green
-             dusk in the shade, the sun's warmth kept only where it really falls */
           float l = dot(c, vec3(0.299,0.587,0.114));
           float yel = clamp((min(c.r, c.g) - c.b)*2.2, 0.0, 1.0)*(1.0 - 0.75*smoothstep(0.4, 0.75, l));
           c = mix(c, vec3(l), 0.32*yel + 0.06);

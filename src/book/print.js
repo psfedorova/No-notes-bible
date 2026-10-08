@@ -1,4 +1,3 @@
-/* what is printed on a leaf: border, gilt, sigil watermark, the title page */
 import * as THREE from 'three';
 import { clamp, mulberry32, fbm, upsample, cv, tex } from '../lib/textures.js';
 import { PAGE_H, PAGE_W, SC } from '../core/config.js';
@@ -21,8 +20,6 @@ function inkLeaf(ctx, x, y, ang, L, W){
   ctx.fill(); ctx.stroke();
   ctx.restore();
 }
-/* engraved border after the reference: double rules, a chain band, corner
-   scrollwork and lozenge medallions at the middle of each side */
 function drawOrnateBorder(ctx){
   ctx.save();
   ctx.scale(SC,SC);
@@ -31,7 +28,6 @@ function drawOrnateBorder(ctx){
   const rule = (i, w, a)=>{ ctx.strokeStyle = PINK(a); ctx.lineWidth = w; ctx.strokeRect(X0+i, Y0+i, X1-X0-2*i, Y1-Y0-2*i); };
   rule(0, 1.25, .82); rule(2.6, .45, .7);
   rule(9.8, .45, .7); rule(12.2, .95, .8);
-  /* chain band: alternating lozenges and pearls */
   const band = (ax, ay, bx, by)=>{
     const L = Math.hypot(bx-ax, by-ay), n = Math.floor(L/6.2);
     for(let k=1;k<n;k++){
@@ -48,7 +44,6 @@ function drawOrnateBorder(ctx){
   const m = 6.2;
   band(X0+m, Y0+m, X1-m, Y0+m); band(X0+m, Y1-m, X1-m, Y1-m);
   band(X0+m, Y0+m, X0+m, Y1-m); band(X1-m, Y0+m, X1-m, Y1-m);
-  /* medallions on the band at mid-sides */
   const medal = (x, y, rotA)=>{
     ctx.save(); ctx.translate(x,y); ctx.rotate(rotA);
     ctx.clearRect(-9,-5,18,10);
@@ -61,7 +56,6 @@ function drawOrnateBorder(ctx){
   };
   medal((X0+X1)/2, Y0+m, 0); medal((X0+X1)/2, Y1-m, 0);
   medal(X0+m, (Y0+Y1)/2, Math.PI/2); medal(X1-m, (Y0+Y1)/2, Math.PI/2);
-  /* corner scrollwork inside the inner rule */
   const corner = (x, y, sx, sy)=>{
     ctx.save(); ctx.translate(x,y); ctx.scale(sx,sy);
     ctx.strokeStyle = PINK(.82); ctx.fillStyle = PINK(.55); ctx.lineWidth = .7;
@@ -84,8 +78,6 @@ function drawOrnateBorder(ctx){
   corner(X0+ci, Y0+ci, 1, 1); corner(X1-ci, Y0+ci, -1, 1); corner(X0+ci, Y1-ci, 1, -1); corner(X1-ci, Y1-ci, -1, -1);
   ctx.restore();
 }
-/* the border is printed once into its own sheet and worn there: the ink is
-   thinned and broken where an old impression lost it, then laid on by multiply */
 let borderCanvas = null;
 function borderArt(){
   if(borderCanvas) return borderCanvas;
@@ -104,10 +96,6 @@ function borderArt(){
   borderCanvas = c;
   return c;
 }
-/* gold leaf laid over the printed ornament (the inner rule, the corner fleurons,
-   the lozenges at mid-side), rubbed thin in places; drawn once for every page.
-   gilt().color goes on the page art, gilt().pbr is the shared roughness (G) and
-   metalness (B) map that makes it shine as metal while the paper stays matte */
 let giltCanvases = null;
 function gilt(){
   if(giltCanvases) return giltCanvases;
@@ -131,7 +119,6 @@ function gilt(){
     ctx.restore();
   });
   ctx.restore();
-  /* worn leaf: rubbed off in small flecks, never wholly gone */
   const W = PAGE_W >> 2, H = PAGE_H >> 2;
   const wear = fbm(W, H, 30, 40, 3, 2323);
   const wm = cv(W, H), wx = wm.getContext('2d'), wi = wx.createImageData(W, H);
@@ -152,7 +139,6 @@ function gilt(){
   giltCanvases = { color, pbr: tex(pbr, { wrap:false }) };
   return giltCanvases;
 }
-/* one rune from straight staves like old futhark, centred on the origin */
 function runeStroke(ctx, kind, h, w){
   ctx.beginPath(); ctx.moveTo(0, -h); ctx.lineTo(0, h);
   if(kind === 0){ ctx.moveTo(0, -h); ctx.lineTo(w, -h*0.3); }
@@ -163,8 +149,6 @@ function runeStroke(ctx, kind, h, w){
   else { ctx.moveTo(0, -h*0.2); ctx.lineTo(-w, h*0.6); ctx.moveTo(0, -h*0.2); ctx.lineTo(w, h*0.6); }
   ctx.stroke();
 }
-/* a magic circle pressed into the sheet like a watermark, so every leaf reads as
-   part of a book of spells and the writing still sits clearly over it */
 let sigilCanvas = null;
 function sigilArt(){
   if(sigilCanvas) return sigilCanvas;
@@ -173,11 +157,9 @@ function sigilArt(){
   ctx.strokeStyle = PINK(1); ctx.fillStyle = PINK(1); ctx.lineCap = 'round';
   const ring = (r, w)=>{ ctx.lineWidth = w*SC; ctx.beginPath(); ctx.arc(0, 0, r*SC, 0, Math.PI*2); ctx.stroke(); };
   ring(118, 1.1); ring(112, 0.5); ring(84, 0.8); ring(80, 0.4); ring(30, 0.7);
-  /* a seven-pointed star joining the inner ring */
   ctx.lineWidth = 0.7*SC; ctx.beginPath();
   for(let i=0;i<=7;i++){ const a = -Math.PI/2 + i*3*Math.PI*2/7; const x = Math.cos(a)*80*SC, y = Math.sin(a)*80*SC; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
   ctx.stroke();
-  /* runes in the band between the rings, drawn from straight staves like old futhark */
   const rnd = mulberry32(777);
   const NR = 28;
   for(let i=0;i<NR;i++){
@@ -190,14 +172,12 @@ function sigilArt(){
   }
   for(let i=0;i<7;i++){ const a = -Math.PI/2 + i*Math.PI*2/7; ctx.beginPath(); ctx.arc(Math.cos(a)*118*SC, Math.sin(a)*118*SC, 2.6*SC, 0, Math.PI*2); ctx.fill(); }
   ctx.beginPath(); ctx.arc(0, 0, 3*SC, 0, Math.PI*2); ctx.fill();
-  /* faint, and broken like an old impression */
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'destination-in';
   ctx.fillStyle = 'rgba(0,0,0,0.13)'; ctx.fillRect(0, 0, c.width, c.height);
   sigilCanvas = c;
   return c;
 }
-/* recto: the spine is on the left of the canvas; verso: on the right */
 let titleHidden = false;
 function setTitleHidden(v){ titleHidden = v; }
 function pageBackground(n){
@@ -238,8 +218,6 @@ function pageBackground(n){
   if(n === 0 && !titleHidden) drawTitle(ctx);
   return c;
 }
-/* the invitation is written on a leaf of the book itself: the same vellum,
-   worn border, gold leaf and watermark circle, without the gutter shadow */
 let invitePaperUrl = null;
 function invitePaper(){
   if(invitePaperUrl) return invitePaperUrl;
@@ -259,8 +237,6 @@ function invitePaper(){
   invitePaperUrl = out.toDataURL('image/jpeg', 0.86);
   return invitePaperUrl;
 }
-/* engraved headpiece of the title page: tapered rules, a lance through the
-   middle and scrolls curling away from the title (dir -1 turns them below) */
 function titleFlourish(ctx, cx, y, w, dir){
   ctx.save(); ctx.translate(cx, y); ctx.scale(SC, SC*dir);
   ctx.strokeStyle = PINK(.9); ctx.fillStyle = PINK(.88);
@@ -330,7 +306,6 @@ function titleTailpiece(ctx, cx, y){
   ctx.fillStyle = 'rgba(222,196,150,.9)'; ctx.beginPath(); ctx.arc(0, 0, 0.7, 0, 7); ctx.fill();
   ctx.restore();
 }
-/* the blackletter is cut like an engraving: dark ink with fine light hatching */
 function engravedTitle(ctx, text, cx, baseline, maxW){
   let size = 44*SC;
   const font = z => `${z}px "UnifrakturMaguntia", "Cormorant SC", serif`;
@@ -378,7 +353,6 @@ const pageMaterial = canvas => new THREE.MeshStandardMaterial({
   normalScale: new THREE.Vector2(0.22,0.22), roughness: 1, metalness: 1,
   roughnessMap: gilt().pbr, metalnessMap: gilt().pbr, vertexColors: true
 });
-/* n = -2 / -1: an unnumbered recto / verso */
 const blankMat = [pageMaterial(pageBackground(-2)), pageMaterial(pageBackground(-1))];
 
 export {

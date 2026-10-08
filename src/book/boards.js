@@ -1,4 +1,3 @@
-/* the two cover boards and what is mounted on them */
 import * as THREE from 'three';
 import { lerp } from '../lib/textures.js';
 import { CH, CVR, CW } from '../core/config.js';
@@ -17,7 +16,6 @@ function roundedRectShape(w, h, rSpine, rFore){
   s.lineTo(0, y0+rSpine); s.quadraticCurveTo(0, y0, rSpine, y0);
   return s;
 }
-/* local frame: x from the spine edge outwards, z from the inner face (0) to the outer face (CVR) */
 function coverBoard(matArt){
   const g = new THREE.ExtrudeGeometry(roundedRectShape(CW, CH, 0.004, 0.10), {
     depth: CVR-0.03, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 4, curveSegments: 8
@@ -27,9 +25,6 @@ function coverBoard(matArt){
   m.castShadow = true; m.receiveShadow = true;
   return m;
 }
-/* the pastedown stops short of the board's edges, so the leather turn-ins show;
-   at the spine edge the hinge strip takes over from EP_X0, edge to edge with it.
-   flipV: the front pastedown is turned over about x, so its v runs the other way */
 function endpaper(flipV){
   const g = new THREE.PlaneGeometry(EP_X1 - EP_X0, EP_H);
   g.translate((EP_X0 + EP_X1)/2, 0, 0);
@@ -51,13 +46,11 @@ let backGoldSlot, frontGoldSlot;
   const gm = sapphire(0.6, 0.008, 0.5);
   gm.position.set(CW/2, 0, -CVR-0.008); gm.rotation.y = Math.PI;
   backGrp.add(gm);
-  /* the gilt is authored with +z out of the board: flip it onto the outer face */
   backGoldSlot = new THREE.Group();
   backGoldSlot.position.z = -CVR;
   backGoldSlot.rotation.x = Math.PI;
   backGrp.add(backGoldSlot);
 }
-/* front board: local +z points away from the block (outer face at CVR) */
 const frontGrp = new THREE.Group();
 bookRoot.add(frontGrp);
 let frontGem;

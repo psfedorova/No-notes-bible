@@ -1,40 +1,16 @@
-/* ============================================================================
-   The opening, played on the live scene.
-
-   On a first visit src/main.js loads this before the book is shown and
-   film/opening.js (playLive) runs the story on the frame loop's own time. Under
-   ?film it is shot one frame at a time instead: tools/film/shoot.mjs calls
-   __film.shot(i) for every frame, screenshots the page and encodes a video (for
-   sharing; the site itself no longer plays one). The camera's last key is the
-   reader's pose kept in assets/intro/poses.json.
-
-   The story: the book lies shut on its rock in the clearing. One of the forest's
-   fireflies drifts in and settles on the sapphire, and its light sinks into the
-   stone. The stone wakes with two slow beats and gold runs out from it through
-   the lace of the cover. At each corner a spark leaps off and comes down in the
-   air round the book, and from those four points the book's own magic circle
-   grows, ring by ring, rune by rune, the seven-pointed star last. Whole, it
-   flares once and lifts the book; the board swings over, the circle gathers
-   itself up, narrows and comes down onto the title page, and as it touches the
-   sheet its light runs out through the ornament and the lettering and settles.
-   The view comes to rest where the reader sits, and the book is theirs.
-   ==========================================================================*/
 import { mulberry32 } from '../lib/textures.js';
 
-/* played live as the opening (window.__book.film.live), the same story runs on the
-   frame loop's own time instead of being shot frame by frame */
 const F = window.__book.film;
 const LIVE = !!F.live;
 const { THREE, scene, st, orbit } = F;
 
 const FPS = 30;
-const ALIGHT = 1.7;                  // the firefly settles on the sapphire
-const CORNERS = 2.9;                 // the gold has reached the cover's corners
-const SEALED = 4.4;                  // the circle is whole
-const OPEN_AT = 4.6;                 // the board starts to lift
-const LAND = 7.8;                    // the circle touches the title page
+const ALIGHT = 1.7;
+const CORNERS = 2.9;
+const SEALED = 4.4;
+const OPEN_AT = 4.6;
+const LAND = 7.8;
 const TALL = F.camera.aspect < 0.9;
-/* a phone holds on the title page while its lettering comes up, then draws back */
 const END = TALL ? 12.0 : 11.0;
 
 const lerp = (a, b, t) => a + (b - a)*t;
@@ -46,7 +22,6 @@ const pxH = () => F.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
 
 const _gem = new THREE.Vector3(), _v = new THREE.Vector3();
 
-/* ---------------- gold running through the cover's lace from the stone ---------------- */
 const flowU = {
   uFlowC: { value: new THREE.Vector3() }, uFlowR: { value: 0 }, uFlowK: { value: 0 }, uFlowAfter: { value: 0 }
 };
@@ -65,7 +40,6 @@ F.matGold.onBeforeCompile = sh => {
 };
 F.matGold.customProgramCacheKey = () => 'film-flow';
 F.matGold.needsUpdate = true;
-/* and on along the back, where the tooling is gold leaf in the leather (its metal map) */
 F.matSpine.onBeforeCompile = sh => {
   Object.assign(sh.uniforms, flowU);
   sh.vertexShader = sh.vertexShader
@@ -82,8 +56,6 @@ F.matSpine.onBeforeCompile = sh => {
 F.matSpine.customProgramCacheKey = () => 'film-flow-spine';
 F.matSpine.needsUpdate = true;
 
-/* ---------------- the magic circle, the same one pressed into every leaf ---------------- */
-/* channels: R the rings, G the runes, B the star; a second, blurred copy is its glow */
 const SIG = matchMedia('(pointer: coarse)').matches ? 1024 : 2048, SR = 118;
 function sigilCanvas(blur){
   const c = document.createElement('canvas');
@@ -138,8 +110,6 @@ const circleMat = new THREE.ShaderMaterial({
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position, 1.0); }`,
   fragmentShader: `uniform sampler2D uLines, uGlow; uniform float uRing, uInner, uRunes, uStar, uK, uTime, uHot, uGap; uniform vec4 uC; varying vec2 vUv;
     const float TAU = 6.2831853;
-    /* every line grows both ways out of the four points where the sparks from the
-       cover's corners came down (uC, in turns), until the pens meet: 1 drawn, with a hot head */
     float drawn(float ang, float p, out float head){
       float d = abs(fract(ang - uC.x + 0.5) - 0.5);
       d = min(d, abs(fract(ang - uC.y + 0.5) - 0.5));
@@ -175,7 +145,6 @@ circle.frustumCulled = false;
 circle.visible = false;
 circle.renderOrder = 5;
 scene.add(circle);
-/* ---------------- motes rising off the lines as they are drawn ---------------- */
 const MOTES = 1200;
 const motePos = new Float32Array(MOTES*3), moteA = new Float32Array(MOTES);
 const moteV = new Float32Array(MOTES*3), moteAge = new Float32Array(MOTES).fill(9), moteLife = new Float32Array(MOTES).fill(1);
@@ -217,8 +186,6 @@ function stepMotes(dt){
   moteMat.uniforms.uScale.value = pxH()*0.06;
 }
 
-/* ---------------- the firefly that wakes the book, and the sparks off its corners ---------------- */
-/* 0: the firefly, 1-4: a spark leaping from each corner of the cover down to the circle */
 const LIGHTS = 5;
 const litPos = new Float32Array(LIGHTS*3), litA = new Float32Array(LIGHTS), litS = new Float32Array(LIGHTS), litC = new Float32Array(LIGHTS);
 const litGeo = new THREE.BufferGeometry();
@@ -243,13 +210,10 @@ const lights = new THREE.Points(litGeo, litMat);
 lights.frustumCulled = false;
 scene.add(lights);
 
-/* a real little beetle: dark body, the pink shield behind its head, wing cases held up
-   and the hind wings a blur while it flies, and the yellow-green lantern under its tail */
 const fly = new THREE.Group();
 const flyLamp = new THREE.MeshBasicMaterial({ color: 0xe8ff80 });
 const flyLight = new THREE.PointLight(0xdcff70, 0, 1.6, 1.4);
 const flyWings = [], flyCases = [];
-/* the hind wings beat too fast to see: a soft fan of motion blur with a few veins */
 const wingBlur = (()=>{
   const W = 256, H = 128, c = document.createElement('canvas');
   c.width = W; c.height = H;
@@ -272,13 +236,13 @@ const wingBlur = (()=>{
   const rim = new THREE.MeshStandardMaterial({ color: 0xc9b07a, roughness: 0.5 });
   const wingM = new THREE.MeshBasicMaterial({ map: wingBlur, transparent: true, side: THREE.DoubleSide, depthWrite: false });
   const ball = (r, m, sx, sy, sz, x, y, z) => { const o = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), m); o.scale.set(sx, sy, sz); o.position.set(x, y, z); fly.add(o); return o; };
-  ball(0.012, dark, 1, 0.9, 1, 0, 0.0, 0.088);                       // head
-  ball(0.03, shield, 1.15, 0.36, 0.8, 0, 0.008, 0.062);               // the pink shield
-  ball(0.012, dark, 0.9, 0.5, 0.9, 0, 0.016, 0.064);                  // its dark spot
-  ball(0.022, belly, 1, 0.75, 1.1, 0, -0.002, 0.03);                  // thorax
+  ball(0.012, dark, 1, 0.9, 1, 0, 0.0, 0.088);
+  ball(0.03, shield, 1.15, 0.36, 0.8, 0, 0.008, 0.062);
+  ball(0.012, dark, 0.9, 0.5, 0.9, 0, 0.016, 0.064);
+  ball(0.022, belly, 1, 0.75, 1.1, 0, -0.002, 0.03);
   ball(0.02, belly, 1, 0.62, 0.9, 0, -0.004, 0.0);
   ball(0.019, belly, 1, 0.6, 0.9, 0, -0.005, -0.025);
-  ball(0.018, flyLamp, 1, 0.62, 0.95, 0, -0.006, -0.05);              // the lantern: the last two rings
+  ball(0.018, flyLamp, 1, 0.62, 0.95, 0, -0.006, -0.05);
   ball(0.015, flyLamp, 1, 0.62, 1.0, 0, -0.006, -0.072);
   for(const sx of [-1, 1]){
     const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.0016, 0.001, 0.075, 4), dark);
@@ -318,8 +282,7 @@ let flyPath = null;
 const _up = new THREE.Vector3(0, 1, 0), _lamp = new THREE.Vector3();
 let flyHeading = new THREE.Vector3(1, 0, 0), flyOff = null, offPath = null;
 const flyFlat = new THREE.Vector3(1, 0, 0), flyAim = new THREE.Object3D();
-const TAKE = ALIGHT + 0.95;          // the firefly takes off again
-/* it drifts in across the clearing in loose loops and settles on the stone */
+const TAKE = ALIGHT + 0.95;
 function makeFlyPath(){
   const k0 = rig.keys[0], B = k0.p.clone().sub(k0.l).normalize();
   const R = new THREE.Vector3().crossVectors(_up, B).normalize(), U = new THREE.Vector3().crossVectors(B, R);
@@ -337,12 +300,9 @@ function stepFirefly(t, dt){
   const w = (1 - x)*0.1;
   p.x += Math.sin(t*6.3)*w; p.y += Math.sin(t*4.1 + 1)*w*0.8; p.z += Math.cos(t*5.2)*w;
   if(t < ALIGHT) flyHeading.copy(flyPath.getTangent(u)).normalize();
-  /* the way it faces on the level: kept from the last moment it was really going somewhere */
   const hz = Math.hypot(flyHeading.x, flyHeading.z);
   if(hz > 0.25 && (t < ALIGHT || t > TAKE + 0.15)) flyFlat.set(flyHeading.x, 0, flyHeading.z).normalize();
   const flat = flyFlat.clone();
-  /* it sits a moment and gives its light to the stone, then opens its wings, hops up,
-     hangs, turns and flies off in a slow widening curve into the trees, speeding up */
   const x2 = lin(t, TAKE, TAKE + 2.2);
   if(t >= ALIGHT){
     if(!flyOff) flyOff = _gem.clone().add(_v.set(0, 0.16, 0));
@@ -362,9 +322,6 @@ function stepFirefly(t, dt){
     }
   }
   fly.position.copy(p);
-  /* in flight it faces where it goes; sitting, it lies level on the stone */
-  /* it faces where it flies, pitched only a little, and turns smoothly: never a snap,
-     never up on its tail; on the stone it sits level, facing the way it came in */
   const lookDir = (t < ALIGHT || x2 > 0.12 ? flat.clone().setY(clamp(flyHeading.y, -0.5, 0.5)*0.35) : flat.clone()).normalize();
   flyAim.lookAt(_v.copy(flyAim.position).add(lookDir));
   if(!dt) fly.quaternion.copy(flyAim.quaternion);
@@ -378,8 +335,6 @@ function stepFirefly(t, dt){
   }
   for(const C of flyCases) C.g.rotation.set(flying ? -0.25 : 0, 0, flying ? C.sx*0.7 : 0);
   fly.visible = off < 0.995;
-  /* the lantern: slow firefly pulses in flight, a long bright glow as it settles, then
-     its light goes down into the stone and it is left with an ember */
   const pulse = 0.45 + 0.55*Math.pow(0.5 + 0.5*Math.sin(t*4.2), 3);
   const settle = span(t, ALIGHT - 0.3, ALIGHT + 0.15)*(1 - span(t, ALIGHT + 0.2, ALIGHT + 0.8));
   const given = lerp(1.4, 0.3, span(t, ALIGHT + 0.2, ALIGHT + 0.8));
@@ -410,7 +365,6 @@ function stepSparks(t){
   }
 }
 
-/* ---------------- sparks from the circle to the letters ---------------- */
 const sparks = (()=>{
   const MAX = 160, pos = new Float32Array(MAX*3), alpha = new Float32Array(MAX), list = [];
   const geo = new THREE.BufferGeometry();
@@ -450,14 +404,12 @@ const sparks = (()=>{
   };
 })();
 
-/* ---------------- where the circle stands, and where it comes down ---------------- */
-const R0 = 3.85;                      // round the shut book, in the air at its mid height
+const R0 = 3.85;
 let C0 = null;
 function restCentre(){
   const b = new THREE.Box3().setFromObject(F.bookRoot);
   return b.getCenter(new THREE.Vector3());
 }
-/* the title page: the circle comes down on (W/2, H*0.42), over the middle of its lettering */
 function landing(){
   const { p, n } = F.pagePointWorld(0, F.PAGE_W/2, F.PAGE_H*0.42);
   const c = p.clone(), up = n.clone();
@@ -466,10 +418,8 @@ function landing(){
   const pxPerUnit = F.PAGE_W*0.6/a.distanceTo(b);
   return { c, up, pxPerUnit };
 }
-const LAND_R = 0.95;                  // its radius as it touches the sheet
+const LAND_R = 0.95;
 
-/* world vectors on the title page to its pixels, and the circle as it lies there in
-   page pixels: the transform the sigil is drawn with when it burns in */
 let pageBasis = null;
 function toPage(w){
   if(!pageBasis){
@@ -488,19 +438,16 @@ function sigilOnPage(){
   return [...toPage(ex), ...toPage(ey), F.PAGE_W/2, F.PAGE_H*0.42];
 }
 
-/* ---------------- the timeline ---------------- */
 let opened = false, sparked = false, burnt = false, sigM = null, plan = null, clock = 0, spin = 0;
 
 function at(t, dt){
   clock += dt;
   rig.t = t;
   rig.hand = span(t, END - (TALL ? 0.6 : 1.0), END - 0.1);
-  /* the live camera keeps the reader's framing; the film's eye is the rig below */
   orbit.az = orbit.azTo = orbit.el = orbit.elTo = orbit.azV = orbit.elV = 0;
   orbit.coast = false;
   st.zoom = 1;
 
-  /* the firefly comes down onto the sapphire; the stone wakes with two slow beats */
   F.frontGem.getWorldPosition(_gem);
   stepFirefly(t, dt);
   if(t < OPEN_AT + 0.4){
@@ -510,14 +457,11 @@ function at(t, dt){
   }
   st.auraTo = 0.25 + 0.55*span(t, ALIGHT + 0.6, SEALED);
 
-  /* from the stone the gold runs out through the lace to the corners, then glows on and cools */
   flowU.uFlowC.value.copy(_gem);
   flowU.uFlowR.value = lerp(0, 3.4, Math.pow(lin(t, ALIGHT + 0.3, CORNERS + 0.15), 0.85));
   flowU.uFlowK.value = span(t, ALIGHT + 0.25, ALIGHT + 0.45)*(1 - span(t, SEALED, SEALED + 0.9));
   flowU.uFlowAfter.value = lerp(0.42, 0.3, span(t, CORNERS - 0.6, CORNERS + 0.8));
 
-  /* at each corner a spark leaps off and comes down where the circle will be */
-  /* the circle lies in the air just over the shut cover, so nothing of it runs through the book */
   if(!C0){ const b = new THREE.Box3().setFromObject(F.bookRoot); C0 = b.getCenter(new THREE.Vector3()); C0.y = b.max.y + 0.05; }
   if(t >= CORNERS && !sparkFrom.length){
     const turns = [];
@@ -542,7 +486,6 @@ function at(t, dt){
   litGeo.attributes.cool.needsUpdate = true;
   litMat.uniforms.uScale.value = pxH()*0.09;
 
-  /* the circle grows out of those four points, ring by ring, rune by rune, the star last */
   const DRAW = CORNERS + SPARK_T - 0.05;
   const lvl = span(t, DRAW - 0.1, DRAW + 0.05);
   circle.visible = lvl > 0.001 && t < LAND + 0.65;
@@ -554,15 +497,9 @@ function at(t, dt){
     U.uRunes.value = lin(t, DRAW + 0.3, DRAW + 0.95);
     U.uStar.value = lin(t, DRAW + 0.45, SEALED);
     U.uTime.value = clock;
-    /* whole, it flares once and lifts the book; it gathers itself up as the board opens,
-       narrows over the open book and comes down onto the title page, where its light
-       runs into the sheet */
     const L = landing();
-    /* whole, it rises clear of the board's swing before the board lifts, hangs there
-       while the book opens beneath it, glides over the title page and comes down */
     const up = span(t, SEALED + 0.05, OPEN_AT + 0.85);
     const to = span(t, OPEN_AT + 1.4, LAND - 1.2);
-    /* it comes down slowly and settles the last finger's breadth, never a drop */
     const dx = clamp((t - (LAND - 1.7))/1.7, 0, 1), down = dx >= 1 ? 1 : 1 - Math.pow(1 - ease(dx), 2.2);
     const HIGH = 3.8;
     const hover = new THREE.Vector3(L.c.x, C0.y + HIGH, L.c.z);
@@ -577,9 +514,7 @@ function at(t, dt){
     circle.rotateZ(spin);
     const pulse = x => Math.exp(-Math.pow((t - x)/0.18, 2));
     U.uHot.value = Math.max(pulse(SEALED + 0.12), 0.7*span(t, LAND - 0.6, LAND));
-    /* as it touches, its gold goes over into the fire in the sheet */
     U.uK.value = lvl*(0.8 + 0.2*span(t, OPEN_AT, LAND - 0.5))*(1 - span(t, LAND, LAND + 0.6));
-    /* motes off the drawn lines, more while it is moving */
     const n = t < LAND ? (t < OPEN_AT ? 8 : 6) : 0;
     for(let i=0;i<n;i++){
       const a = rnd()*Math.PI*2, rr = r*(rnd() < 0.6 ? 1 : 0.7 + rnd()*0.25);
@@ -592,8 +527,6 @@ function at(t, dt){
 
   if(t >= OPEN_AT && !opened){ opened = true; F.setOpen(true); }
   if(t >= LAND && !sparked){ sparked = true; F.emitOpenBurst(30); }
-  /* it lies on the title page as light, and from it a spark flies to each letter,
-     which burns in as the book's own writing does */
   const START = LAND + 0.5, FLY = 0.42;
   if(t >= LAND && !burnt){
     if(!sigM){ sigM = sigilOnPage(); plan = F.titleBurnPlan(0.7); plan.forEach((q, i)=>{ q.flies = i % Math.max(1, Math.ceil(plan.length/70)) === 0; }); }
@@ -619,7 +552,6 @@ function at(t, dt){
     }
   }
   sparks.step(t);
-  /* no leaf comes down across the open book at the end, where the live one takes over */
   if(t >= OPEN_AT){
     for(const m of F.fallers){
       const u = m.userData;
@@ -628,14 +560,6 @@ function at(t, dt){
   }
 }
 
-/* ---------------- the camera: one unbroken flight ---------------- */
-/* close by the shut book as the firefly comes in, down to the stone as it lands, back
-   and up as the gold runs out and the circle grows, round to the reader's side as the
-   board opens, and down onto the title page; keyed in time and joined by a spline that
-   is smooth in speed as well as in place (Catmull-Rom with the keys' own times), so
-   there are no cuts and no jolts. The eye sets off from rest, so the film rises out of
-   its own still frame. The last key is the reader's own view, and over the
-   last second the eye is handed to the live camera exactly */
 const rig = { t: 0, hand: 0, keys: null };
 function sph(l, az, el, d){
   return { l, p: l.clone().add(new THREE.Vector3(Math.sin(az)*Math.cos(el), Math.sin(el), Math.cos(az)*Math.cos(el)).multiplyScalar(d)) };
@@ -645,7 +569,6 @@ function buildRig(end){
   const c0 = restCentre();
   const E = { p: new THREE.Vector3().fromArray(end.pos), l: null };
   const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(new THREE.Quaternion().fromArray(end.quat));
-  /* where the reader's eye meets the open book, not a point in the air before it */
   E.l = E.p.clone().addScaledVector(fwd, (E.p.y - (c0.y + 0.25))/Math.max(0.2, -fwd.y));
   const m = TALL ? [1.25, 1.25, 1.7, 1.95, 1.7, 1.35] : [1, 1, 1, 1, 1, 1];
   const keys = [
@@ -706,8 +629,6 @@ const pose = () => ({
   fov: +F.camera.fov.toFixed(4), aspect: +F.camera.aspect.toFixed(5)
 });
 
-/* the view settles on the first frame before the film starts; the title page is bare
-   until the circle brings its lettering */
 F.titleReveal(0);
 for(let i=0;i<240;i++) F.update(1/FPS);
 const ends =await fetch('assets/intro/poses.json' + (LIVE ? '?v=2' : '?v=' + Date.now())).then(r => r.json());
@@ -719,14 +640,10 @@ F.frame(1/FPS);
 window.__film = {
   fps: FPS, frames: Math.round(END*FPS),
   shot(i){ at(i/FPS, 1/FPS); F.frame(1/FPS); return i; },
-  /* steps the story without drawing, for stills */
   run(i){ at(i/FPS, 1/FPS); F.update(1/FPS); return i; },
   pose
 };
 
-/* ---------------- played live ---------------- */
-/* the frame loop calls tick(dt) before each update; at the end, or when the reader cuts
-   it short, the story's own things are put away and done() hands the book over */
 let liveT = 0, liveEnd = null;
 function putAway(){
   rig.keys = null;
@@ -744,7 +661,6 @@ const live = {
     at(liveT, dt);
     if(liveT >= END){ putAway(); liveEnd = 'end'; live.done && live.done('end'); }
   },
-  /* the reader would rather begin: the book opens on its title page, lettered, now */
   skip(){
     if(liveEnd) return;
     liveEnd = 'skip';

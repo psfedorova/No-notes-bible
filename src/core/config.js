@@ -1,43 +1,34 @@
-/* the book's measurements, the device tier, the fonts and the asset paths */
-/* ============================== dimensions ==============================
-   1 unit is about a decimetre.                                            */
-const PW = 3.40, PH = 4.70;        // leaf width (spine to fore edge) and height
-const N = 50;                      // leaves -> 100 pages
-const T = 0.56;                    // text block thickness
-const LT = T/N;                    // leaf pitch
-const LH = LT*0.42;                // half thickness of one leaf slab
-const EPS = 0.004;                 // air between the block and a board
-const CVR = 0.055;                 // board thickness
-const OV = 0.09, OVH = 0.09;       // board overhang at fore edge, head and tail
+const PW = 3.40, PH = 4.70;
+const N = 50;
+const T = 0.56;
+const LT = T/N;
+const LH = LT*0.42;
+const EPS = 0.004;
+const CVR = 0.055;
+const OV = 0.09, OVH = 0.09;
 const CH = PH + OVH*2;
-const XJ_C = 0.06, XJ_O = 0.27;    // board spine edge: closed / open
-const CW = PW + OV - XJ_C;         // board width (matches blender/build_assets.py)
-const ZB = -(T/2 + EPS);           // inner face of the back board
-const RB = T/0.45;                 // radius of the spine back when open
-const ALPHA = LT/RB;               // arc taken by one leaf on that back
-const SWELL = 0.05;                // rounding of the closed spine
-const FAN = 0.07;                  // fore-corner lift of the top resting leaf
-const M = 48, R = 10;              // leaf grid: along the arc, along the height
+const XJ_C = 0.06, XJ_O = 0.27;
+const CW = PW + OV - XJ_C;
+const ZB = -(T/2 + EPS);
+const RB = T/0.45;
+const ALPHA = LT/RB;
+const SWELL = 0.05;
+const FAN = 0.07;
+const M = 48, R = 10;
 const OPEN = Math.PI;
-const BACK_GAP = 0.022;            // spine leather to the sewn backs
+const BACK_GAP = 0.022;
 
-/* sharper pages where there is memory to spare; phones keep the lighter sheet */
 const HI_RES = !(matchMedia && matchMedia('(pointer: coarse)').matches);
 const PAGE_W = HI_RES ? 1536 : 1024, PAGE_H = Math.round(PAGE_W*1416/1024);
-const SC = PAGE_W/340;             // page artwork is drawn in a 340 x 470 space
-const FS = PAGE_W/880;             // font sizes below were tuned on an 880 px page
+const SC = PAGE_W/340;
+const FS = PAGE_W/880;
 const INK = '#2e1c0e';
 const LS_KEY = 'liber-arcanum.v2';
 
-const ROCK_TOP = 0;                // the boulder's resting dome peaks here
-const LIFT_H = 3.0;                // how high the book floats while it is turned
-const GROUND_Y = -3.4;             // the forest floor the boulder is sunk in
+const ROCK_TOP = 0;
+const LIFT_H = 3.0;
+const GROUND_Y = -3.4;
 
-/* one hand for the whole book, the title page's own: Cormorant Garamond italic,
-   the face of its motto. It cuts Latin and Cyrillic as one design, so Russian
-   and English share every metric and burn in exactly alike. Initials are the
-   upright capitals of the same face. lead keeps the old line pitch, so pages
-   written before keep their line count */
 const FONTS = [
   { id:'chronicle', name:'Chronicle', css:'"Cormorant Garamond"', capCss:'"Cormorant Garamond"',
     weight:500, style:'italic', size:44, lead:1.315, capWeight:600 }
@@ -46,17 +37,11 @@ const fontById = id => FONTS.find(f=>f.id===id) || FONTS[0];
 const capFont = (f, size) => `${f.capWeight || 400} ${Math.round(size)}px ${f.capCss || f.css}, ${f.css}, serif`;
 const fontCss = (f, size, weight) => `${f.style==='italic'?'italic ':''}${weight||f.weight} ${Math.round(size)}px ${f.css}, "Cormorant Garamond", serif`;
 
-/* what the book needs to be shown comes first and small: the forest at 4k with its depth
-   (6144 is past the texture limit of many phones), the light and the leather at 1k (the
-   leather is dyed down to 1024 anyway and the light only feeds blurred reflections:
-   side by side the 2k ones looked the same). Once the book is in the reader's hands a
-   computer fetches the 6k forest and its depth and lays them in (forestFull, depthFull),
-   and every device the plants round the boulder and the layer behind the trunks */
 const ASSETS = {
-  forest: 'assets/forest/forest_4k.jpg', forestDepth: 'assets/forest/depth_4k.png',
-  forestFull: HI_RES ? 'assets/forest/forest.jpg' : null, depthFull: HI_RES ? 'assets/forest/depth.png' : null,
+  forest: 'assets/forest/forest_4k.jpg?v=4', forestDepth: 'assets/forest/depth_4k.png?v=4',
+  forestFull: HI_RES ? 'assets/forest/forest.jpg?v=4' : null, depthFull: HI_RES ? 'assets/forest/depth.png?v=4' : null,
   forestWater: 'assets/forest/water.png', forestLight: 'assets/forest/light_1k.hdr',
-  forestBack: 'assets/forest/back.jpg', forestBackDepth: 'assets/forest/back_depth.png', forestNear: 'assets/forest/near.json',
+  forestBack: 'assets/forest/back.jpg?v=4', forestBackDepth: 'assets/forest/back_depth.png?v=4', forestNear: 'assets/forest/near.json?v=4',
   brook: 'assets/audio/forest_brook.wav', magicBed: 'assets/audio/magic_forest.wav',
   twinkles: ['assets/audio/twinkle_a.mp3', 'assets/audio/twinkle_b.mp3', 'assets/audio/twinkle_c.mp3'],
   leaAlbedo: 'assets/leather/brown_leather_albedo_1k.jpg', leaNor: 'assets/leather/brown_leather_nor_gl_1k.jpg',
@@ -68,7 +53,6 @@ const ASSETS = {
   stone: HI_RES ? 'assets/rock/stone_2k.jpg' : 'assets/rock/stone_1k.jpg', stoneNor: 'assets/rock/stone_nor.jpg'
 };
 
-/* A backgrounded pane can report a 0x0 viewport; keep the last good size. */
 let VW = 1280, VH = 720;
 function measureViewport(){
   const w = innerWidth || document.documentElement.clientWidth || 0;
@@ -78,7 +62,6 @@ function measureViewport(){
 }
 measureViewport();
 
-/* the modifier key as the shortcuts card and the tooltips name it */
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
 const MOD = IS_MAC ? '⌘' : 'Ctrl+';
 const ALT = IS_MAC ? '⌥' : 'Alt+';

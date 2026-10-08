@@ -1,4 +1,3 @@
-/* the opening film's hooks in the live scene and the hand-over to the live book */
 import * as THREE from 'three';
 import { clamp, lerp, smooth, mulberry32, fbm, cv } from '../lib/textures.js';
 import { intro } from '../core/launch.js';
@@ -19,8 +18,6 @@ import { seekSpread } from '../book/seek.js';
 import { refreshUI } from '../ui/controls.js';
 import { frame, liveFov, onResize, setStory, update } from '../app/loop.js';
 
-/* the title page's ornament, gilt and lettering catch a light that runs out from the
-   middle of the sheet (reach 0..1) and leaves them glowing warm (amt fades it) */
 const shineMasks = new Map();
 let shineLayer = null;
 function pageShine(n, amt, reach){
@@ -64,9 +61,6 @@ function pageShine(n, amt, reach){
   e.mat.emissiveIntensity = 3.2;
   e.glowing = true;
 }
-/* the film opens the book on a bare title page; the lettering soaks up into the sheet
-   from the middle outward, raggedly, like ink taken up by the fibres, as the circle
-   comes down on it (reach 0..1) */
 let titleFull = null, titleBare = null, titleMix = null, titleMask = null, soak = null;
 function titleReveal(reach){
   const e = pageEntry(0);
@@ -102,13 +96,6 @@ function titleReveal(reach){
   e.inkKey = null;
   paintPage(0);
 }
-/* the film's circle lies on the title page as light, and from it a spark flies to each
-   letter of the lettering, which then burns in exactly as a letter written in the book
-   does (burnLetter): the paper browns in its shape, a ragged white-gold front eats
-   through it along the pen's slant, the stroke glows ember and cools into ink.
-   The letters are the title page's own, cut apart where its ink has gaps.
-   o: { M (sigil units -> page px), sig (circle's light 0..1), t, start (when the first
-   letter catches), done } */
 let tb = null;
 function burnInit(){
   titleReveal(-1);
@@ -119,7 +106,6 @@ function burnInit(){
   dc.drawImage(titleFull, 0, 0);
   const px = dc.getImageData(0, 0, W, H).data, inkA = new Uint8ClampedArray(W*H);
   for(let i=0;i<W*H;i++) inkA[i] = Math.min(255, (px[i*4] + px[i*4+1] + px[i*4+2])*1.6);
-  /* lines: runs of rows with ink; letters: runs of columns with ink within a line */
   const rowInk = y => { for(let x=0;x<W;x++) if(inkA[y*W + x] > 40) return true; return false; };
   const bands = [];
   for(let y=0;y<H;y++){
@@ -146,9 +132,6 @@ function burnInit(){
   tb = { W, H, inkA, bands, glyphs, mix: lend(cv(W, H)), done: cv(W, H), tmp: cv(W, H), cvs: [cv(8, 8), cv(8, 8), cv(8, 8)], M: null };
   tb.done.getContext('2d').drawImage(titleBare, 0, 0);
 }
-/* when each letter catches, after the first: line after line down the page, each
-   from its first letter to its last as a hand would write it, the next line starting
-   while the last is still being written; the ornaments go quicker */
 function titleBurnPlan(pace = 1){
   if(!tb) burnInit();
   const B = tb.bands, H = tb.H;
@@ -191,7 +174,6 @@ function titleBurn(o){
     T.sigSoft = sigilLines(T.M, 4*SC, 'rgb(255,170,80)', 2.0);
   }
   const m = T.mix.getContext('2d'), dn = T.done.getContext('2d');
-  /* the light is gathered aside: painting the page clears its glow layer */
   if(!T.acc || T.acc.width !== gw) T.acc = cv(gw, gh);
   const g0 = g, ga = T.acc.getContext('2d');
   { const g = ga;
@@ -270,7 +252,6 @@ function titleBurn(o){
         ld[p+3] = ea*255;
       }
     }
-    /* the letter as it ends, the parchment still unburnt over it, its colour, its light */
     m.save(); m.beginPath(); m.rect(X0, Y0, w, h); m.clip();
     m.drawImage(titleFull, 0, 0);
     cc.getContext('2d').putImageData(cover, 0, 0);
@@ -293,7 +274,6 @@ function titleBurn(o){
   g0.drawImage(T.acc, 0, 0);
   e.glowTex.needsUpdate = true; e.mat.emissiveIntensity = 1.4; e.glowing = true;
 }
-/* a puff of smoke off the title page at (px, py) */
 function pagePuff(px, py){
   const { p, n: nrm } = pagePointWorld(0, px, py);
   const s = nextSmoke();
@@ -301,10 +281,6 @@ function pagePuff(px, py){
   smokeVel[s*3] = (Math.random() - 0.5)*0.03; smokeVel[s*3+1] = 0.16 + Math.random()*0.08; smokeVel[s*3+2] = (Math.random() - 0.5)*0.03;
   smokeWait[s] = 0; smokeKind[s] = 0; smokeAge[s] = 0; smokeLife[s] = 1.3 + Math.random()*0.8; smokeSeed[s] = Math.random();
 }
-/* the live book takes over from the film's last frame: the eye starts where the film's
-   camera stood, cropped or letterboxed to this screen as the video was (intro.fit is
-   object-fit), holds there while the pictures cross, then eases to this screen's own
-   framing. A touch or a key hurries it, and the buttons and the invitation wait for it */
 let camBlend = null;
 const settled = intro ? (()=>{ let r; const p = new Promise(x=>r=x); return { p, r }; })() : null;
 const BLEND_EVENTS = ['pointerdown', 'wheel', 'keydown'];
@@ -334,9 +310,6 @@ function stepCamBlend(dt){
   camera.updateProjectionMatrix();
   if(k >= 1){ camBlend = null; settle(); }
 }
-/* 'open': the film ran to its end, so the book lies open on its title page as the
-   film left it, and then turns to the page last written on. 'closed': the film never
-   played (no autoplay, reduced motion), its first frame stood in, and the book opens now */
 function takeOver(mode, poses){
   const pose = poses && poses[intro.kind];
   if(mode === 'open'){ st.open = true; st.k = 0; }
@@ -363,10 +336,6 @@ function takeOver(mode, poses){
   }, mode === 'open' ? 1300 : 1500);
 }
 
-/* the opening played live, on the scene itself: the story (film/capture.js) runs on the
-   frame loop's time and hands the eye to the live camera over its last second, then the
-   book turns to the page last written on. Cut short, the book opens at once and the eye
-   eases from wherever the story had it to the reader's place */
 function playLive(L){
   setStory(dt=>L.tick(dt));
   L.done = how=>{

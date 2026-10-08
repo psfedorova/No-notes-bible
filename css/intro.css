@@ -1,12 +1,8 @@
-/* the loading screen: the magic circle that draws itself while the book loads, then
-   the veil lifts onto the scene, where the opening plays live (src/film/intro.js,
-   src/film/opening.js playLive) */
 #intro{
   position:fixed; inset:0; z-index:35; background:var(--night);
   transition:opacity .9s ease, background-color 1.1s ease; cursor:default;
 }
 #intro.gone{ opacity:0; pointer-events:none; }
-/* the opening on the book itself: the veil fades off it, and only the hint stays over it */
 #intro.live{ background-color:transparent; pointer-events:none; }
 #intro.live #veil{ opacity:0; }
 #veil{
@@ -21,7 +17,6 @@
   transition:transform 1.4s cubic-bezier(.2,.7,.2,1), filter 1s ease;
 }
 #veil .sigil svg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
-/* the ring of runes turns on its own, so the circle lives on while the page is busy */
 #veil .sigil .turn{ animation:turn 90s linear infinite; will-change:transform; }
 @media (prefers-reduced-motion:reduce){ #veil .sigil .turn{ animation:none; } }
 #veil svg .ln{ fill:none; stroke:rgba(236,196,112,.88); stroke-width:.9; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:1 1; stroke-dashoffset:1; opacity:0; }
@@ -46,7 +41,6 @@
   25%,70%{ opacity:.8; }
   100%{ opacity:0; transform:translate(var(--dx), -90px); }
 }
-/* the opening had to start silent (no touch yet): one tap brings its music in */
 #tapSound{
   position:absolute; left:0; right:0; bottom:calc(36px + env(safe-area-inset-bottom)); margin:0; text-align:center;
   color:rgba(240,214,150,.85); font:600 13px var(--ui-font); letter-spacing:4px; text-transform:uppercase; text-shadow:0 1px 4px #000;

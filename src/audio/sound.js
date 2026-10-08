@@ -1,7 +1,5 @@
-/* sound: the forest from ElevenLabs, the book synthesised */
 import { ASSETS } from '../core/config.js';
 
-/* ---------------- sound: the forest from ElevenLabs, the book synthesised ---------------- */
 const MUTE_KEY = 'liber-arcanum.muted';
 const sfx = (()=>{
   let ac = null, out = null, noise = null;
@@ -21,7 +19,6 @@ const sfx = (()=>{
     if(ac.state === 'suspended') ac.resume();
     return ac;
   }
-  /* a filtered breath of noise: paper, leather, a nib on vellum */
   function hiss(at, dur, f0, f1, q, gain, type){
     const src = ac.createBufferSource(); src.buffer = noise;
     src.playbackRate.value = 0.8 + Math.random()*0.4;
@@ -34,10 +31,6 @@ const sfx = (()=>{
     src.connect(flt); flt.connect(g); g.connect(out);
     src.start(at, Math.random()*1.5, dur + 0.05);
   }
-  /* the magic forest (assets/audio, made with ElevenLabs): the brook and the birds,
-     a bed of breeze and far-off glass chimes, both with their two ends crossfaded
-     and kept as WAV so the loops have no codec gap, plus now and then a fairy
-     twinkle somewhere left or right. Starts once a first touch has woken the audio */
   const load = url => fetch(url).then(r=>r.arrayBuffer()).then(b=>ac.decodeAudioData(b));
   function twinkles(bufs){
     setTimeout(()=>twinkles(bufs), 7000 + Math.random()*13000);
@@ -105,7 +98,6 @@ const sfx = (()=>{
       hiss(t, 0.16, 900, 300, 0.8, 0.12);
       tone(t, 120, 0.12, 0.05);
     },
-    /* the joint of an old board creaks as it is moved */
     creak(opening){
       if(!ready()) return;
       const t = ac.currentTime;
@@ -113,7 +105,6 @@ const sfx = (()=>{
       o.frequency.linearRampToValueAtTime(opening ? 98 : 50, t + 0.65);
       hiss(t, 0.7, 1100, 380, 0.6, 0.1);
     },
-    /* a breath of air and far-off glass: the magic waking, kept very quiet */
     shimmer(){
       if(!ready()) return;
       const t = ac.currentTime;
@@ -127,7 +118,6 @@ const sfx = (()=>{
         o.connect(g); g.connect(out); o.start(at); o.stop(at + 2.3);
       });
     },
-    /* the board shuts on the block */
     thud(){
       if(!ready()) return;
       const t = ac.currentTime;
@@ -136,15 +126,12 @@ const sfx = (()=>{
       hiss(t, 0.3, 650, 160, 0.7, 0.24);
       hiss(t + 0.03, 0.8, 2400, 900, 0.5, 0.03);
     },
-    /* the open board lowered onto the rock */
     land(){
       if(!ready()) return;
       const t = ac.currentTime;
       tone(t, 70, 0.22, 0.08);
       hiss(t, 0.2, 600, 220, 0.7, 0.08);
     },
-    /* a letter burning in: a soft sizzle, a warm breath of flame, a few dry
-       crackles, and now and then the faintest glass note of the spell */
     burn(cap){
       if(!ready()) return;
       const t = ac.currentTime, len = cap ? 1.1 : 0.32;
@@ -154,28 +141,24 @@ const sfx = (()=>{
       for(let i=0;i<n;i++) hiss(t + Math.random()*len, 0.008 + Math.random()*0.012, 2500 + Math.random()*3500, 1800, 1.4, 0.04 + Math.random()*0.06, 'highpass');
       if(Math.random() < (cap ? 1 : 0.16)) tone(t + 0.05, [2637, 3136, 3520, 3951][Math.floor(Math.random()*4)], cap ? 1.4 : 0.7, cap ? 0.006 : 0.0035);
     },
-    /* a letter evaporating: a small breath drawn upward, now and then a high glass note */
     vanish(many){
       if(!ready()) return;
       const t = ac.currentTime;
       hiss(t, many ? 0.7 : 0.4, 1500, 5600, 1.1, many ? 0.04 : 0.026);
       if(Math.random() < (many ? 1 : 0.2)) tone(t + 0.08, [3520, 3136, 2637][Math.floor(Math.random()*3)], 0.8, many ? 0.008 : 0.004);
     },
-    /* ink lifting off the sheet: a breath drawn upward, falling glass notes */
     erase(){
       if(!ready()) return;
       const t = ac.currentTime;
       hiss(t, 1.1, 1400, 6200, 1.2, 0.05);
       [1760, 1318.5, 987.8].forEach((f, i)=>tone(t + 0.12 + i*0.17, f, 0.9, 0.011));
     },
-    /* words slipping over on to the next page */
     flow(){
       if(!ready()) return;
       const t = ac.currentTime;
       hiss(t, 0.6, 3000, 5400, 2, 0.022);
       [1318.5, 1760].forEach((f, i)=>tone(t + 0.1 + i*0.13, f, 0.8, 0.011));
     },
-    /* one leaf of a riffle: a short dry flick */
     flick(){
       if(!ready()) return;
       hiss(ac.currentTime, 0.16, 3000, 1100, 0.9, 0.08);

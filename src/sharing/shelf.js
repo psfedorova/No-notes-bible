@@ -1,17 +1,3 @@
-/* ============================================================================
-   shared books: one book written in by several people, kept in Firebase
-
-   Each member signs in with Google. A page is the letters of every hand on it,
-   each letter with a position key; a page reads them sorted by key. Every
-   hand's letters of a page are a doc of their own (books/{id}/ink/{n}_{uid}).
-   Any keeper may erase or move any hand's letters: the doc is changed letter
-   by letter in a transaction, so two people can write on one page at once, and
-   the page as it was goes to books/{id}/past first, so it can be brought back.
-   The rules are firestore.rules.
-
-   A Google account also keeps a copy of the private book (users/{uid}/keep),
-   so it comes back on a new device or after the browser forgets it.
-   ==========================================================================*/
 import { FIREBASE } from './firebase-config.js';
 import { vanish, burnIn, calm } from './invite-magic.js';
 
@@ -28,8 +14,8 @@ const bookKey = id => `liber-arcanum.book.${id}`;
 const inkKey = id => `liber-arcanum.ink.${id}`;
 const pageKey = (id, n) => `liber-arcanum.ink.${id}.${n}`;
 const WRITE_MS = 1500;
-const MAX_BOOKS = 3;            // firestore.rules holds each person to the same number
-const KEEP_PART = 200000;       // letters in one part of the private book's copy; the rules allow 250000
+const MAX_BOOKS = 3;            // firestore.rules allows the same number
+const KEEP_PART = 200000;       // firestore.rules allows 250000
 const KEEP_MS = 15000;
 const SLOW_MS = 6000;
 const MAKE_MS = 20000;
@@ -51,10 +37,6 @@ function randomId(len){
   return Array.from(b, x => A[x % 36]).join('');
 }
 
-/* ---------------- position keys ---------------- */
-/* base-62 fractions written as digit strings; plain string order is their
-   order. New keys lean towards the lower neighbour, so letters typed one
-   after another (the usual way) keep their keys short */
 const DIG = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 const B62 = 62n;
 function keyVal(s, L){
@@ -78,10 +60,9 @@ export function keysBetween(lo, hi, count){
   }
 }
 
-/* ---------------- the shelf ---------------- */
 export function createShelf(api){
   let F = null, loading = null;
-  let user = null, cur = null;          // cur: { id, name, owner }
+  let user = null, cur = null;
   let books = [], offBooks = null, made = 0, offMade = null;
   let offInk = null, offMembers = null, offBook = null, offMine = null, offAccess = null, firstSnap = true;
   let names = new Map(), plainNames = new Map(), guests = new Set(), access = new Map(), reading = false;
@@ -92,7 +73,6 @@ export function createShelf(api){
   let keepTm = 0, clash = null, checked = new Set(), making = false;
   let guestName = typeof lsGet(GUEST_KEY) === 'string' ? lsGet(GUEST_KEY) : '';
 
-  /* ---------- firebase, loaded only once it is wanted ---------- */
   function firebase(){
     if(F) return Promise.resolve(F);
     if(loading) return loading;
@@ -118,8 +98,7 @@ export function createShelf(api){
     return loading;
   }
   const ref = (...p) => F.doc(F.db, ...p);
-  /* a Google member is called by the first word of the account name, exactly
-     as firestore.rules checks it; a guest by the name they typed */
+  /* firestore.rules checks a Google member's name against the first word of the account name */
   const googleName = u => (u.displayName || '').split(' ')[0] || 'Friend';
   const myName = ()=> user.isAnonymous ? guestName || 'Guest' : googleName(user);
   const real = ()=> !!user && !user.isAnonymous;
@@ -148,7 +127,6 @@ export function createShelf(api){
       api.usePersonal();
       api.toast(u ? 'YOUR PRIVATE BOOK' : 'SIGNED OUT · YOUR PRIVATE BOOK', 2200);
     }
-    /* signed out: the shared books leave this device with the account */
     if(was && !u) gone.forEach(forget);
     if(u && joinWant && joinWant.vowed) join();
     if(u && !u.isAnonymous && was !== booksFor) setTimeout(keepNow, 1500);
@@ -156,8 +134,6 @@ export function createShelf(api){
     api.refresh();
   }
 
-  /* a guest who signs in with Google keeps their writing: the guest account
-     is linked to Google rather than replaced */
   async function signIn(){
     await firebase();
     const p = new F.GoogleAuthProvider();
@@ -184,7 +160,6 @@ export function createShelf(api){
     for(let n=1;n<2*api.N;n++) lsDel(pageKey(id, n));
   }
 
-  /* ---------- opening a shared book ---------- */
   function leaveBook(){
     flush();
     unlisten();
@@ -197,7 +172,6 @@ export function createShelf(api){
     [offInk, offMembers, offBook, offMine, offAccess].forEach(f => f && f());
     offInk = offMembers = offBook = offMine = offAccess = null;
   }
-  /* the cached copy shows at once; the live one comes in after it */
   function openCached(c){
     api.useBook(bookKey(c.id), c.uid);
     cur = { id: c.id, name: c.name || 'Our book', owner: c.owner || null, uid: c.uid };
@@ -248,7 +222,6 @@ export function createShelf(api){
       saveInk();
       if(!view.hidden) render();
     }, ()=>{});
-    /* the creator may let this hand only read; the quill is then put down */
     offMine = F.onSnapshot(ref('books', id, 'access', user.uid), s=>{
       const was = reading;
       reading = s.exists() && s.data().can === 'read';
@@ -261,7 +234,6 @@ export function createShelf(api){
     offInk = F.onSnapshot(F.collection(F.db, 'books', id, 'ink'), s => onInk(s), e => lost(e));
     if(pending.size || pastQ.length) queueUp();
   }
-  /* two keepers of one name are told apart by the order they came in: Alex, Alex II */
   const ROMAN = ['', '', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
   function keeperNames(docs){
     const at = d => { const t = d.data({ serverTimestamps: 'estimate' }).at; return t && t.toMillis ? t.toMillis() : Infinity; };
@@ -283,8 +255,6 @@ export function createShelf(api){
     if(user) F.deleteDoc(ref('users', user.uid, 'books', id)).catch(()=>{});
     api.toast('YOU ARE NO LONGER IN THAT BOOK', 2600);
   }
-  /* each book on the list is looked up once: a renamed one gets its new name,
-     one that is gone or closed to this person leaves the list */
   function checkBooks(){
     if(!user || !F || !navigator.onLine) return;
     const uid = user.uid, get = F.getDocFromServer || F.getDoc;
@@ -322,8 +292,6 @@ export function createShelf(api){
     api.usePersonal();
     api.refresh();
   }
-  /* a keeper leaves for good, the creator stays with the book; what was
-     written stays in it. The last ink goes up before the membership is gone */
   async function leaveShared(){
     if(!cur || !user || !cur.owner || cur.owner === user.uid) return;
     const id = cur.id, me = user.uid, name = cur.name;
@@ -338,9 +306,6 @@ export function createShelf(api){
     batch.commit().catch(()=> api.toast('COULD NOT LEAVE THE BOOK. TRY AGAIN LATER', 2600));
     api.toast(`YOU LEFT ${name.toUpperCase()}`, 2400);
   }
-  /* the creator deletes the book with everyone's ink in it: the ink and the
-     keepers go first, then the book in one batch with the count going down,
-     which frees a place for a new book */
   async function deleteBook(){
     if(!cur || !user || cur.owner !== user.uid) return;
     if(!navigator.onLine){ api.toast('DELETING A BOOK NEEDS A CONNECTION', 2400); return; }
@@ -392,7 +357,6 @@ export function createShelf(api){
       api.toast(`THE BOOK IS NOW CALLED ${name.toUpperCase()}`, 2400);
     }catch(e){ api.toast('COULD NOT RENAME THE BOOK', 2400); }
   }
-  /* a guest signs with any name and may change it later, in every book they keep */
   async function renameGuest(name){
     name = name.trim().slice(0, 24);
     if(!name || !user || !user.isAnonymous) return;
@@ -404,9 +368,6 @@ export function createShelf(api){
     api.toast(`THE KEEPERS NOW KNOW YOU AS ${name.toUpperCase()}`, 2400);
   }
 
-  /* ---------- the private book's copy in the Google account ---------- */
-  /* the copy is written only over the one this device last wrote or took, so
-     two devices never silently overwrite each other's book */
   const hash = t => { let h = 2166136261; for(let i=0;i<t.length;i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36) + t.length.toString(36); };
   const plain = d => ({ pages: (d && d.pages) || {}, hands: (d && d.hands) || [], w: d ? d.w : null, font: d ? d.font : null, fv: d ? d.fv : null });
   const inkSum = d => hash(JSON.stringify(Object.entries(plain(d).pages).filter(([, v]) => v && (v.t || v.f)).map(([n, v]) => [n, v.t || '', v.f || null, !!v.c])));
@@ -440,7 +401,7 @@ export function createShelf(api){
       if(res.other) return meetCopy(uid, res.other, d);
       lsSet(KEEP_KEY, { uid, v: res.v, sum });
       api.refresh();
-    }catch(e){ /* offline, or the rules are not published yet: tried again on the next save */ }
+    }catch(e){  }
   }
   async function readCopy(uid, head){
     const s = await (F.getDocsFromServer || F.getDocs)(F.collection(F.db, 'users', uid, 'keep'));
@@ -448,8 +409,6 @@ export function createShelf(api){
     if(parts.length !== (head.n|0)) throw new Error('the copy is incomplete');
     return JSON.parse(parts.map(x => x.d).join(''));
   }
-  /* another device's copy: an empty book takes it, the same words just adopt it,
-     and two different books are left for the person to choose between */
   async function meetCopy(uid, head, local){
     let copy;
     try{ copy = await readCopy(uid, head); }catch(e){ return; }
@@ -494,9 +453,6 @@ export function createShelf(api){
     body.appendChild(acts);
   }
 
-  /* the creator sends a keeper away for good: the link no longer lets them in,
-     while it still works for everyone else. A guest could come back as a new
-     guest, so for a guest the link changes too */
   async function removeKeeper(uid){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
     const id = cur.id, guest = guests.has(uid);
@@ -512,10 +468,7 @@ export function createShelf(api){
     batch.commit().then(()=> api.toast(`${name.toUpperCase()} CAN NO LONGER OPEN THE BOOK${guest ? '. YOUR LINK IS NEW' : ''}`, 2600))
       .catch(e=>{ console.warn('remove keeper', e); if(guest) link = null; api.toast(`COULD NOT REMOVE. ${refused(e)}`, 3200); });
   }
-  /* the server's rules turning a change down read differently from a lost connection */
   const refused = e => e && e.code === 'permission-denied' ? 'THE BOOK’S RULES DO NOT ALLOW IT' : 'TRY AGAIN LATER';
-  /* the creator forgets a removed keeper: they leave the Removed list, and the
-     link changes in the same batch, so only a new link brings them back */
   async function forgetKeeper(uid){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
     const id = cur.id, code = randomId(32);
@@ -526,8 +479,6 @@ export function createShelf(api){
     try{ await batch.commit(); link = { id, url: joinUrl(id, code) }; api.toast(`${name.toUpperCase()} IS FORGOTTEN. YOUR LINK IS NEW`, 2800); }
     catch(e){ console.warn('forget keeper', e); api.toast(`COULD NOT FORGET THEM. ${refused(e)}`, 3200); }
   }
-  /* the creator lets a keeper she sent away back in: their place returns as it was,
-     so any link to the book lets them in again, the one they already have too */
   async function letBack(uid){
     if(!cur || !user || cur.owner !== user.uid) return false;
     const a = access.get(uid);
@@ -538,7 +489,6 @@ export function createShelf(api){
     try{ await batch.commit(); api.toast(`${String(a.name || 'Friend').toUpperCase()} IS BACK IN THE BOOK`, 2600); return true; }
     catch(e){ console.warn('let back', e); api.toast(`COULD NOT LET THEM BACK. ${refused(e)}`, 3200); return false; }
   }
-  /* the creator lets a keeper only read, or write again */
   function allow(uid, can){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
     const r = ref('books', cur.id, 'access', uid);
@@ -548,9 +498,8 @@ export function createShelf(api){
       .catch(e=>{ console.warn('keeper access', e); api.toast(`COULD NOT CHANGE IT. ${refused(e)}`, 3200); });
   }
 
-  /* ---------- letters: local pages <-> ink docs ---------- */
   const goodEntry = e => e && typeof e.s === 'string' && Array.isArray(e.k) && e.k.length === e.s.length && e.k.every(x => typeof x === 'string');
-  /* keys travel as one comma-joined string, so the rules can bound their size */
+  /* firestore.rules bounds the keys' size, so they travel as one comma-joined string */
   const splitKeys = k => typeof k === 'string' ? (k ? k.split(',') : []) : k;
   function mergePage(n){
     const m = ink.get(n), L = [];
@@ -573,16 +522,12 @@ export function createShelf(api){
     if(samePage(n, M)) return;
     if(!api.applyPage(n, M.t, M.a, M.f, M.c, quiet)) deferred.add(n);
   }
-  /* an ink doc is named by its page and its hand: books/{id}/ink/{n}_{uid} */
   const pid = (n, h) => `${n}|${h}`;
   const splitId = x => { const i = x.indexOf('|'); return [x.slice(0, i)|0, x.slice(i + 1)]; };
   const inkRef = (id, x) => { const [n, h] = splitId(x); return ref('books', id, 'ink', `${n}_${h}`); };
   const EMPTY = { s: '', k: [], f: null, c: false };
   const copyEntry = e => e ? { s: e.s, k: e.k.slice(), f: e.f || null, c: !!e.c } : null;
   const sameEntry = (x, y) => x.s === y.s && x.k.join() === y.k.join() && (x.f || null) === (y.f || null) && !!x.c === !!y.c;
-  /* a change made here on top of what the server had (base) is carried over to what the
-     server has now: letter by letter, each known by its key, so two hands changing one
-     doc at once both keep their change */
   function rebase(L, B, S){
     L = L || EMPTY; B = B || EMPTY; S = S || EMPTY;
     const map = e => { const m = new Map(); for(let i=0;i<e.s.length;i++) m.set(e.k[i], e.s[i]); return m; };
@@ -592,8 +537,6 @@ export function createShelf(api){
     const ks = [...out.keys()].sort();
     return { s: ks.map(k => out.get(k)).join(''), k: ks, f: (L.f || null) !== (B.f || null) ? L.f || null : S.f || null, c: !!L.c !== !!B.c ? !!L.c : !!S.c };
   }
-  /* the page as it is here, matched letter by letter to the merged ink: the same hand and
-     the same letter keep their key; a long page with much changed is not matched inside */
   function align(P, PA, M){
     const mp = new Array(P.length).fill(-1), eq = (i, q) => P[i] === M.t[q] && PA[i] === M.a[q];
     let a = 0, b = 0;
@@ -611,9 +554,6 @@ export function createShelf(api){
     }
     return mp;
   }
-  /* a page is kept as it was before another hand's ink on it is erased or changed, so any
-     keeper can bring it back; letter by letter erasing keeps it once, while every erased
-     letter is still in the copy kept here in the last ten minutes */
   const PAST_MS = 600000;
   function keepPast(n, M, force, gone){
     if(!M.t || reading) return;
@@ -634,8 +574,6 @@ export function createShelf(api){
     String(p.a || '').split(',').forEach(r=>{ const [i, c] = r.split(':').map(Number); for(let j=0;j<c;j++) a.push(p.h[i]); });
     return a.length === p.t.length ? a : null;
   }
-  /* what changed on the pages goes into the ink of the hands whose letters they are: new
-     letters are this hand's, and any hand's letters may be erased or moved on */
   function sync(){
     if(!cur) return;
     const me = cur.uid;
@@ -699,7 +637,6 @@ export function createShelf(api){
     firstSnap = false;
     saveInk();
   }
-  /* only the pages that changed are written, each under a key of its own */
   function saveInk(){
     if(!cur) return;
     dirtyInk.forEach(n=>{
@@ -714,8 +651,6 @@ export function createShelf(api){
     base.forEach((e, x)=>{ b[x] = e && { s: e.s, k: e.k.join(','), f: e.f, c: e.c }; });
     lsSet(inkKey(cur.id), { pending: [...pending], base: b, past: pastQ, names: Object.fromEntries(names) });
   }
-  /* keys that grew long from much writing in one spot are spaced out again;
-     only this hand's letters move, each run between the same neighbours */
   function rekey(n, h){
     const M = mergePage(n), k = M.k.slice();
     for(let i=0;i<M.t.length;){
@@ -731,8 +666,6 @@ export function createShelf(api){
     dirtyInk.add(n);
   }
   function queueUp(){ clearTimeout(upTm); upTm = setTimeout(upload, WRITE_MS); }
-  /* each doc is read and written in one transaction, the change made here laid over
-     what the server has; a doc of another hand is marked with this hand in 'by' */
   function upload(){
     clearTimeout(upTm);
     if(flight) return flight.then(()=> upload());
@@ -766,8 +699,6 @@ export function createShelf(api){
       flight = null;
       sending(-1);
       if(!cur || cur.id !== id) return;
-      /* letters typed since this went out are taken into the ink first, or the answer
-         would be laid over the page without them and they would vanish */
       sync();
       pastQ.splice(0, pasts.length);
       const touched = new Set();
@@ -790,14 +721,11 @@ export function createShelf(api){
       flight = null;
       sending(-1);
       if(!cur || cur.id !== id) return;
-      /* refused for good (the book is gone or closed to this hand): the ink stays here, unsent */
       if(e && e.code === 'permission-denied'){ console.warn('ink refused', e); return; }
       clearTimeout(upTm); upTm = setTimeout(upload, 10000);
     });
     return flight;
   }
-  /* writes that take long are waiting for the connection; the reader is told
-     when they wait and again when they arrive */
   function sending(d){
     inflight = Math.max(0, inflight + d);
     if(inflight && !waitTm) waitTm = setTimeout(()=>{ waitTm = 0; if(inflight){ slow = true; api.refresh(); } }, SLOW_MS);
@@ -818,7 +746,6 @@ export function createShelf(api){
     if(F && user) checkBooks();
     keepSoon();
   });
-  /* a guest's ink lives with this browser only: once it is written, they are told how to keep it */
   function nudgeGuest(){
     if(!user || lsGet(NUDGE_KEY) === user.uid) return;
     lsSet(NUDGE_KEY, user.uid);
@@ -826,7 +753,6 @@ export function createShelf(api){
   }
   function flush(){ if(!cur) return Promise.resolve(); sync(); return upload(); }
 
-  /* ---------- making, sharing and joining books ---------- */
   async function createBook(name, bring){
     await firebase();
     if(!user) return;
@@ -862,8 +788,6 @@ export function createShelf(api){
     link = { id, url: joinUrl(id, code) };
     show('share');
   }
-  /* a new book takes a few seconds (a guest is signed in first): the card says so
-     meanwhile, and lets go if the connection never answers */
   async function makeBook(guest){
     if(making) return;
     making = true;
@@ -879,11 +803,8 @@ export function createShelf(api){
       if(!view.hidden && mode === 'share') render();
     }
   }
-  /* the link carries who invites and to which book, so the invitation can say it
-     before the friend is let in to read either */
   const joinUrl = (id, code)=> `${location.origin}${location.pathname}#join=${id}.${code}`
     + `&book=${encodeURIComponent(cur ? cur.name : 'Our book')}`;
-  /* the link is fetched once per book and kept, so the card can redraw freely */
   async function inviteLink(rotate){
     await firebase();
     if(!cur) return null;
@@ -902,8 +823,6 @@ export function createShelf(api){
     joinWant = w;
     try{ w ? sessionStorage.setItem(JOIN_KEY, JSON.stringify(w)) : sessionStorage.removeItem(JOIN_KEY); }catch(e){}
   }
-  /* a guest needs no Google account: the browser gets a quiet account of its
-     own, so the rules still know whose ink is whose */
   async function beGuest(name){
     guestName = name.trim().slice(0, 24);
     lsSet(GUEST_KEY, guestName);
@@ -917,7 +836,6 @@ export function createShelf(api){
   async function joinAsGuest(name){
     if(await beGuest(name)) await join();
   }
-  /* one join at a time: a second call (a sign-in and a tap together) waits for the first */
   let joining = null;
   function join(){
     if(!joining) joining = joinNow().finally(()=>{ joining = null; });
@@ -944,18 +862,15 @@ export function createShelf(api){
       openCached({ id: want.id, uid: me, name, owner: b.exists() ? b.data().owner : null });
       openLive();
       await farewell();
-      /* said once the opening film is over and the book is still, or it plays unseen under the film */
       Promise.resolve(api.settled && api.settled()).then(()=> api.toast(back && !want.vowed ? `BACK IN ${name.toUpperCase()}` : 'AMEN. NO NOTES', 2600));
     }catch(e){
       show('badInvite');
     }
   }
 
-  /* ---------- the Share card: share the open book, switch between books ---------- */
   const view = document.getElementById('shelf');
   const body = view.querySelector('.body');
   let mode = 'share';
-  /* the invitation cannot be put off: it ends only in the book */
   const locked = ()=> !view.hidden && (mode === 'join' || mode === 'vow');
   const dismiss = ()=>{ if(!locked()) close(); };
   view.addEventListener('pointerdown', e=>{ if(e.target === view) dismiss(); });
@@ -983,8 +898,6 @@ export function createShelf(api){
     return n.length > 4 ? `with ${n.slice(0, 3).join(', ')} and ${n.length - 3} more` : `with ${n.join(', ')}`;
   }
   const TITLES = { share: 'SHARE THE BOOK', join: '', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '', past: 'PAGE HISTORY' };
-  /* while the invitation's words are under a spell, a refresh from elsewhere (the
-     account, the list of books) leaves the card alone: only a new card is drawn anew */
   let fresh = false;
   function render(){
     if(locked() && !fresh && body.classList.contains('ghost')) return;
@@ -1017,7 +930,6 @@ export function createShelf(api){
     i.innerHTML = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 3.25 5 6.75 8.5 3.25"/></svg>';
     return i;
   }
-  /* the title is the open book; a tap on it lists the others and a new one */
   function bookPicker(){
     const pick = el('details', 'pick');
     const sum = el('summary');
@@ -1031,7 +943,6 @@ export function createShelf(api){
     pick.appendChild(list);
     body.querySelector('h2').replaceWith(pick);
   }
-  /* the private book is shared by making a shared copy of it, which opens */
   function renderShare(){
     const acts = el('div', 'acts');
     if(making){ body.appendChild(el('p', 'sub', 'Making the book and its link…')); return; }
@@ -1064,7 +975,6 @@ export function createShelf(api){
       body.appendChild(acts);
     }
     if(cur && user) renderKeepers();
-    /* a guest is offered Google instead of signing out, which would lose their ink */
     const acct = el('div', 'acct');
     const who = el('div', 'who');
     who.appendChild(el('span', null, real() ? `Signed in as ${myName()}` : `${myName()}, a guest`));
@@ -1082,8 +992,6 @@ export function createShelf(api){
     await F.signOut(F.au);
     render();
   }
-  /* everyone sees who keeps the book; only the creator can let one only read, or remove
-     them, and let back or forget whoever was removed. A keeper can leave */
   function renderKeepers(){
     if(!cur.owner) return;
     if(cur.owner !== user.uid){
@@ -1121,9 +1029,6 @@ export function createShelf(api){
         opts.appendChild(b);
       });
       d.appendChild(opts);
-      /* the card clips what spills past its edge. The menu opens downward, upward only when
-         it does not fit below, and it stays unseen until its side is chosen, so it never
-         shows on one side and jumps to the other; the card scrolls only if neither side fits */
       d.addEventListener('toggle', ()=>{
         opts.classList.remove('up', 'placed');
         if(!d.open) return;
@@ -1220,7 +1125,6 @@ export function createShelf(api){
     acts.appendChild(btn('Sign out anyway', 'minor', signOut));
     body.appendChild(acts);
   }
-  /* a question from the rest of the book, answered with a button */
   let asking = null;
   function ask(q){
     if(locked()) return Promise.resolve(false);
@@ -1239,7 +1143,6 @@ export function createShelf(api){
     acts.appendChild(btn(q.no, 'minor', async ()=>{ q.done(false); close(); }));
     body.appendChild(acts);
   }
-  /* ---------- a page's history: each time another hand's ink on it was erased or changed ---------- */
   let pastPages = [], pastRows = null;
   async function openPast(list){
     if(!cur || !list.length) return;
@@ -1281,8 +1184,6 @@ export function createShelf(api){
     });
     body.appendChild(sec);
   }
-  /* the page returns as it was, every letter to the hand that wrote it; what it held
-     just before goes into its history too, so bringing back can itself be undone */
   function restorePast(r){
     const a = unpackPast(r);
     if(!a || reading){ api.toast('THIS PAGE CANNOT BE BROUGHT BACK', 2200); return; }
@@ -1318,7 +1219,6 @@ export function createShelf(api){
     });
     box.appendChild(copy);
   }
-  /* ---------- the invitation: a card on the book's own paper, the rules, the vow, a signature ---------- */
   const RULES = ['Any keeper writes on any page', 'No notes: if it is wrong, rewrite it', 'The book remembers every page'];
   const VOW = [
     'I swear that what I write is true,',
@@ -1342,12 +1242,9 @@ export function createShelf(api){
     acts.appendChild(btn('Accept the invitation', 'main', accept));
     body.appendChild(acts);
   }
-  /* the card works the book's own magic on its words: they burn in line by line like
-     fresh writing when it comes, and taking the invitation lifts them off like erased
-     letters before the vow burns in. One spell at a time, each waiting for the last */
   const card = view.querySelector('.card');
   let spell = Promise.resolve(), going = null;
-  /* a sound needs a touch first, or the browser would play the waiting ones all at once */
+  /* browsers block sound before the first user activation */
   const sound = (k, arg)=>{ if(api.sfx && navigator.userActivation && navigator.userActivation.hasBeenActive) api.sfx(k, arg); };
   const lift = ()=> vanish(card, body, ()=> sound('vanish', true));
   function unspell(){
@@ -1359,7 +1256,6 @@ export function createShelf(api){
     return spell;
   }
   const kindle = ()=> burnIn(card, body, ()=> sound('burn'));
-  /* the card has come to rest and its fonts are in, so the words land where the page sets them */
   const settledCard = ()=> Promise.all([
     Promise.all(card.getAnimations().map(a => a.finished)).catch(()=>{}),
     document.fonts.ready,
@@ -1388,8 +1284,6 @@ export function createShelf(api){
       if(name && !name.value) name.focus();
     }).finally(()=>{ accepting = false; });
   }
-  /* the vow taken: its words lift off at once, and the card fades off what waits behind
-     it, the loading circle and the opening it lets begin, or the book */
   async function farewell(){
     if(view.hidden || !locked() || calm()) return close();
     await spell;
@@ -1408,7 +1302,6 @@ export function createShelf(api){
     body.appendChild(box);
     const sig = el('div', 'sign');
     const acts = el('div', 'acts');
-    /* the vow is sealed once at a time, and a failure says so instead of leaving the card mute */
     const seal = async (open, away) => {
       if(swearing || !joinWant) return;
       swearing = true;
@@ -1416,7 +1309,6 @@ export function createShelf(api){
       try{ wantJoin({ ...joinWant, vowed: true }); await open(); }
       catch(e){ api.toast('NO CONNECTION. TRY AGAIN LATER', 2400); }
       finally{ swearing = false; }
-      /* not let in after all: the vow comes back, or the card that says why stands clean */
       if(going){
         await going.catch(()=>{});
         going = null;
@@ -1425,8 +1317,6 @@ export function createShelf(api){
         else render();
       }
     };
-    /* a Google account signs with its own name; a guest, even one this browser has
-       been before, writes a name afresh, since a new invitation starts from nothing */
     if(user && !user.isAnonymous){
       sig.appendChild(el('p', 'name', myName()));
       sig.appendChild(el('p', 'cap', 'your name'));
@@ -1459,12 +1349,8 @@ export function createShelf(api){
     body.appendChild(acts);
   }
 
-  /* ---------- start ---------- */
-  /* the opening film waits while the invitation is on the screen */
   let invited = null;
   const release = ()=>{ if(invited){ invited(); invited = null; } };
-  /* an invitation opened again starts from nothing, for one of the book's keepers too:
-     the card, the vow and the opening with its music, which the touches on the card let play */
   function invite(){
     show(joinWant.vowed ? 'vow' : 'join');
     if(!joinWant.vowed) arrive();
@@ -1472,8 +1358,6 @@ export function createShelf(api){
   }
   function start(){
     if(!sharingOn) return;
-    /* the invitation is kept for this tab, so a sign-in that leaves the page
-       and comes back still lands in the book */
     const m = /^#join=([A-Za-z0-9]{6,40})\.([a-z0-9]{24,64})((?:&[a-z]+=[^&]*)*)$/.exec(location.hash);
     let kept = null;
     try{ kept = JSON.parse(sessionStorage.getItem(JOIN_KEY)); }catch(e){}
@@ -1484,8 +1368,6 @@ export function createShelf(api){
         wantJoin({ id: m[1], code: m[2], book: said('book', 60) });
       }else wantJoin(kept);
       if(m) history.replaceState(null, '', location.pathname + location.search);
-      /* the invitation comes first, over the loading circle, and the film waits for it:
-         the touches on the card are what let the film play with its music */
       const opening = window.__intro;
       if(opening && !opening.gone && opening.wait){ opening.wait(new Promise(r=>{ invited = r; })); invite(); }
       else Promise.resolve(api.settled && api.settled()).then(invite);

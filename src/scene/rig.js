@@ -1,4 +1,3 @@
-/* the book's hierarchy: float -> spin (free trackball) -> centre -> book */
 import * as THREE from 'three';
 import { scene } from './renderer.js';
 

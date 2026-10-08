@@ -1,4 +1,3 @@
-/* the leaves: real slabs of parchment, bent by integrating an angle along the arc */
 import * as THREE from 'three';
 import { clamp, lerp, smooth, mulberry32 } from '../lib/textures.js';
 import { ALPHA, EPS, FAN, LH, LT, M, N, OPEN, PAGE_H, PAGE_W, PH, PW, R, RB, SWELL, T, XJ_C, XJ_O, ZB } from '../core/config.js';
@@ -42,15 +41,9 @@ for(let i=0;i<N;i++){
     uv[(A_CNT+k)*2] = 1 - m/M;   uv[(A_CNT+k)*2+1] = r/R;
   }
   const rnd = mulberry32(900 + i*31);
-  /* trimmed leaves: no two are quite as wide, but within a fraction of a leaf's
-     thickness, so the fore edge reads as one cut face of fine lines rather than a saw
-     of corners. Head and tail are cut flush, as a book block is, or each leaf's sliver
-     of page peeping past the one above would stripe them */
   const len = PW*(1 - 0.0015*rnd());
   const yb = -PH/2, yt = PH/2;
   const tint = 0.84 + rnd()*0.2, warm = 0.92 + rnd()*0.1;
-  /* the gutter: a page darkens as it runs down into the sewing, on both sides of
-     every leaf, so the spread reads as bound into the spine and not laid beside it */
   const gutter = v => { const s = ((v % A_CNT) % (M+1))/M*len, f = 1 - smooth(clamp(s/0.42, 0, 1)); return 1 - 0.42*Math.pow(f, 1.6); };
   for(let v=0;v<V_CNT;v++){
     const wallV = v >= 2*A_CNT, gs = wallV ? 1 : gutter(v);
@@ -78,9 +71,6 @@ for(let i=0;i<N;i++){
   leaves.push({ i, mesh, geo:g, pos, nrm, sig:'', a0:0, len, ds: len/M, yb, yt, flt: 9, float: 0, floatLeft: false });
 }
 
-/* rest shape: angle phi0*g(s/ell), g = 1 - smoothstep, so the leaf leaves its
-   sewing straight and lands tangentially on the leaf below. The height it gains
-   is ell*I(phi0); I is tabulated once and inverted by bisection. */
 const gFn = u => u >= 1 ? 0 : 1 - u*u*(3-2*u);
 const PHI_MAX = 1.45, I_TAB = 600;
 const iTab = new Float32Array(I_TAB+1);
@@ -99,11 +89,6 @@ function solvePhi(ratio){
   return -PHI_MAX + 2*PHI_MAX*(lo+f)/I_TAB;
 }
 
-/* The sewn backs sit on a fixed arc of the block: the split between the two
-   stacks slides along it as pages turn, so a book open at its first leaves has
-   a low gutter beside the thin stack and the spine only arches up when the
-   book is opened near its middle. sigma (leaves on the left, fractional while
-   one is in flight) only decides how the fore edges fan. */
 const GZ = ZB + EPS + RB*(1 - Math.cos(N/2*ALPHA)) + 0.003;
 function layoutCtx(sigma, theta){
   const b = smooth(clamp(theta/OPEN, 0, 1));
@@ -124,7 +109,6 @@ function hingeOf(C, i, out){
   out.z = lerp(hzc, GZ - RB + RB*Math.cos(psi), C.b);
   return out;
 }
-/* the side of the sewing away from the leaves: -x closed, towards the arc's centre open */
 const _bd = { x:0, z:0 };
 function backDir(C, i){
   const psi = (i + 0.5 - N/2)*ALPHA;
@@ -133,7 +117,7 @@ function backDir(C, i){
   _bd.x = x/l; _bd.z = z/l;
   return _bd;
 }
-const RAMP = 3.0;                  // run of a leaf's rise out of the sewing, per unit of stack thickness
+const RAMP = 3.0;
 function restParams(C, i, left, H){
   let rise, q;
   if(!left){
@@ -143,20 +127,14 @@ function restParams(C, i, left, H){
     rise = (EPS + (i+0.5)*LT) - ((H.x-C.ex)*C.nx + (H.z-C.ez)*C.nz);
     q = C.sigma > 0.5 ? i/C.sigma : 0;
   }
-  /* every leaf of a stack rises out of the sewing over the same run, set by how thick
-     the stack is: a leaf higher up then climbs more steeply all along and stays above
-     the one below it, instead of their ramps crossing and flickering through each other */
   const thick = (left ? C.sigma : N - C.sigma)*LT;
   const ell = clamp(0.45 + RAMP*Math.max(thick, Math.abs(rise)), 0.45, 0.8*PW);
-  /* a leaf that has just landed comes down last at its fore edge, on the air caught
-     under it, and gives a small shiver as that air goes */
   const L = leaves[i], t = L.flt, live = t < FLOAT_T;
   const flutter = live ? 0.03*Math.exp(-t*7)*Math.abs(Math.sin(t*16)) : 0;
   const float = live && left === L.floatLeft ? L.float*Math.pow(1 - t/FLOAT_T, 2.2) : 0;
   return { phi0: solvePhi(rise/ell), ell, fan: FAN*clamp(q,0,1)*C.b*C.b + flutter, float, left, theta: C.theta };
 }
 const FLOAT_T = 0.75;
-/* a leaf touching down: whatever its fore edge still trails by is the air under it */
 function land(L, lag, to){
   L.flt = 0;
   L.floatLeft = to === 1;
@@ -167,15 +145,9 @@ function restAngle(P, s){
   const beta = P.phi0*gFn(s/P.ell) + P.fan*fanW + P.float*bendLag(s/PW);
   return P.left ? P.theta - beta : beta;
 }
-/* a leaf in flight: blend of its two rest shapes, bent the way paper bends. A hand
-   at the corner lifts it there first (lead: flat by the spine, curling up to the
-   hand); flying free, the air holds the fore edge back (lag: bent mostly near
-   the sewing, as a cantilever is); and wherever it is not upright it droops
-   under its own weight (sag). Held between the two rests so it can never cut
-   into either stack */
-const TWIST = 0.55;                // how far the lifted corner runs ahead of the other
-const SAG = 0.30;                  // fore-edge droop of a leaf held level, free in the air
-const AIR = 0.20;                  // how far the air holds the fore edge back, per rad/s of swing
+const TWIST = 0.55;
+const SAG = 0.30;
+const AIR = 0.20;
 const LAG_MAX = 1.0;
 const bendLead = u => Math.pow(u, 1.6);
 const bendLag = u => 0.35*(8*u/3 - 2*u*u + u*u*u*u/3) + 0.65*u;
@@ -185,7 +157,6 @@ function flightAngleFn(PR, PL, air, yN){
   const tw = air.gy*yN;
   const lead = air.lead*(1 + TWIST*tw), lag = air.lag*(1 - 0.3*TWIST*tw);
   const aMid = lerp(restAngle(PR, PW*0.5), restAngle(PL, PW*0.5), p);
-  /* by the stacks the leaf is borne on the air pressed out from under it */
   const sag = -SAG*air.sagK*Math.cos(aMid)*Math.sqrt(Math.sin(Math.PI*clamp(p, 0, 1)));
   return s=>{
     const aR = restAngle(PR, s), aL = restAngle(PL, s), u = s/PW;
@@ -205,9 +176,6 @@ function integrate(hx, hz, angleAt, X, Z, A, ds){
     Z[m+1] = Z[m] + Math.sin(a)*ds;
   }
 }
-/* a leaf's cut edges reach the whole of its share of the stack, half a pitch each way,
-   so the edges of neighbouring leaves meet: an open book's head and tail read as one cut
-   face of fine lines, not a comb of slivers with the dark between them showing through */
 const LW = LT*0.5;
 function writeLeaf(L, vary){
   const pos = L.pos, nrm = L.nrm;
@@ -245,7 +213,6 @@ function writeLeaf(L, vary){
   L.geo.attributes.normal.needsUpdate = true;
   L.bsDirty = true;
 }
-/* a point of page n given in canvas px, in world space, with the page's normal */
 const _pp = new THREE.Vector3(), _pn = new THREE.Vector3();
 function pagePointWorld(n, px, py){
   const L = leaves[n>>1], recto = n%2 === 0;

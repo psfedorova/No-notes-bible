@@ -1,4 +1,3 @@
-/* the view: lying on the rock, lifting to be turned, the orbit and the framing */
 import * as THREE from 'three';
 import { clamp, lerp, smooth } from '../lib/textures.js';
 import { easeSine } from '../core/easing.js';
@@ -11,36 +10,25 @@ import { flip } from './turning.js';
 import { quillTo, seek, spreadOf } from '../ink/spells.js';
 import { refreshUI } from '../ui/controls.js';
 
-/* book +z (the cover / the spread) faces the sky; its head points away */
 const qClosedHome = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2, -0.38, 0, 'YXZ'));
 const qOpenHome   = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2, 0, 0, 'YXZ'));
 spinGrp.quaternion.copy(qClosedHome);
-/* the hand turns spinGoal; the book follows it, so no mouse step is ever seen raw */
 const spinGoal = qClosedHome.clone();
 let spinAnim = null;
 function setSpinAnim(v){ spinAnim = v; }
-const angVel = { x:0, y:0 };          // rad/s, kept on after a flick
+const angVel = { x:0, y:0 };
 let inertia = false;
 function setInertia(v){ inertia = v; }
 const camTarget = new THREE.Vector3();
-/* the eye walks round the rock: az about the vertical, el raised or lowered from
-   the framing's own elevation; dragging the forest moves the goals */
 const orbit = { az:0, azTo:0, el:0, elTo:0, vx:0, vy:0, coast:false };
 const ORBIT_EL = [0.06, 1.38];
-/* how far the eye may stand from the boulder at most (app/loop.js keeps it nearer still,
-   within two metres of the point the forest was captured from) */
 const CAM_REACH = 30;
 
-/* a book shut where it lay stays square to the reader; only the first closed pose,
-   the one the opening film starts from, lies turned on the rock */
 let closedHome = qClosedHome;
 function setClosedHome(q){ closedHome = q; }
 const closedQuat = ()=> closedHome;
 function homeQuat(){ return st.open ? qOpenHome : closedHome; }
-/* nearly straight down: square enough to read as a flat sheet, not so square
-   that the eye's up direction is lost */
 const WRITE_EL = 1.5;
-/* how much of the screen the buttons and the pager take, top/bottom and sides */
 let uiIn = null;
 function uiInsets(){
   if(uiIn && uiIn.vw === VW && uiIn.vh === VH) return uiIn;
@@ -51,7 +39,6 @@ function uiInsets(){
   if(rp && rp.height) uiIn = r;
   return r;
 }
-/* the part of the screen the keyboard leaves free, in canvas px */
 function visibleBand(){
   const vv = window.visualViewport;
   if(!vv) return { top: 0, h: VH };
@@ -59,12 +46,6 @@ function visibleBand(){
   return { top, h: clamp(vv.height, 1, VH - top) };
 }
 
-/* ---------------- one page at a time ----------------
-   A phone held upright reads the tome as a reader holds a big book close: the eye
-   stays over one page, the pager counts pages, and the next page is either the
-   other side of the spread (the eye moves over) or the back of the leaf (it turns) */
-/* judged on the screen's full height for its width: the keyboard coming up must not
-   change how the book is read */
 let tallW = 0, tallH = 0;
 function onePage(){
   if(VW !== tallW){ tallW = VW; tallH = VH; }
@@ -73,12 +54,9 @@ function onePage(){
 }
 const sideOf = n => n % 2 ? -1 : 1;
 const pageMid = {};
-/* how far the reader has slid the page being written, in page px, and page px per screen px */
 let pageScroll = 0, pagePerPx = 1;
 function setPageScroll(v){ pageScroll = v; }
 function setPagePerPx(v){ pagePerPx = v; }
-/* the spread the book will lie open at once the leaves in the air and the ones
-   asked for after them are down */
 function landingSpread(){
   let k = st.riffle ? st.riffle.k1 : st.k;
   const fl = st.flight;
@@ -107,9 +85,6 @@ function stepPage(d){
   refreshUI();
 }
 const pageStep = d => onePage() ? stepPage(d) : flip(d);
-/* what the camera frames: it follows the board while the book opens, but a
-   book being shut is watched from where the reader sits, as a person would;
-   only once the board is down and still do the view and the tome ease back */
 const shut = { th: null, hold: false, ease: null, spin: null };
 const frameTheta = () => shut.th === null ? st.theta : shut.th;
 function holdFrame(spinTo, settle){
@@ -138,7 +113,6 @@ function fitDistance(){
   const w = lerp(CW + 8.5, 2*(CW + XJ_O) + 2.0, b);
   const el = camElevation();
   const h = lerp(CH*Math.sin(el) + 6.5, CH*Math.sin(el) + 1.6, b);
-  /* closed, the whole boulder is in the frame, the book small upon it, as in the reference */
   return Math.max(h/(2*Math.tan(fov/2)), w/(2*Math.tan(fov/2)*aspect), 6)*lerp(1.55, 1, b);
 }
 function rotateBy(dx, dy){
@@ -147,7 +121,6 @@ function rotateBy(dx, dy){
   const qb = new THREE.Quaternion().setFromAxisAngle(camRight, dy);
   spinGoal.premultiply(qb).premultiply(qa).normalize();
 }
-/* settle: the glide turns the book where it lies on the rock instead of lifting it */
 function glideSpin(to, dur, settle){
   spinAnim = { q0: spinGrp.quaternion.clone(), q1: to.clone(), t:0, dur, settle: !!settle };
   inertia = false;

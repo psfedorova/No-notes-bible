@@ -1,4 +1,3 @@
-/* text layout: the one geometry the ink and the caret share */
 import { clamp, cv } from '../lib/textures.js';
 import { capFont, fontCss, FS, SC } from '../core/config.js';
 import { pages } from '../book/pages.js';
@@ -10,7 +9,6 @@ function textBox(n){
   return { x, y, w, bottom: 414*SC, flow: !!(pages[n] && pages[n].c) };
 }
 
-/* ---------------- text layout: the one geometry the ink and caret share ---------------- */
 const measCtx = cv(8,8).getContext('2d');
 function layoutText(text, f, box){
   const size = f.size*FS, lh = Math.round(size*(f.lead || 1.38));
@@ -19,8 +17,6 @@ function layoutText(text, f, box){
   let cap = null;
   const first = text.charAt(0);
   if(first && !box.flow && /\p{L}/u.test(first)){
-    /* a raised initial: a big figured capital standing on the first line's
-       baseline, the rest of the word running on from it */
     const capSize = size*2.45;
     measCtx.font = capFont(f, capSize);
     const cm = measCtx.measureText(first);
@@ -79,8 +75,6 @@ function layoutText(text, f, box){
   if(cap) cap.y = y0;
   return { lines, cap, ok, size, lh, f, box };
 }
-/* the band a line's ink can reach, in font sizes above and below its baseline:
-   the burn and the evaporation clip to it, so descenders burn with their letter */
 const INK_UP = 1.05, INK_DN = 0.42;
 function lineOf(lay, idx){
   let best = 0;
@@ -104,13 +98,11 @@ function indexOnLine(lay, li, px){
     const d = Math.abs(ln.xs[j]-px);
     if(d < bd){ bd = d; best = j; }
   }
-  /* the trailing space of a wrapped line belongs to the next line's caret */
   let idx = ln.start + best;
   const nxt = lay.lines[li+1];
   if(nxt && idx === ln.end && nxt.start === ln.end && ln.end > ln.start) idx = ln.end - 1;
   return idx;
 }
-/* where character idx sits: its line, pen position and advance, in canvas px */
 function glyphBox(lay, text, idx){
   if(lay.cap && idx === 0) return { x: lay.cap.x, y: lay.cap.y, w: lay.cap.w, cap: true, ln: null };
   const li = lineOf(lay, idx), ln = lay.lines[li];

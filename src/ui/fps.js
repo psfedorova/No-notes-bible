@@ -1,5 +1,3 @@
-/* the frame meter: ⌥5 / Alt+5 (or ?fps in the address, for a phone) shows how many
-   frames a second this very device draws, and whether that is smooth */
 let el = null, times = [], shownAt = 0;
 function toggleMeter(){
   if(el){ el.remove(); el = null; return; }
@@ -9,7 +7,6 @@ function toggleMeter(){
   document.body.appendChild(el);
   times = []; shownAt = 0;
 }
-/* called for every frame drawn; resting, the book draws at most 30 a second on purpose */
 function meterTick(now, resting){
   if(!el) return;
   times.push(now);

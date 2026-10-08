@@ -1,12 +1,3 @@
-/* ============================================================================
-   The invitation card's own magic, the same the book works on its pages:
-   taking the invitation is the words lifting off the card the way erased
-   letters leave a page (they warm to pale gold, come apart from the top in
-   a ragged drift, each grain flaring before it goes, vapour and gold motes
-   rising), and the vow is then burned in line by line the way a letter is
-   written (a white-gold rim along the pen's slant, embers cooling into ink).
-   Works on the card's real text: every glyph is redrawn where the page set it.
-   ==========================================================================*/
 import { fbm } from '../lib/textures.js';
 
 const VAPOR_T = 0.85, LINE_STEP = 0.08;
@@ -27,8 +18,6 @@ let noise = null;
 const noiseAt = (x, y)=> noise[((y & 255) << 8) | (x & 255)];
 export const calm = ()=> matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/* two canvases laid over the card: the letters as the card shows them, and their
-   light, blurred and screened over the paper */
 function layers(card){
   const S = Math.min(devicePixelRatio || 1, 1.5);
   const W = card.clientWidth, H = card.scrollHeight;
@@ -43,9 +32,6 @@ function layers(card){
   return { S, W, H, paint: mk('paint'), glow: mk('glow') };
 }
 
-/* every glyph of the text under root, drawn one by one where the page put it,
-   grouped in lines from the top, a name written in the field too; the ornaments,
-   the buttons and an empty field with its hint come and go whole, by CSS */
 function glyphs(root, card, L){
   const cr = card.getBoundingClientRect(), ox = cr.left, oy = cr.top - card.scrollTop;
   const mask = document.createElement('canvas');
@@ -93,8 +79,6 @@ function glyphs(root, card, L){
   return { mask: mx.getImageData(0, 0, mask.width, mask.height).data, lines };
 }
 
-/* the pixels worth visiting: the strokes and a soft halo round them, each with
-   its line, its colour and where it sits */
 function field(G, L, halo){
   const w = L.paint.width, h = L.paint.height, d = G.mask;
   const soft = new Float32Array(w*h);
@@ -135,7 +119,6 @@ function run(step, done){
   });
 }
 
-/* gold motes and pale vapour, drawn in the light layer */
 function motes(){
   const list = [];
   return {
@@ -159,9 +142,6 @@ function motes(){
   };
 }
 
-/* the ornaments and the buttons keep time with the words next to them: each belongs
-   to the first line that starts below its top (a flourish under a heading, to the line
-   under the flourish), and the buttons, below all the words, come last */
 const DECOR = [['.orn, .sign, .btn', 'top'], ['h2, .amen', 'bottom']];
 function decor(root, card, lines, when){
   const oy = card.getBoundingClientRect().top - card.scrollTop, list = [];
@@ -173,8 +153,6 @@ function decor(root, card, lines, when){
   return list;
 }
 
-/* the words lift off the card; done as soon as they are gone, while their last
-   motes still rise over whatever the card shows next */
 export function vanish(card, root, onStart){
   if(!noise) noise = fbm(256, 256, 12, 12, 3, 4242);
   const L = layers(card), G = glyphs(root, card, L), F = field(G, L, 0);
@@ -221,14 +199,12 @@ export function vanish(card, root, onStart){
     const live = M.draw(gx, t - prev, S, a => `rgba(255,224,150,${a})`);
     prev = t;
     return t < last || live;
-  }, ()=>{ gone(); orns.forEach(o => o.e.classList.remove('gone')); L.paint.remove(); L.glow.remove(); });
+  }, ()=>{ gone(); L.paint.remove(); L.glow.remove(); });
   return words;
 }
 
-/* the words are burned into the card, line after line along the pen's slant */
 export function burnIn(card, root, onLine){
   if(!noise) noise = fbm(256, 256, 12, 12, 3, 4242);
-  /* the vow is read in its own ink, then hidden before the next paint */
   root.classList.remove('ghost');
   const L = layers(card), G = glyphs(root, card, L);
   root.classList.add('ghost', 'arriving');
@@ -269,7 +245,6 @@ export function burnIn(card, root, onLine){
       const heat = Math.min(1, Math.exp(-la/(COOL_T*(0.55 + 1.1*edge)))*(0.72 + 0.56*fl));
       const rim = la < RIM ? 1 - la/RIM : 0;
       if(a > 0.004){
-        /* the stroke cools from singe into the card's own ink */
         const s = ramp(heat, SINGE), r = rim*0.8, h = Math.min(1, heat*1.6);
         const cr = lerp(lerp(d[p], s[0], h), 255, r), cg = lerp(lerp(d[p+1], s[1], h), 246, r), cb = lerp(lerp(d[p+2], s[2], h), 220, r);
         pd[i] = ((a*255) << 24) | (cb << 16) | (cg << 8) | cr;

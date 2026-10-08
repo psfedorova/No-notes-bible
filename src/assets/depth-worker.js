@@ -1,8 +1,4 @@
-/* decodes the forest's depth pictures off the main thread (scene/forest.js decodeDepth):
-   16-bit distances packed in a PNG's red and green, turned to half floats bottom row
-   first, and for the forest's own layer its soft canopy beside them */
 
-/* float to half float, by the same tables and truncation as three's DataUtils */
 const fb = new ArrayBuffer(4), f32 = new Float32Array(fb), u32 = new Uint32Array(fb);
 const base = new Uint32Array(512), shift = new Uint32Array(512);
 for(let i=0;i<256;++i){
@@ -15,7 +11,6 @@ for(let i=0;i<256;++i){
 }
 function toHalf(v){ f32[0] = v; const f = u32[0], e = (f >> 23) & 0x1ff; return base[e] + ((f & 0x007fffff) >> shift[e]); }
 
-/* the canopy overhead as one soft surface: averaged over k texels and blurred twice */
 function softDepth(q, w, h, k){
   const W = w/k|0, H = h/k|0, a = new Float32Array(W*H), b = new Float32Array(W*H);
   for(let y=0;y<H;y++) for(let x=0;x<W;x++){

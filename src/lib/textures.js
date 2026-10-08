@@ -1,5 +1,3 @@
-/* Procedural helpers for Liber Arcanum: noise fields, normal maps, leather cracks,
-   marbled endpaper and the small sprites. Painted onto <canvas> at boot. */
 import * as THREE from 'three';
 
 export const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
@@ -19,7 +17,6 @@ function grid(gw, gh, rnd){
   for(let i=0;i<g.length;i++) g[i] = rnd();
   return g;
 }
-/* tileable smoothed bilinear lookup */
 function gsample(g, gw, gh, u, v){
   const x = u*gw, y = v*gh;
   let x0 = Math.floor(x), y0 = Math.floor(y);
@@ -29,7 +26,6 @@ function gsample(g, gw, gh, u, v){
   const a = g[i0*gw+j0], b = g[i0*gw+j1], c = g[i1*gw+j0], d = g[i1*gw+j1];
   return (a+(b-a)*sx)*(1-sy) + (c+(d-c)*sx)*sy;
 }
-/* fractal brownian motion field, 0..1, tileable */
 export function fbm(w, h, baseX, baseY, octaves, seed){
   const out = new Float32Array(w*h);
   let amp = 1, tot = 0;
@@ -46,7 +42,6 @@ export function fbm(w, h, baseX, baseY, octaves, seed){
   for(let i=0;i<out.length;i++) out[i] /= tot;
   return out;
 }
-/* bilinear upsample of a Float32 field */
 export function upsample(src, sw, sh, dw, dh){
   const out = new Float32Array(dw*dh);
   for(let y=0;y<dh;y++){
@@ -64,7 +59,6 @@ export function cv(w,h){
   c.width = w; c.height = h;
   return c;
 }
-/* height field -> tangent-space normal map (Sobel-ish central difference) */
 export function normalFromHeight(hf, w, h, strength){
   const c = cv(w,h), ctx = c.getContext('2d');
   const img = ctx.createImageData(w,h), d = img.data;
@@ -74,7 +68,7 @@ export function normalFromHeight(hf, w, h, strength){
       const xm = ((x-1)+w)%w, xp = (x+1)%w;
       const dx = (hf[y*w+xp]  - hf[y*w+xm])  * strength;
       const dy = (hf[yp*w+x]  - hf[ym*w+x])  * strength;
-      let nx = -dx, ny = dy, nz = 1;      /* +dy: canvas y grows down, uv v grows up */
+      let nx = -dx, ny = dy, nz = 1;
       const l = Math.sqrt(nx*nx+ny*ny+nz*nz);
       const i = (y*w+x)*4;
       d[i]   = (nx/l*0.5+0.5)*255;
@@ -98,7 +92,6 @@ export function tex(canvas, {srgb=false, rx=1, ry=1, wrap=true} = {}){
 export let MAXANISO = 4;
 export function setMaxAniso(v){ MAXANISO = v; }
 
-/* a web of shrink cracks, white on black, for aged leather */
 export function crackCanvas(W,H,seed,density){
   const c = cv(W,H), ctx = c.getContext('2d');
   ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
@@ -122,7 +115,6 @@ export function crackCanvas(W,H,seed,density){
     }
     ctx.stroke();
   }
-  /* a handful of long cell boundaries — the big shrink cracks */
   for(let i=0;i<Math.round(26*density);i++){
     let x = rnd()*W, y = rnd()*H, a = rnd()*Math.PI*2;
     ctx.lineWidth = 1.6 + rnd()*2.2;
@@ -145,7 +137,6 @@ export function fieldFromCanvas(c){
   return f;
 }
 
-/* soft round mote, and the vertical falloff of a light shaft */
 export function makeSpriteCanvas(S){
   const c = cv(S,S), ctx = c.getContext('2d');
   const g = ctx.createRadialGradient(S/2,S/2,0,S/2,S/2,S/2);

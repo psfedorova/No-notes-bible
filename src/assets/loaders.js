@@ -1,9 +1,7 @@
-/* loading helpers: retries, the glTF loader, freeing what is uploaded */
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { HI_RES } from '../core/config.js';
 
-/* a busy local server now and then drops a connection: try again before giving up */
 const loadImage = (src, tries = 3) => new Promise((res, rej)=>{
   const i = new Image();
   i.onload = ()=>res(i);
@@ -13,9 +11,7 @@ const loadImage = (src, tries = 3) => new Promise((res, rej)=>{
   };
   i.src = src;
 });
-/* a picture that never changes once it is on the GPU: a phone lets go of its own copy
-   (image, canvas or data) right after the upload. iOS counts every byte of a tab, and
-   the forest, the boards and the rock held twice took Safari past its limit */
+/* iOS Safari kills a tab by its total memory, CPU copies of GPU textures included */
 function shed(t){
   if(HI_RES || !t || t.userData.shed) return t;
   t.userData.shed = true;
@@ -30,7 +26,6 @@ function shed(t){
   };
   return t;
 }
-/* the same for any other load: run it again, a little later each time, before giving up */
 async function retry(load, tries = 3){
   for(let k = 1; ; k++){
     try{ return await load(); }

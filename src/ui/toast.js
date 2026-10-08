@@ -1,4 +1,3 @@
-/* the short message that shows over the book, with one action on it when it needs one */
 const toastEl = document.getElementById('toast');
 let toastTm = 0;
 function toast(msg, ms, act){

@@ -1,4 +1,3 @@
-/* the book's state and its layout each frame */
 import { lerp } from '../lib/textures.js';
 import { N, PH, R, ZB } from '../core/config.js';
 import { setShadowDirty } from '../scene/renderer.js';
@@ -12,23 +11,22 @@ import { HB_R, HB_SEG, headbands, jointB, jointF, lining, updateSpine } from './
 import { _A, _X, _Z, backDir, flightAngleFn, FLOAT_T, hingeOf, integrate, layoutCtx, leaves, restAngle, restParams, writeLeaf } from './leaves.js';
 
 const st = {
-  theta: 0,           // front board angle, 0 closed .. PI open
-  k: 0,               // leaves lying on the left
-  flight: null,       // { j, p, dragging, lead, lag, sagK, vel, gy, anim, settle }
-  riffle: null,       // a long jump: several leaves in the air at once
+  theta: 0,
+  k: 0,
+  flight: null,
+  riffle: null,
   open: false,
   zoom: 1, camD: 14,
   bob: 1,
   lift: 0,
-  focus: 0, focusTo: 0, focusSide: 1,  // the camera leaning in over the page being written
+  focus: 0, focusTo: 0, focusSide: 1,
   thetaVel: 0,
-  hover: 0, hoverTo: 0, aura: 0, auraTo: 0, glow: 0, glowTo: 0, gemFlare: 0,  // the opening's quiet magic
-  jolt: 0, joltV: 0   // the whole tome giving on the moss as the board lands
+  hover: 0, hoverTo: 0, aura: 0, auraTo: 0, glow: 0, glowTo: 0, gemFlare: 0,
+  jolt: 0, joltV: 0
 };
 const queue = [];
 const _H = { x:0, z:0 };
 let lastSig = '';
-/* the layout is worked out afresh on the next frame even if nothing it reads has moved */
 function invalidateLayout(){ lastSig = ''; }
 function currentSigma(){
   const rf = st.riffle;
@@ -118,11 +116,6 @@ function updateBack(C){
     }
     P.needsUpdate = true; Nn.needsUpdate = true;
   });
-  /* endpaper joints: board spine edge -> first / last leaf's sewing, as a real joint. The
-     strip carries on the pastedown edge to edge, lying on the board at the pastedown's own
-     height up to the board's edge, then crosses the gap straight to the leaf. Straight, so
-     it always closes the gap and never swings out behind the spine (which then showed
-     through from inside); flat on the board, so it never hangs there as a loose panel */
   const joint = (mesh, sx, sz, dx, dz, hx, hz)=>{
     const p = mesh.geometry.attributes.position;
     const ax = sx + dx*EP_X0, az = sz + dz*EP_X0;
@@ -139,21 +132,29 @@ function updateBack(C){
   joint(jointB, C.xb, ZB + 0.002, 1, 0, _H.x, _H.z);
 }
 
-/* which page textures are live, and which leaves cast shadows */
 function updateVisibility(){
   const rf = st.riffle;
-  const c = rf ? Math.round(currentSigma()) : st.flight ? st.flight.j : st.k;
-  const lo = rf ? 3 : 2, hi = rf ? 2 : 1;
+  const c = st.flight ? st.flight.j : st.k;
+  let a = c - 2, z = c + 1;
+  if(rf){
+    const lo = Math.min(rf.k0, rf.k1);
+    a = lo - 1; z = lo + rf.d;
+    for(let m=0;m<rf.d;m++){
+      const i = rf.fwd ? rf.k0 + m : rf.k0 - 1 - m;
+      if(rf.p[m] >= 1) a = Math.max(a, i);
+      else if(rf.p[m] <= 0) z = Math.min(z, i);
+    }
+  }
   const keep = new Set();
   const open = st.theta > 0.02;
   for(let i=0;i<N;i++){
     const L = leaves[i];
-    const near = open && i >= c-lo && i <= c+hi;
+    const near = open && i >= a && i <= z;
     const mats = L.mesh.material;
-    /* in the thick of a riffle a leaf with nothing written on it goes by too
-       fast to read, so it is not given a page of its own to paint */
     const blur = rf && !pages[2*i].t && !pages[2*i+1].t && !pageCache.has(2*i) && !pageCache.has(2*i+1);
-    if(near && !blur){
+    if(near && blur){
+      mats[0] = blankMat[0]; mats[1] = blankMat[1];
+    }else if(near){
       const er = pageEntry(2*i), ev = pageEntry(2*i+1);
       keep.add(2*i); keep.add(2*i+1);
       mats[0] = er.mat; mats[1] = ev.mat;

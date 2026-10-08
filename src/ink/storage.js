@@ -1,4 +1,3 @@
-/* keeping the book: autosave, hands, backups and the text download */
 import { clamp } from '../lib/textures.js';
 import { FONTS, LS_KEY, N } from '../core/config.js';
 import { defaultFont, pageCache, pages, paintPage, setDefaultFont } from '../book/pages.js';
@@ -11,8 +10,6 @@ import { refreshUI } from '../ui/controls.js';
 
 
 let saveTm = 0;
-/* every browser that writes in the book is one hand with its own mark; each
-   letter keeps the mark of the hand that wrote it, whoever erases or moves it */
 const HAND_KEY = 'liber-arcanum.hand';
 const BROWSER_HAND = (()=>{
   let h = null;
@@ -23,8 +20,6 @@ const BROWSER_HAND = (()=>{
   }
   return h;
 })();
-/* in a shared book the hand is the signed-in person, and the book lives
-   under a key of its own */
 let HAND = BROWSER_HAND, bookKey = LS_KEY, shelf = null, booted = false;
 function setShelf(v){ shelf = v; }
 function setBooted(v){ booted = v; }
@@ -33,7 +28,6 @@ function handsOf(n){
   if(!pg.a || pg.a.length !== pg.t.length) pg.a = Array(pg.t.length).fill(HAND);
   return pg.a;
 }
-/* hands are stored once per book, each page as runs of [hand, letters] */
 function packHands(a, list){
   const runs = [];
   a.forEach(h=>{
@@ -74,8 +68,7 @@ function saveNow(quiet){
   if(bookKey === LS_KEY && pages.some(p => p.t)) keepForever();
   if(shelf){ shelf.sync(); if(bookKey === LS_KEY) shelf.keepSoon(); }
 }
-/* the browser is asked once, after the first writing, not to clear this site's
-   storage by itself (Safari otherwise may, after a week without a visit) */
+/* Safari may clear site storage after 7 days without a visit unless persist() was granted */
 let persistAsked = false;
 function keepForever(){
   if(persistAsked) return;
@@ -85,8 +78,6 @@ function keepForever(){
     if(s && s.persisted && s.persist) s.persisted().then(on => on || s.persist()).catch(()=>{});
   }catch(e){}
 }
-/* the book opens on its title page, or, once there is writing in it, on the
-   page last written on (failing that, the last page that has any ink) */
 let lastWritten = null;
 function setLastWritten(v){ lastWritten = v; }
 function homePage(){
@@ -105,12 +96,9 @@ function applyData(d){
     const i = n|0;
     if(i>=0 && i<pages.length && v){
       pages[i].t = String(v.t||'').slice(0, 6000); pages[i].f = FONTS.some(f=>f.id===v.f) ? v.f : null; pages[i].c = !!v.c;
-      /* a book from before hands were kept was written in this browser */
       pages[i].a = unpackHands(v.a, d.hands, pages[i].t.length);
     }
   });
-  /* books saved under an older default hand move onto Chronicle; a page given
-     any of today's other hands on purpose keeps it */
   setDefaultFont('chronicle');
 }
 function loadAll(){
@@ -123,7 +111,6 @@ function loadAll(){
     st.k = homeSpread();
     return;
   }
-  /* the first build stored HTML per page under liber-arcanum.page.N */
   const OLD_FIRST = 'Booke of Shadowes';
   try{
     for(let n=0;n<14;n++){
@@ -135,8 +122,6 @@ function loadAll(){
     }
   }catch(e){}
 }
-/* another tab of the same book saved: take its pages, so this tab never
-   writes an older copy back over them when it closes */
 addEventListener('storage', e=>{
   if(e.key !== bookKey || !e.newValue) return;
   let d = null;
@@ -172,7 +157,6 @@ function exportText(){
   download(`liber-arcanum-${fileDate()}.txt`, `Liber Arcanum\n\n\n${parts.join('\n\n\n')}\n`, 'text/plain;charset=utf-8');
   toast('DOWNLOADED', 1800);
 }
-/* the pages of another book are taken up in place of these */
 function useBook(key, hand, booting){
   if(writing) exitWriting();
   saveNow(true);
@@ -187,14 +171,12 @@ function useBook(key, hand, booting){
   else seekSpread(homeSpread(), { flourish: false });
   refreshUI();
 }
-/* the private book as it is saved, wherever the reader is now */
 function personalData(){
   if(bookKey === LS_KEY) return serialise();
   let d = null;
   try{ d = JSON.parse(localStorage.getItem(LS_KEY)); }catch(e){}
   return d && d.pages ? d : { pages: {}, hands: [BROWSER_HAND] };
 }
-/* a copy taken into the private book: every letter in it becomes this browser's */
 function takePersonal(d){
   const data = { ...d, hands: (Array.isArray(d.hands) ? d.hands : []).map(()=> BROWSER_HAND), open: st.open, k: st.k };
   if(bookKey !== LS_KEY){
@@ -211,7 +193,6 @@ function takePersonal(d){
   saveNow(true);
   refreshUI();
 }
-/* a file that keeps everything: the letters, whose they are and the hands they are written in */
 function saveCopy(personal){
   saveNow(true);
   const d = personal ? personalData() : serialise();
@@ -245,7 +226,6 @@ copyPicker.addEventListener('change', async ()=>{
   takePersonal(book);
   toast('THE BACKUP IS YOUR PRIVATE BOOK NOW', 2400);
 });
-/* the pages written in this browser's own book, wherever the reader is now */
 function personalPages(){
   let list = pages.map((p, n)=>({ n, t: p.t, a: bookKey === LS_KEY ? handsOf(n) : null, f: p.f, c: p.c }));
   if(bookKey !== LS_KEY){
@@ -258,7 +238,6 @@ function personalPages(){
   }
   return list.filter(p => p.n >= 1 && p.n < 2*N && p.t);
 }
-/* letters that came from another hand over the network burn in where they land */
 function applyPage(n, t, a, f, c, quiet){
   if(composing && writing && writing.n === n) return false;
   const pg = pages[n], now = performance.now(), sp = editSpan(pg.t, t), ob = pg.born || [];

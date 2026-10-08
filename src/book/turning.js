@@ -1,4 +1,3 @@
-/* open, close and flip: the cover's fall and a leaf's flight */
 import { clamp, lerp, smooth } from '../lib/textures.js';
 import { damp, easeFlip, easeSine, glideFrom, glideStep, sdamp } from '../core/easing.js';
 import { N, OPEN, PW } from '../core/config.js';
@@ -18,24 +17,17 @@ import { refreshUI } from '../ui/controls.js';
 
 let coverAnim = null;
 function setCoverAnim(v){ coverAnim = v; }
-/* opening: the book rises a hand's breadth, the board is eased off the block,
-   rests a moment, then swings over with its weight while warm light and gold
-   leave the pages. closing: the board is lifted past upright, hangs, and falls
-   shut under its own weight with a thud and a breath of dust */
 function coverPath(open){
   const th = st.theta, segs = [];
   if(open){
     if(th < 0.1){
-      /* the stone wakes first, so the light that follows has a cause */
-      st.gemFlare = Math.max(st.gemFlare, 0.8);
+      st.gemFlare = Math.max(st.gemFlare, 1);
       segs.push({ d:0.6, to:0.12, e:easeSine }, { d:0.3, to:0.145, e:easeSine });
       segs.push({ d:1.75, to:OPEN, e:easeSine, at:0.45, fire:'burst' });
     }else segs.push({ d:Math.max(0.6, 1.75*(OPEN - th)/OPEN), to:OPEN, e:easeSine });
     st.hoverTo = 0.3; st.auraTo = 1; st.glowTo = 1;
     sfx.shimmer();
   }else{
-    /* the board is lifted just past upright and let go still moving, so it
-       tips over by itself; fallCover takes it from there */
     const d = Math.max(0.28, 0.95*(th - TIP)/(OPEN - TIP));
     st.hoverTo = 0.16; st.auraTo = 0.45; st.glowTo = 0;
     if(th <= TIP) return fallCover(Math.min(st.thetaVel, 0));
@@ -44,9 +36,6 @@ function coverPath(open){
   }
   return { path: segs, i:0, t:0, from: th, to: open ? OPEN : 0 };
 }
-/* a stiff board on its hinge: gravity pulls harder the lower it gets, then the
-   air caught between board and block cushions the last few degrees before it
-   shuts with a small rebound */
 const TIP = 1.5, FALL_G = 16, FALL_AIR = 3.5, FALL_CUSHION = 0.6;
 const easeLift = t => (1 - Math.cos(Math.PI*0.8*t))/(1 - Math.cos(Math.PI*0.8));
 const EASE_LIFT_END = Math.PI*0.8*Math.sin(Math.PI*0.8)/(1 - Math.cos(Math.PI*0.8));
@@ -72,7 +61,7 @@ function stepFall(F, dt){
 }
 function coverImpact(speed){
   coverEvent('thud');
-  gust(clamp(0.75 + speed*0.25, 0.75, 1.3));
+  gust(clamp(0.5 + speed*0.1, 0.5, 0.65));
   st.joltV -= clamp(speed, 0.6, 3)*0.9;
 }
 function coverEvent(name){
@@ -87,11 +76,9 @@ function coverEvent(name){
 function coverLanded(A){
   if(A.to === OPEN){ st.hoverTo = 0; st.auraTo = 0; st.glowTo = 0; sfx.land(); }
 }
-/* thrown: the board swings on with the speed the hand gave it; an animation
-   already under way is also carried on, never restarted from rest */
 function setOpen(open, thrown){
   if((st.flight || st.riffle) && open === false) return;
-  if(!open) setWriteOnOpen(false);
+  if(!open){ setWriteOnOpen(false); st.focusTo = 0; }
   if(writing && !open) exitWriting();
   if(!open && seek.goal !== null){ seek.goal = null; seek.resume = null; pageNoEl.classList.remove('seeking'); }
   const wasOpen = st.open;
@@ -119,15 +106,12 @@ function animateFlight(to){
 function landFlight(to){
   const fl = st.flight;
   st.k = to === 1 ? fl.j + 1 : fl.j;
-  /* turned in a hurry the next leaf is already on its way down: no air is left
-     under this one for it to land on */
   land(leaves[fl.j], fl.lag*clamp(2 - flightPace(), 0, 1), to);
   st.flight = null;
   sfx.settle();
   saveSoon(true);
   refreshUI();
   if(queue.length){ flip(queue.shift()); return; }
-  /* back on the title page the reader went there to look: the quill stays down */
   if(resumeWriting){ resumeWriting = false; if(st.k > 0) writePose(); }
 }
 let resumeWriting = false;
@@ -168,10 +152,6 @@ function stepFlight(dt){
     fl.vel = (fl.p - prev)/Math.max(dt, 1e-3);
     if(k >= 1){ landFlight(a.to); return; }
   }
-  /* the hand leads with the corner it holds, and a turn by itself is lifted by an
-     unseen one that lets go a third of the way over; free, the air holds the fore
-     edge back the harder the faster the leaf swings. Both follow on a spring, so
-     the bend builds and lets go the way paper does, never in a snap */
   const dir = Math.abs(fl.vel) > 0.05 ? Math.sign(fl.vel) : (fl.j < st.k ? -1 : 1);
   const prog = dir > 0 ? fl.p : 1 - fl.p;
   const lead = fl.dragging ? 0.55*Math.sin(Math.PI*fl.p)*dir

@@ -1,4 +1,3 @@
-/* the book turning itself to a page: one leaf, or a riffle of many, and where it lands */
 import { clamp } from '../lib/textures.js';
 import { easeSine } from '../core/easing.js';
 import { N, OPEN, PAGE_H, PAGE_W } from '../core/config.js';
@@ -16,8 +15,6 @@ import { seek, spreadOf, trail } from '../ink/spells.js';
 import { seekIn } from '../ui/dialogs.js';
 import { refreshUI, spreadLabel } from '../ui/controls.js';
 
-/* ---------------- the book turns itself to a page ---------------- */
-/* leaves riffle over faster the further there is to go, slowing for the last */
 function flightPace(){
   if(seek.goal === null) return queue.length ? 1.7 : 1;
   const left = Math.abs(seek.goal - st.k) - 1;
@@ -32,7 +29,6 @@ function seekSpread(k, opts = {}){
   seek.keepQuill = !!opts.keepQuill;
   seek.flourish = opts.flourish !== false;
   if(!st.open){
-    /* closed, the book simply falls open where it is told */
     if(!coverAnim){ st.k = k; invalidateLayout(); }
     setOpen(true);
   }else if(Math.abs(k - st.k) > 1 && seek.flourish){
@@ -45,7 +41,6 @@ function stepSeek(){
   if(seek.goal === null) return;
   const rf = st.riffle;
   if(rf){
-    /* gold sparks off the fore edges going over */
     for(let m=0;m<rf.d;m++){
       const p = rf.p[m];
       if(p <= 0.08 || p >= 0.92 || Math.random() > 0.35) continue;
@@ -67,15 +62,13 @@ function stepSeek(){
   if(Math.abs(seek.goal - st.k) > 1) startRiffle(seek.goal);
   else flip(Math.sign(seek.goal - st.k), true);
 }
-/* a long way to go: the leaves fan over together, several in the air at once,
-   the riffle gathering speed through the middle and easing down for the last
-   few, which settle one on another */
-const easeRiffle = t => 1 - Math.pow(1 - easeSine(t), 1.4);
+const RIFFLE_LEAF_T = 0.62;
+const liftAt = x => 0.7*x + 0.3*x*x;
 const riffleLeaf = (rf, m)=> rf.fwd ? rf.k0 + m : rf.k0 - 1 - m;
 function startRiffle(k1){
   if(writing && !seek.keepQuill) exitWriting(true);
-  const k0 = st.k, d = Math.abs(k1 - k0);
-  st.riffle = { k0, k1, d, fwd: k1 > k0, W: Math.min(3.4, 1.2 + d*0.28), t: 0, dur: 0.9 + 0.42*Math.sqrt(d),
+  const k0 = st.k, d = Math.abs(k1 - k0), dur = 0.9 + 0.42*Math.sqrt(d), span = dur - RIFFLE_LEAF_T;
+  st.riffle = { k0, k1, d, fwd: k1 > k0, t: 0, dur, lift: Float32Array.from({ length: d }, (_, m)=> d > 1 ? span*liftAt(m/(d - 1)) : 0),
     tau: 0, p: new Float32Array(d).fill(k1 > k0 ? 0 : 1), lead: new Float32Array(d), lag: new Float32Array(d), lifted: 0, landed: 0, tick: 0, shown: k0,
     warm: [2*k1 - 1, 2*k1, 2*k1 - 2, 2*k1 + 1, 2*k1 - 3, 2*k1 - 4, 2*k1 + 2, 2*k1 + 3].filter(n => n >= 0 && n < 2*N && !pageCache.has(n)) };
   sfx.page();
@@ -84,16 +77,12 @@ function stepRiffle(dt){
   const rf = st.riffle;
   if(!rf) return;
   rf.t += dt; rf.tick -= dt;
-  /* the spreads it lands among are painted one a frame on the way, not all at the end */
   if(rf.warm.length) pageEntry(rf.warm.shift());
-  const e = easeRiffle(clamp(rf.t/rf.dur, 0, 1));
-  rf.tau = e*(rf.d - 1 + rf.W);
+  rf.tau = rf.t;
   const dir = rf.fwd ? 1 : -1;
   for(let m=0;m<rf.d;m++){
-    const u = clamp((rf.tau - m)/rf.W, 0, 1), q = easeSine(u);
+    const u = clamp((rf.t - rf.lift[m])/RIFFLE_LEAF_T, 0, 1), q = easeSine(u);
     rf.p[m] = rf.fwd ? q : 1 - q;
-    /* the fore edge leads while the leaf is lifted, then trails it through the air
-       and is still up when the leaf's back is down */
     rf.lead[m] = 0.5*dir*Math.sin(Math.PI*clamp(q/0.35, 0, 1));
     rf.lag[m] = -0.6*dir*Math.pow(Math.sin(Math.PI*clamp((q - 0.1)/1.1, 0, 1)), 0.8);
     if(u > 0 && m >= rf.lifted){
@@ -124,7 +113,6 @@ function arrive(){
     st.focusSide = r.n % 2 ? -1 : 1; st.focusTo = 1;
   }
 }
-/* page P as printed in the corner, 1 .. 100 */
 function turnToPage(P){
   const n = clamp(Math.round(P) - 1, 0, 2*N - 1);
   const resume = writing && n >= 1 ? { n, idx: pages[n].t.length } : null;

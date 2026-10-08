@@ -1,7 +1,4 @@
-/* the cards that open over the book: the shortcuts card here; the Share card
-   (shelf.css) and the invitation (invitation.css) build on it */
 
-/* the list of spells */
 .spells{
   inset:0; z-index:30; display:flex; align-items:center; justify-content:center; padding:16px;
   background:rgba(5,7,4,.5); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);

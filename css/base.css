@@ -1,5 +1,3 @@
-/* the page itself: colour and type tokens, the canvas the book is drawn on, the
-   hidden quill that takes the keyboard, and the error strip */
 
 :root{
   --gold:#f0d493;
@@ -10,13 +8,11 @@
   --text-font:'Cormorant Garamond',serif;
   --gilt:linear-gradient(180deg, #f3d995, #a8782f 55%, #e2bd72);
   --face:radial-gradient(120% 140% at 50% 0%, #2f3419, #11130b 70%);
-  /* the controls: one gilt hairline over a dark face the scene shows faintly through */
   --face-lite:radial-gradient(120% 140% at 50% 0%, rgba(30,34,18,.66), rgba(9,11,6,.6) 70%);
   --hairline:rgba(226,189,114,.78);
   --lift:0 6px 18px rgba(0,0,0,.45);
 }
 *{ margin:0; padding:0; box-sizing:border-box; }
-/* a tap shows the control's own response, not the browser's grey flash */
 html{ -webkit-tap-highlight-color:transparent; }
 html,body{ height:100%; overflow:hidden; background:var(--night); }
 body{
@@ -41,7 +37,6 @@ body.cur-pointer{ cursor:pointer; }
   0%,100%{ opacity:1 } 23%{ opacity:.9 } 41%{ opacity:.97 } 67%{ opacity:.87 } 82%{ opacity:.96 }
 }
 
-/* the real keyboard target: the ink itself is painted into the page texture */
 #quill{
   position:fixed; left:0; bottom:0; z-index:0;
   width:2400px; height:24px;

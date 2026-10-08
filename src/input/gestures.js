@@ -1,4 +1,3 @@
-/* picking and gestures: what the pointer, the wheel and a pinch do to the book */
 import * as THREE from 'three';
 import { clamp, lerp, smooth } from '../lib/textures.js';
 import { glideFrom } from '../core/easing.js';
@@ -12,7 +11,7 @@ import { backGrp } from '../book/sapphire.js';
 import { spineMesh } from '../book/spine.js';
 import { flightAngleFn, hingeOf, layoutCtx, leaves, restParams } from '../book/leaves.js';
 import { _H, invalidateLayout, st } from '../book/state.js';
-import { angVel, atHome, glideSpin, homeQuat, inertia, onePage, orbit, pagePerPx, pageScroll, pageStep, qOpenHome, rotateBy, setInertia, setPageScroll, setSpinAnim, shownPage, spinAnim, spinGoal, stepPage } from '../book/view.js';
+import { angVel, atHome, glideSpin, homeQuat, inertia, onePage, orbit, pagePerPx, pageScroll, pageStep, qOpenHome, rotateBy, setClosedHome, setInertia, setPageScroll, setSpinAnim, shownPage, spinAnim, spinGoal, stepPage } from '../book/view.js';
 import { homePage, homeSpread } from '../ink/storage.js';
 import { enterWriting, exitWriting, onSel, quill, writing } from '../ink/writing.js';
 import { sfx } from '../audio/sound.js';
@@ -46,9 +45,6 @@ function pickAt(cx, cy){
   const o = h.object, ud = o.userData;
   if(ud.grab === 'leaf'){
     const open = st.open && Math.abs(st.theta-OPEN) < 1e-3 && !st.flight && !st.riffle;
-    /* by the fore edge the ray can meet the open leaf's cut edge or the underside of
-       the facing one first: the open page a hair further along is what was meant, and
-       failing that the edge stands for that page's edge */
     if(open){
       const isTop = x => x.object.userData.grab === 'leaf' && x.face &&
         ((x.object.userData.leaf === st.k && x.face.materialIndex === 0) || (x.object.userData.leaf === st.k-1 && x.face.materialIndex === 1));
@@ -71,8 +67,6 @@ function pickAt(cx, cy){
   }
   return { type:'book', board: true, point: h.point };
 }
-/* the open book held anywhere but its top pages (the block of leaves under them, a cut
-   edge, the boards round them) holds the top page on that side of the spine */
 function pageOfBook(h){
   if(!h || h.type !== 'book' || !h.point || !st.open || Math.abs(st.theta - OPEN) > 1e-3 || st.flight || st.riffle) return null;
   const lp = bookRoot.worldToLocal(h.point.clone()), right = lp.x > 0, j = right ? st.k : st.k - 1;
@@ -82,7 +76,6 @@ function pageOfBook(h){
 }
 function toScreen(v){ const p = v.clone().project(camera); return { x:(p.x*0.5+0.5)*VW, y:(-p.y*0.5+0.5)*VH }; }
 
-/* where a point of the flying leaf would be, for a given progress p */
 const _tmpV = new THREE.Vector3();
 function flightPointAt(fl, p, sG, yN){
   const C = layoutCtx(fl.j + p, st.theta);
@@ -96,8 +89,6 @@ function flightPointAt(fl, p, sG, yN){
   _tmpV.set(x, yN*PH/2, z);
   return bookRoot.localToWorld(_tmpV);
 }
-/* near the vertical two poses of the leaf project close together; the bias
-   keeps the hand on the pose it already holds instead of jumping between them */
 function solveDragP(fl, px, py, prev){
   const f = p=>{ const s = toScreen(flightPointAt(fl, p, fl.sG, fl.yN)), b = (p - prev)*140; return (s.x-px)*(s.x-px) + (s.y-py)*(s.y-py) + b*b; };
   let best = 0, bd = Infinity;
@@ -131,13 +122,11 @@ function solveCoverTheta(local, px, py, prev){
 
 const THRESH = { mouse:6, pen:10, touch:14 };
 const pointers = new Map();
-let g = null;   // the gesture in progress
+let g = null;
 let pinch = null;
 
 canvasEl.addEventListener('contextmenu', e=>e.preventDefault());
 canvasEl.addEventListener('mousedown', e=>{ if(writing) e.preventDefault(); });
-/* the first touch wakes the audio; the forest itself waits until the opening film is over,
-   so it never plays under the film's own music */
 ['pointerdown', 'keydown'].forEach(t=>addEventListener(t, ()=>{ sfx.wake(); Promise.resolve(settled && settled.p).then(()=> sfx.ambience()); }, { once:true, capture:true }));
 canvasEl.addEventListener('pointerdown', e=>{
   try{ canvasEl.setPointerCapture(e.pointerId); }catch(_){}
@@ -158,9 +147,6 @@ canvasEl.addEventListener('pointerdown', e=>{
   g = { id:e.pointerId, sx:e.clientX, sy:e.clientY, px:e.clientX, py:e.clientY, t:performance.now(),
         moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1, q0: spinGoal.clone(), o0: [orbit.azTo, orbit.elTo],
         slop: THRESH[e.pointerType] || THRESH.mouse };
-  /* on the page being written a mouse selects, as in any text: a drag marks the words,
-     a double click a word, a triple click its paragraph, a shift click runs on from
-     the caret; held anywhere off its words the leaf turns, as the other pages do */
   const now = performance.now(), again = now - downs.t < 450 && Math.hypot(e.clientX - downs.x, e.clientY - downs.y) < 8;
   downs.n = again ? downs.n + 1 : 1; downs.t = now; downs.x = e.clientX; downs.y = e.clientY;
   const at = e.pointerType !== 'touch' && !g.force && hit && hit.s < PW*0.95 ? textAt(hit) : null;
@@ -181,9 +167,7 @@ function overText(h){
   return lay.lines.some(ln => ln.end > ln.start && y > ln.y - lay.size*1.05 && y < ln.y + lay.size*0.4
     && x > ln.xs[0] - pad && x < ln.xs[ln.xs.length - 1] + pad);
 }
-/* pointer events carry no click count: presses close in time and place are counted here */
 const downs = { t: 0, x: 0, y: 0, n: 0 };
-/* the letter under a point of the page being written, or null elsewhere */
 function textAt(h){
   if(!h || h.type !== 'page' || !writing || h.n !== writing.n) return null;
   const en = pageEntry(h.n);
@@ -213,8 +197,6 @@ canvasEl.addEventListener('pointermove', e=>{
   if(pinch && pointers.size === 2){
     const [a,b] = [...pointers.values()];
     const d = Math.hypot(a.x-b.x, a.y-b.y);
-    /* a page read close on a phone is already as near as it comes: spreading the
-       fingers over it keeps it, only drawing them together steps back from it */
     if(pinch.read && d >= pinch.d*0.92) return;
     pinch.read = false;
     st.zoom = clamp(pinch.z * pinch.d/Math.max(20,d), 0.3, 3.2);
@@ -241,31 +223,22 @@ canvasEl.addEventListener('pointermove', e=>{
   if(g.mode === 'pending'){
     if(Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < g.slop) return;
     const h = g.hit && g.hit.type === 'book' && !g.force ? pageOfBook(g.hit) || g.hit : g.hit;
-    /* a page is turned by holding it and drawing it over, from anywhere on it */
     const sideways = Math.abs(e.clientX - g.sx) > Math.abs(e.clientY - g.sy)*0.8;
-    /* a sweep the other way from the page it starts on (leftward on a left page, as on a
-       phone, which shows one page while writing) still turns: the finger cannot hold
-       that leaf, so the leaf it means turns over by itself */
     const back = e.clientX > g.sx;
     if(!g.force && h && h.type === 'page' && sideways && (h.side === 'left') !== back){
       g.mode = 'swept';
       pageStep(back ? -1 : 1);
       return;
     }
-    /* one page at a time a sideways sweep anywhere goes on through the book, as on a
-       phone it always does; only the page under the finger can be held as it turns */
     if(!g.force && onePage() && st.open && sideways && !(h && h.type === 'page')){
       g.mode = 'swept';
       stepPage(back ? -1 : 1);
       return;
     }
-    /* reading a page on a phone an up-or-down drag never throws the eye off it: it
-       slides the page when the keyboard leaves too little of it, as a page scrolls */
     if(!g.force && onePage() && st.open && st.focusTo > 0.5 && !sideways){
       g.mode = 'scroll'; g.scroll0 = pageScroll;
       return;
     }
-    /* a page held and drawn any way turns: only the forest and the stone look round */
     if(!g.force && h && h.type === 'page') startTurn(h);
     else if(!g.force && h && h.type === 'front' && st.open && h.inner && st.k === 0 && h.outer && !st.flight && !st.riffle) startCover(h);
     else if(g.force || st.open){ g.mode = 'orbit'; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
@@ -303,21 +276,22 @@ canvasEl.addEventListener('pointermove', e=>{
   }
 });
 let rotating = false;
-/* looking round is the reader's own: let go, the eye stays where it was taken. Only the
-   book, turned in the hands, eases back to rest on the stone once it has coasted to a stop.
-   The eye comes back to the reader's place when the book itself is touched (recenter) */
 let homeTimer = 0;
+const UP = new THREE.Vector3(0, 1, 0);
+function restWhereTurned(){
+  const n = new THREE.Vector3(0, 0, 1).applyQuaternion(spinGoal);
+  return new THREE.Quaternion().setFromUnitVectors(n, UP).multiply(spinGoal).normalize();
+}
 function returnHome(wait = 700){
   clearTimeout(homeTimer);
   homeTimer = setTimeout(function check(){
     if(g || pinch) return;
     if(orbit.coast || inertia){ homeTimer = setTimeout(check, 150); return; }
-    if(!atHome() && !spinAnim) glideSpin(homeQuat(), 1.4, st.lift < 0.05);
-  }, wait);
+    if(!st.open && !spinAnim && !atHome()) setClosedHome(restWhereTurned());
+    if(!atHome() && !spinAnim) glideSpin(homeQuat(), st.open ? 1.4 : 2.2, st.lift < 0.05);
+  }, st.open ? wait : Math.max(wait, 3000));
 }
 function recenter(){ orbit.coast = false; orbit.azTo = 0; orbit.elTo = 0; }
-/* the eye leaving the page to look round sets the quill down with it: words typed
-   then would land on a page no longer in sight */
 function lookAway(){
   st.focusTo = 0;
   if(writing) exitWriting();
@@ -330,7 +304,6 @@ function endPointer(e, cancelled){
     if(pointers.size < 2){
       pinch = null; rotating = false;
       returnHome();
-      /* drawn in close over the open book, a phone comes down onto its page again */
       if(onePage() && st.open && st.focusTo < 0.5 && st.zoom < 0.8){ st.zoom = 1; st.focusTo = 1; refreshUI(); }
     }
     return;
@@ -341,7 +314,6 @@ function endPointer(e, cancelled){
   document.body.classList.remove('grabbing');
   if(gg.mode === 'turn'){ endTurn(cancelled); return; }
   if(gg.mode === 'select') return;
-  /* a quick press that only slipped a few pixels was meant as a click */
   const tap = !cancelled && performance.now() - gg.t < 350 && gg.moved < 18;
   if(gg.mode === 'cover'){ if(tap && !st.open) click(gg.hit); else endCover(cancelled); return; }
   if((gg.mode === 'rot' || gg.mode === 'orbit') && tap){
@@ -357,7 +329,6 @@ function endPointer(e, cancelled){
   }
   if(gg.mode === 'orbit'){
     if(performance.now() - (gg.lt||0) < 70 && Math.hypot(orbit.vx, orbit.vy) > 0.2) orbit.coast = true;
-    /* the book held up while the eye goes round it stays in the hand a while longer */
     returnHome(atHome() ? 700 : 2500);
     return;
   }
@@ -366,9 +337,6 @@ function endPointer(e, cancelled){
 }
 canvasEl.addEventListener('pointerup', e=>endPointer(e, false));
 canvasEl.addEventListener('pointercancel', e=>endPointer(e, true));
-/* a mouse wheel draws the eye nearer or further; two fingers on a trackpad look round the
-   forest, and pinching zooms. A wheel moves in whole steps straight up and down, a
-   trackpad sideways too and in fractions, which is how the two are told apart */
 let padUntil = 0;
 canvasEl.addEventListener('wheel', e=>{
   e.preventDefault();
@@ -403,14 +371,11 @@ function endTurn(cancelled){
   const fl = st.flight;
   if(!fl || !fl.dragging) return;
   fl.dragging = false;
-  /* held close over one page the finger cannot carry the leaf past the spine, so a
-     fifth of the way over is already a turn */
   const from = fl.j < st.k ? 1 : 0, need = onePage() ? 0.2 : 0.5;
   let to = Math.abs(fl.goal - from) > need ? 1 - from : from;
   if(!cancelled){ if(fl.vel > 1.2) to = 1; else if(fl.vel < -1.2) to = 0; }
   else to = fl.j < st.k ? 1 : 0;
   fl.settle = glideFrom(fl.p, fl.vel, to, Math.max(0.32, 0.9*Math.abs(to - fl.p)));
-  /* one page at a time the eye goes with the leaf to the page it uncovered */
   if(onePage() && (to === 1) !== (fl.j < st.k)){ st.focusSide = to === 1 ? -1 : 1; st.focusTo = 1; }
   refreshUI();
 }
@@ -428,19 +393,13 @@ function endCover(cancelled){
   setOpen(open, true);
 }
 
-/* turning is done by dragging, so a click on the book, however it was left turned,
-   means writing: it swings back square to the reader, closed or open, and the quill
-   comes up where it was last written or where the click fell on a page. A click on
-   the binding of an open book closes it */
 const EDGE_TURN = 0.84;
 function click(hit){
   if(!hit){ if(writing) exitWriting(); else st.focusTo = 0; return; }
   recenter();
   if(!st.open){ writePose(); return; }
-  /* the binding of an open book, not its pages, shuts it */
   if(hit.type === 'front' || hit.board){ if(!st.flight && !st.riffle) setOpen(false); return; }
   if(hit.type === 'page' && st.open){
-    /* a click by the fore edge of a square book turns the leaf; the title page is only leaned in to */
     if(hit.s > PW*EDGE_TURN && atHome() && !spinAnim){ pageStep(hit.side === 'right' ? 1 : -1); return; }
     if(hit.n === 0){ if(writing) exitWriting(); st.focusSide = 1; st.focusTo = 1; return; }
     const e = pageEntry(hit.n);
@@ -451,7 +410,6 @@ function click(hit){
   }
   writePose();
 }
-/* the title page is never written on: writing starts on the spread after it */
 let writeOnOpen = false;
 function setWriteOnOpen(v){ writeOnOpen = v; }
 function writePose(n, idx){
@@ -459,9 +417,6 @@ function writePose(n, idx){
   recenter();
   if(n === 0) n = idx = undefined;
   if(!st.open){
-    /* closed, the two stacks lie exactly alike, so the book can open on any
-       spread without a leaf visibly moving: on the page last written on, or
-       on its title when it is still empty */
     const h = homePage();
     if(!coverAnim){ st.k = spreadOf(h); invalidateLayout(); }
     if(n === undefined && h >= 1 && st.k === spreadOf(h)) n = h;
@@ -471,7 +426,6 @@ function writePose(n, idx){
   if(!homing && (!atHome() || spinAnim)) glideSpin(qOpenHome, 1.4, st.lift < 0.05);
   st.zoom = 1;
   if(st.k === 0){
-    /* the title is shown first; the leaf is turned over once the board is down */
     if(coverAnim){ writeOnOpen = true; return; }
     st.focusSide = -1; st.focusTo = 1;
     setResumeWriting(true); flip(1);
@@ -485,7 +439,6 @@ function writePose(n, idx){
     if(idx !== undefined){ quill.setSelectionRange(idx, idx); onSel(); }
   }else enterWriting(n, idx);
 }
-/* the left page of the spread until it is full, then the right */
 function nextWritablePage(){
   const left = 2*st.k - 1, right = 2*st.k;
   if(st.k >= N) return left;

@@ -1,4 +1,3 @@
-/* the pages: their text and the lazily painted textures that show it */
 import * as THREE from 'three';
 import { cv, tex } from '../lib/textures.js';
 import { fontById, HI_RES, N, PAGE_H, PAGE_W } from '../core/config.js';
@@ -7,16 +6,13 @@ import { caretXY, layoutText, textBox } from '../ink/layout.js';
 import { caretBreath, drawGlow, drawInkBase, drawInkOverlay, drawVapor } from '../ink/paint.js';
 import { burning, quill, writing } from '../ink/writing.js';
 
-/* ---------------- pages: data + lazily-built textures ---------------- */
 const pages = Array.from({length:N*2}, ()=>({ t:'', f:null, born:null }));
 let defaultFont = 'chronicle';
 function setDefaultFont(v){ defaultFont = v; }
 const pageFont = n => fontById(pages[n].f || defaultFont);
 
 
-const pageCache = new Map();          // n -> { bg, canvas, glow, tex, glowTex, mat, used, lay }
-/* a written page costs a phone ~20 MB (its canvas, background, glow and their GPU copies):
-   eight is the spread in view, the one either side and a leaf in the air */
+const pageCache = new Map();
 const CACHE_MAX = HI_RES ? 12 : 8;
 function pageEntry(n){
   let e = pageCache.get(n);
@@ -35,9 +31,6 @@ function pageEntry(n){
   e.used = performance.now();
   return e;
 }
-/* a canvas let go of at once, not whenever the collector comes round: on a phone the
-   pixels of a dropped page would otherwise linger for seconds. A sheet the page only
-   borrows (the opening's title sheets) is not the page's to free */
 const lent = new WeakSet();
 function lend(c){ lent.add(c); return c; }
 function freeCanvas(c){ if(c && !lent.has(c)) c.width = c.height = 0; }
@@ -51,7 +44,6 @@ function trimCache(keep){
     pageCache.delete(n);
   }
 }
-/* letters given a birth time still to come are not on the page yet */
 function unborn(pg, now){
   const b = pg.born, L = Math.min(pg.t.length, b ? b.length : 0);
   let a = -1, z = -1;
@@ -66,8 +58,6 @@ function paintPage(n, now){
   if(!e.canvas.width){ e.canvas.width = PAGE_W; e.canvas.height = PAGE_H; e.glow.width = PAGE_W/2; e.glow.height = PAGE_H/2; }
   const ctx = e.canvas.getContext('2d');
   const editing = writing && writing.n === n;
-  /* the soaked-in ink is composed once per text; the warm letters and the
-     caret go on top every frame, so the burn-in stays smooth */
   const hide = unborn(pages[n], now);
   if(hide) burning.add(n);
   const tkey = pages[n].t + '\u0001' + pageFont(n).id + (pages[n].c ? '\u0001c' : ''), key = tkey + (hide ? '\u0001' + hide.a + ',' + hide.b : '');
@@ -97,7 +87,6 @@ function paintPage(n, now){
     e.mat.emissiveIntensity = lit ? 1.4 : 0;
   }
   e.glowing = lit;
-  /* only the page under the quill keeps its composed ink in memory */
   if(!editing && !burning.has(n)){ freeCanvas(e.inked); e.inked = null; e.inkKey = null; }
 }
 

@@ -1,5 +1,3 @@
-/* the controls over the scene: the round buttons at the top, the pager at the
-   bottom, the toast and the menu behind the three dots */
 
 .ui{ position:fixed; z-index:10; }
 .bar{ top:calc(18px + env(safe-area-inset-top)); right:calc(18px + env(safe-area-inset-right)); display:flex; gap:10px; }
@@ -29,7 +27,6 @@
 #btnBook .ico-close, #btnBook.open .ico-open{ display:none; }
 #btnBook.open .ico-close{ display:block; }
 
-/* pagination: a gilt label like the ones on an old spine, rounded ends and one hairline */
 .pager{
   bottom:calc(18px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
   height:58px; padding:0 6px;
@@ -38,7 +35,6 @@
   animation:fadein .4s ease-out;
 }
 .pager[hidden]{ display:none; }
-/* the buttons come once the book has settled after the opening */
 .bar{ transition:opacity .5s; }
 .settling .bar, .settling .pager{ opacity:0; pointer-events:none; }
 .pager{ transition:opacity .4s; }
@@ -98,11 +94,9 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .toast:not(.show) button{ visibility:hidden; transition:visibility 0s .5s; }
 .toast button::after{ content:''; position:absolute; inset:-10px -8px; }
 .toast button:hover, .toast button:focus-visible{ background:rgba(255,210,120,.14); color:#ffe6ae; outline:none; }
-/* above the loading circle and an invitation over it, so what the card says is seen */
 .toast{ z-index:37; }
 
 
-/* the menu behind the three dots: actions that otherwise live on keys */
 .menu{
   top:calc(72px + env(safe-area-inset-top)); right:calc(18px + env(safe-area-inset-right)); min-width:230px; padding:8px;
   display:flex; flex-direction:column; gap:2px;
@@ -142,13 +136,11 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 @media (max-width:640px){
   .bar{ top:calc(12px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); gap:7px; }
   .rune{ width:40px; height:40px; font-size:18px; position:relative; }
-  /* the finger is given the 44 px a phone expects, the button keeps its size */
   .rune::after{ content:''; position:absolute; inset:-3px; border-radius:50%; }
   .pager{ bottom:calc(12px + env(safe-area-inset-bottom)); }
   .menu{ top:calc(62px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); }
 }
 
-/* the frame meter (src/ui/fps.js) */
 .fps{
   position:fixed; left:calc(12px + env(safe-area-inset-left)); top:calc(12px + env(safe-area-inset-top)); z-index:38;
   display:flex; align-items:center; gap:8px; padding:7px 12px; border:1px solid var(--gold-line); border-radius:8px;

@@ -1,4 +1,3 @@
-/* spells: ink that runs on to the next page, pages wiped clean and the ink called back */
 import * as THREE from 'three';
 import { lerp } from '../lib/textures.js';
 import { easeSine } from '../core/easing.js';
@@ -24,7 +23,6 @@ const seek = { goal: null, resume: null, keepQuill: false, flourish: true };
 let lastErase = null;
 function setLastErase(v){ lastErase = v; }
 
-/* golden wisps carrying the words over to the next page */
 const WISPS = 96;
 const wispGeo = new THREE.BufferGeometry();
 const wispPos = new Float32Array(WISPS*3), wispAlpha = new Float32Array(WISPS);
@@ -85,9 +83,6 @@ function stepWisps(dt){
   wispGeo.attributes.alpha.needsUpdate = true;
 }
 
-/* ---------------- a full page runs on to the next ---------------- */
-/* the lines that no longer fit go over to the next page, pushing what is
-   there along, page after page; null when even the last page is full */
 function pour(n, v, caret, hv){
   const out = new Map(), hout = new Map(), moves = [];
   let page = n, text = v, hands = hv, cp = n, ci = caret, inc = null;
@@ -115,7 +110,6 @@ function pour(n, v, caret, hv){
   }
   return { out, hout, moves, cp, ci };
 }
-/* the words arriving on a page write themselves in, one after another */
 function applyPour(n, res){
   const now = performance.now();
   const f = pages[n].f || defaultFont;
@@ -150,10 +144,6 @@ function applyPour(n, res){
   }
   saveSoon(true);
 }
-/* room made on a page calls back the words that ran on from it: whole words come back
-   from the head of the next page while they fit, and the room that leaves there calls
-   in that page's own run-on in turn, page after page; they write themselves in again
-   where they land */
 function pullBack(n){
   const now = performance.now();
   let changed = false;
@@ -192,7 +182,6 @@ function pullBack(n){
   saveSoon(true);
   return true;
 }
-/* the quill moves to page m; on another spread the leaves turn under it */
 function quillTo(m, idx){
   if(m < 1 || m >= 2*N) return false;
   if(idx === undefined) idx = pages[m].t.length;
@@ -203,9 +192,6 @@ function quillTo(m, idx){
   return true;
 }
 
-/* ---------------- a page wiped clean, and the ink called back ---------------- */
-/* the whole page goes, whoever wrote it; in a shared book the page is kept
-   in its history first, so any keeper can bring it back later */
 function erasePages(list){
   if(readOnly()){ toast('YOU CAN ONLY READ THIS BOOK', 2200); return; }
   const now = performance.now(), gone = [];
@@ -237,7 +223,6 @@ function erasePages(list){
   saveSoon(true);
   toast('ERASED', 6000, { label: 'Undo', fn: restoreErased });
 }
-/* the ink comes back and writes itself in, letter by letter */
 function restoreErased(){
   if(readOnly()) return false;
   if(!lastErase || performance.now() - lastErase.at > 60000) return false;
@@ -274,8 +259,6 @@ function restoreErased(){
   toast('THE INK RETURNS', 1600);
   return true;
 }
-/* what one erase takes: the page under the quill, the one page shown, the page last
-   written on this spread, else every written page of the spread at once */
 function eraseTargets(){
   if(writing) return [writing.n];
   if(!st.open) return [];

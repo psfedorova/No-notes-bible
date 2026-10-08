@@ -1,4 +1,3 @@
-/* painting ink into the page: letters burning in, vapour, the caret and the glow */
 import { clamp, lerp, smooth, mulberry32, fbm, upsample, cv } from '../lib/textures.js';
 import { capFont, fontCss, FS, INK, PAGE_H, PAGE_W } from '../core/config.js';
 import { caretXY, glyphBox, INK_DN, INK_UP } from './layout.js';
@@ -6,14 +5,10 @@ import { pages } from '../book/pages.js';
 import { blinkPhase, burning } from './writing.js';
 import { emitSmoke, emitSparks } from '../fx/ink-fx.js';
 
-/* how long a page keeps repainting after its last letter: the raised initial cools longest */
 const GLOW_T = 3.6;
-/* the spell burns a letter through in BURN_T, then the stroke cools in COOL_T */
 const BURN_T = 0.42, BURN_CAP = 1.2, COOL_T = 0.42, COOL_CAP = 0.65;
-/* how far ahead of the glowing rim the char line runs, in seconds of the front */
 const CHAR = 0.04;
 const lineText = (text, ln)=> text.slice(ln.start + (ln.skip||0), ln.end);
-/* every letter still burning, with its index and its age in seconds */
 function eachBurning(lay, text, born, now, fn){
   if(!born) return;
   for(let i=0;i<text.length;i++){
@@ -25,8 +20,6 @@ function eachBurning(lay, text, born, now, fn){
     fn(gb, i, age);
   }
 }
-/* paints one burning letter exactly as the ink has it: the whole line is
-   redrawn through a clip around that letter, so kerning and ligatures match */
 function paintThroughClip(ctx, lay, text, gb){
   ctx.save();
   ctx.beginPath();
@@ -49,7 +42,6 @@ function burnDone(born, now, i){
   const b = born[i];
   return !b || (now - b)/1000 >= BURN_T;
 }
-/* the patch of sheet a letter's burn may touch */
 function burnRegion(lay, text, born, now, gb, i){
   const s = lay.size;
   if(gb.cap){
@@ -81,7 +73,6 @@ function burnScratch(k, w, h){
 }
 let burnNoise = null;
 function setBurnNoise(v){ burnNoise = v; }
-/* the burn noise read smoothly between its texels, so fine detail has no grain */
 function noiseAt(x, y){
   const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
   const r0 = (y0 & 255) << 8, r1 = ((y0 + 1) & 255) << 8, c0 = x0 & 255, c1 = (x0 + 1) & 255;
@@ -97,14 +88,8 @@ const ramp = (h, K)=>{
 };
 const SINGE = [[0, 46, 22, 10], [0.35, 120, 46, 16], [0.7, 214, 110, 40], [1, 255, 214, 150]];
 const EMBER = [[0, 0, 0, 0], [0.2, 190, 62, 14], [0.5, 255, 132, 40], [1, 255, 228, 180]];
-/* a fresh letter is burned into the sheet by the spell: the paper browns in the
-   letter's shape, a ragged white-gold front eats through it along the pen's
-   slant, and the stroke behind it glows ember, flickers and cools into char.
-   Returns the region and three images: the parchment still unburnt, the
-   letter's colour on the sheet, and its light for the glow layer */
 function burnLetter(lay, text, born, now, gb, i, ageS){
   const T = gb.cap ? BURN_CAP : BURN_T, C = gb.cap ? COOL_CAP : COOL_T, PRE = T*(gb.cap ? 0.2 : 0.4);
-  /* the bands round the front, kept to the same width in pixels on the big initial */
   const RIM = gb.cap ? 0.045 : 0.08, CH = gb.cap ? 0.022 : CHAR, HOT = gb.cap ? 0.035 : 0.06;
   const R = burnRegion(lay, text, born, now, gb, i);
   const X0 = Math.floor(R.x0), Y0 = Math.floor(R.y0);
@@ -169,10 +154,6 @@ function burnLetter(lay, text, born, now, gb, i, ageS){
   }
   return { R, X0, Y0, w, h, cover, paint, glow, lit };
 }
-/* the raised initial does not burn in one sweep, which on a letter that big
-   reads as stripes: it catches at the top of its first stroke and at two
-   more sparks, and the fire creeps out from them with a ragged edge. The
-   field is when each pixel catches, 0..1 over the letter */
 let spreadBuf = new Float32Array(0), spreadKey = '';
 function capSpread(ink, w, h, X0, Y0, ch){
   const key = w + ',' + h + ',' + X0 + ',' + Y0 + ',' + ch;
@@ -204,7 +185,6 @@ function capSpread(ink, w, h, X0, Y0, ch){
   spreadKey = key;
   return spreadBuf;
 }
-/* the letter's alpha spread into a soft halo: two box passes each way */
 let softBuf = new Float32Array(0), softTmp = new Float32Array(0);
 function softMask(ink, w, h, r){
   const N = w*h;
@@ -236,10 +216,6 @@ function softMask(ink, w, h, r){
   }
   return softBuf;
 }
-/* letters taken back off the sheet evaporate: the char warms to a pale magic
-   gold, the strokes come apart in a ragged drift from the top down, each grain
-   flaring bright just before it goes, and the vapour rises off as mist and
-   motes. One record per touched line, so a wiped page goes line after line */
 const VAPOR_T = 0.85;
 function vaporRects(lay, text, a, b, pad){
   const out = [];
@@ -255,9 +231,6 @@ function vaporRects(lay, text, a, b, pad){
   });
   return out;
 }
-/* lifts the letters [a, b) off the page: each is redrawn as the sheet shows
-   it, char in the strokes and a brown singe round them, and that copy then
-   evaporates over the page that no longer has them */
 function addVapor(n, text, lay, a, b, stagger){
   const rs = vaporRects(lay, text, a, b, Math.ceil(5*FS));
   if(!rs.length) return;
@@ -288,7 +261,6 @@ function addVapor(n, text, lay, a, b, stagger){
   while(pg.vapor.length > 80) pg.vapor.shift();
   burning.add(n);
 }
-/* paints the evaporating letters over the page; returns their light */
 function drawVapor(ctx, n, now){
   const pg = pages[n], lights = [];
   if(!burnNoise) burnNoise = fbm(256, 256, 12, 12, 3, 4242);
@@ -333,7 +305,6 @@ function drawVapor(ctx, n, now){
   });
   return lights;
 }
-/* the letters' vapour leaving: mist off every few letters, a few gold motes */
 function vaporRise(n, v){
   const L = v.b - v.a, step = L > 12 ? 3 : 1;
   for(let i=v.a; i<v.b; i+=step){
@@ -346,8 +317,6 @@ function putScratch(k, img, w, h){
   x.putImageData(img, 0, 0);
   return burnCv[k];
 }
-/* iron-gall ink soaks into the vellum unevenly: a fibre mask for its density
-   and a few browner pools where the quill ran dry */
 let inkMask = null, inkTint = null, inkLayer = null, singeLayer = null, singeMask = null;
 function inkTextures(){
   if(inkMask) return;
@@ -372,8 +341,6 @@ function inkTextures(){
   for(let i=0,p=0;i<sn.length;i++,p+=4) sd.data[p+3] = clamp(0.3 + (sn[i]-0.5)*2.4, 0.12, 1)*255;
   smx.putImageData(sd, 0, 0);
 }
-/* the initial in the scribe's own ink: a figured capital with a fine inline
-   left in reserve. Drawn into the ink layer, so it is burned in like the text */
 function drawInitial(ctx, lay){
   const c = lay.cap;
   ctx.save();
@@ -387,7 +354,6 @@ function drawInitial(ctx, lay){
   ctx.strokeText(c.ch, c.x, c.y);
   ctx.restore();
 }
-/* the settled page: ink soaked into the sheet, and the initial */
 function drawInkBase(ctx, text, lay, hide){
   const { lines, cap, f, size, lh } = lay;
   inkTextures();
@@ -409,9 +375,6 @@ function drawInkBase(ctx, text, lay, hide){
   ix.globalCompositeOperation = 'source-atop';
   ix.drawImage(inkTint, 0, 0, PAGE_W, PAGE_H);
   ix.globalCompositeOperation = 'source-over';
-  /* the singe the spell left round every stroke, darker in patches where the
-     fire lingered, a tighter scorch, then the char itself, multiplied so the
-     grain of the sheet shows through */
   const sx = singeLayer.getContext('2d');
   sx.clearRect(0, 0, PAGE_W, PAGE_H);
   sx.filter = `blur(${(3.6*FS).toFixed(2)}px) brightness(2.5)`;
@@ -432,8 +395,6 @@ function drawInkBase(ctx, text, lay, hide){
   ctx.globalCompositeOperation = 'multiply';
   ctx.drawImage(inkLayer, 0, 0);
   ctx.restore();
-  /* the strokes sit a hair below the sheet: the far wall of each groove
-     catches the light as a faint warm sheen along the char */
   const o = 1.1*FS;
   sx.clearRect(0, 0, PAGE_W, PAGE_H);
   sx.drawImage(inkLayer, 0, 0);
@@ -450,7 +411,6 @@ function drawInkBase(ctx, text, lay, hide){
   ctx.drawImage(singeLayer, 0, 0);
   ctx.restore();
 }
-/* what changes from frame to frame: selection, the letters still warm, the caret */
 function drawInkOverlay(ctx, text, lay, sel, born, now, bg, caretA){
   const { lines, size, lh } = lay;
   if(sel && sel.a !== sel.b){
@@ -464,8 +424,6 @@ function drawInkOverlay(ctx, text, lay, sel, born, now, bg, caretA){
     });
     ctx.restore();
   }
-  /* a burning letter: the sheet laid back where the spell has not reached yet,
-     then the letter's own scorch and ember colour; the glow layer reuses it */
   const burns = [];
   if(born && now && bg){
     eachBurning(lay, text, born, now, (gb, i, ageS)=>{
@@ -494,7 +452,6 @@ function drawInkOverlay(ctx, text, lay, sel, born, now, bg, caretA){
   }
   return burns;
 }
-/* a hairline caret that swells in the middle and tapers to points, like a nib stroke */
 function caretPath(ctx, x, y, size, w){
   const top = y - size*0.86, bot = y + size*0.2, mid = (top + bot)/2;
   ctx.beginPath();
@@ -503,14 +460,10 @@ function caretPath(ctx, x, y, size, w){
   ctx.quadraticCurveTo(x - w, mid, x, top);
   ctx.fill();
 }
-/* the caret breathes: solid while the quill moves, then a slow soft pulse */
 function caretBreath(){
   const t = Math.max(0, blinkPhase - 0.5);
   return 0.6 + 0.4*Math.cos(t*Math.PI*2/1.6);
 }
-/* the glow layer: emissive, half resolution, only what is burning right now.
-   Drawn over black: the canvas is uploaded unpremultiplied, so a soft edge
-   kept only in alpha would light up at full strength */
 function drawGlow(ctx, lay, burns, caret, caretA){
   const k = 0.5;
   ctx.fillStyle = '#000';
