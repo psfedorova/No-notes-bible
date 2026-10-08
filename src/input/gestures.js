@@ -160,7 +160,6 @@ canvasEl.addEventListener('pointerdown', e=>{
   }else if(overText(hit)) g.anchor = at;
 });
 function overText(h){
-  if(h.s > PW*EDGE_TURN) return false;
   const lay = pageEntry(h.n).lay;
   if(!lay) return false;
   const x = h.uv.x*PAGE_W, y = (1-h.uv.y)*PAGE_H, pad = lay.size*0.6;
@@ -400,7 +399,7 @@ function click(hit){
   if(!st.open){ writePose(); return; }
   if(hit.type === 'front' || hit.board){ if(!st.flight && !st.riffle) setOpen(false); return; }
   if(hit.type === 'page' && st.open){
-    if(hit.s > PW*EDGE_TURN && atHome() && !spinAnim){ pageStep(hit.side === 'right' ? 1 : -1); return; }
+    if(hit.s > PW*EDGE_TURN && atHome() && !spinAnim && !overText(hit)){ pageStep(hit.side === 'right' ? 1 : -1); return; }
     if(hit.n === 0){ if(writing) exitWriting(); st.focusSide = 1; st.focusTo = 1; return; }
     const e = pageEntry(hit.n);
     if(!e.lay) paintPage(hit.n);
@@ -457,7 +456,7 @@ function hover(x, y){
     const b = document.body.classList;
     b.remove('cur-turn','cur-text','cur-pointer');
     if(!h) return;
-    if(h.type === 'page') b.add(h.s > PW*EDGE_TURN ? 'cur-turn' : h.n === 0 ? 'cur-pointer' : 'cur-text');
+    if(h.type === 'page') b.add(h.s > PW*EDGE_TURN && !overText(h) ? 'cur-turn' : h.n === 0 ? 'cur-pointer' : 'cur-text');
     else if(!st.open) b.add('cur-pointer');
   });
 }
