@@ -116,7 +116,7 @@ export function createShelf(api){
         if(!view.hidden) render();
       }, ()=>{});
       offBooks = F.onSnapshot(F.collection(F.db, 'users', u.uid, 'books'), s=>{
-        books = s.docs.map(d => ({ id: d.id, name: d.data().name || 'Our book', at: d.data().at }));
+        books = s.docs.map(d => ({ id: d.id, name: d.data().name || 'Our book', at: d.data().at, sent: !d.metadata.hasPendingWrites }));
         books.sort((x, y)=> x.name.localeCompare(y.name));
         checkBooks();
         if(!view.hidden) render();
@@ -259,7 +259,7 @@ export function createShelf(api){
     if(!user || !F || !navigator.onLine) return;
     const uid = user.uid, get = F.getDocFromServer || F.getDoc;
     books.forEach(b=>{
-      if(checked.has(b.id)) return;
+      if(!b.sent || checked.has(b.id)) return;
       checked.add(b.id);
       get(ref('books', b.id)).then(s=>{
         if(!user || user.uid !== uid) return;
@@ -847,12 +847,12 @@ export function createShelf(api){
     wantJoin(null);
     const me = user.uid;
     try{
-      const mine = await F.getDoc(ref('books', want.id, 'members', me)).catch(()=>null);
+      const [mine, shut] = await Promise.all([
+        F.getDoc(ref('books', want.id, 'members', me)).catch(()=>null),
+        F.getDoc(ref('books', want.id, 'access', me)).catch(()=>null),
+      ]);
       const back = !!(mine && mine.exists());
-      if(!back){
-        const shut = await F.getDoc(ref('books', want.id, 'access', me)).catch(()=>null);
-        if(shut && shut.exists() && shut.data().can === 'none'){ show('shut'); return; }
-      }
+      if(!back && shut && shut.exists() && shut.data().can === 'none'){ show('shut'); return; }
       if(!back) await F.setDoc(ref('books', want.id, 'members', me), { name: myName(), code: want.code, guest: user.isAnonymous, at: F.serverTimestamp() });
       else if(mine.data().guest !== user.isAnonymous || mine.data().name !== myName()) F.updateDoc(ref('books', want.id, 'members', me), { name: myName(), guest: user.isAnonymous }).catch(()=>{});
       const b = await F.getDoc(ref('books', want.id));
@@ -877,7 +877,7 @@ export function createShelf(api){
   view.querySelector('.close').addEventListener('click', dismiss);
   view.addEventListener('click', e => view.querySelectorAll('details.menu-p[open]').forEach(d => { if(!d.contains(e.target)) d.open = false; }));
   view.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key === 'Escape'){ e.preventDefault(); dismiss(); } });
-  function show(m){ mode = m; view.hidden = false; api.blurQuill(); fresh = true; render(); }
+  function show(m){ mode = m; view.hidden = false; view.classList.remove('away'); api.blurQuill(); fresh = true; render(); }
   function close(){ sign = ''; if(asking) asking.done(false); view.hidden = true; mode = 'share'; unspell(); api.focusQuill(); release(); }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if(cls) e.className = cls; if(text !== undefined) e.textContent = text; return e; };
   function pill(text, fn, cls){
@@ -1305,7 +1305,7 @@ export function createShelf(api){
     const seal = async (open, away) => {
       if(swearing || !joinWant) return;
       swearing = true;
-      if(away && !calm()){ const p = spell.then(lift); going = p; spell = p.catch(()=>{}); }
+      if(away && !calm()){ const p = spell.then(lift).then(()=>{ if(invited) view.classList.add('away'); }); going = p; spell = p.catch(()=>{}); }
       try{ wantJoin({ ...joinWant, vowed: true }); await open(); }
       catch(e){ api.toast('NO CONNECTION. TRY AGAIN LATER', 2400); }
       finally{ swearing = false; }
@@ -1356,6 +1356,20 @@ export function createShelf(api){
     if(!joinWant.vowed) arrive();
     firebase().catch(()=>{});
   }
+  async function keeperOf(id){
+    try{
+      await firebase();
+      if(!user) return false;
+      const s = await F.getDoc(ref('books', id, 'members', user.uid));
+      return s.exists();
+    }catch(e){ return false; }
+  }
+  async function welcome(){
+    const want = joinWant;
+    const back = !want.vowed && lsGet(SIGNED_KEY) && await Promise.race([keeperOf(want.id), wait(SLOW_MS).then(()=> false)]);
+    if(joinWant !== want) return;
+    if(back) join(); else invite();
+  }
   function start(){
     if(!sharingOn) return;
     const m = /^#join=([A-Za-z0-9]{6,40})\.([a-z0-9]{24,64})((?:&[a-z]+=[^&]*)*)$/.exec(location.hash);
@@ -1369,8 +1383,8 @@ export function createShelf(api){
       }else wantJoin(kept);
       if(m) history.replaceState(null, '', location.pathname + location.search);
       const opening = window.__intro;
-      if(opening && !opening.gone && opening.wait){ opening.wait(new Promise(r=>{ invited = r; })); invite(); }
-      else Promise.resolve(api.settled && api.settled()).then(invite);
+      if(opening && !opening.gone && opening.wait){ opening.wait(new Promise(r=>{ invited = r; })); welcome(); }
+      else Promise.resolve(api.settled && api.settled()).then(welcome);
     }
     else if(lsGet(SIGNED_KEY)) firebase().catch(()=>{});
     const c = lsGet(CUR_KEY);
