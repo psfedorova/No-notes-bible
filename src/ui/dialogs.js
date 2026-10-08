@@ -40,12 +40,14 @@ const SPELLS = [
     ['Home  End', 'First or last page'],
     ['G  0–9', 'Turn to a page'],
     ['E', 'Erase your writing on the open page'],
+    ['M', 'Sound on or off'],
+    ['?', 'This list'],
   ]],
   ['By hand', [
     ['Swipe', 'Sweep a page sideways to turn it'],
     ['Edge', 'Click by a page\'s outer edge to turn it'],
     ['Click', 'Write where you click on the page'],
-    ['Drag', 'Off the pages: look round the glade'],
+    ['Drag', 'Off the pages: turn the book or look round'],
     ['Right-drag', 'Look round the glade, the book stays in hand'],
   ]],
   ['With the quill', [
@@ -55,13 +57,12 @@ const SPELLS = [
     [`${MOD}Enter`, 'Carry on at the next page'],
     ['PgUp  PgDn', 'Quill to the page before or after'],
     ['⌫', 'At the start of a page: back to the page before'],
+    [`${MOD}/`, 'This list'],
     ['Esc', 'Set the quill down, again to close'],
   ]],
   ['Always', [
-    ['M', 'Sound on or off'],
     [`${MOD}S`, 'Save now (it saves itself anyway)'],
     [`${MOD}Shift S`, 'Back up the book to a file'],
-    ['?', 'This list'],
     [`${ALT}5`, 'Frame rate on this device'],
   ]],
 ];
@@ -77,12 +78,6 @@ const SPELLS = [
       r.append(d, kk); card.appendChild(r);
     });
   });
-  const foot = document.createElement('p'); foot.className = 'foot';
-  foot.textContent = 'When a page is full, the words run on to the next page by themselves';
-  card.appendChild(foot);
-  const foot2 = document.createElement('p'); foot2.className = 'foot';
-  foot2.textContent = 'In a shared book anyone can erase or change any page. Each page keeps its history in the ⋯ menu, so whatever was erased can be brought back';
-  card.appendChild(foot2);
 })();
 function openSpells(){ closeSeek(); closeMenu(); spellsEl.hidden = false; if(writing) quill.blur(); }
 function closeSpells(){

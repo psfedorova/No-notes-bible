@@ -5,7 +5,7 @@ import { addVapor } from './paint.js';
 import { defaultFont, pageCache, pageEntry, pageFont, pages, paintPage } from '../book/pages.js';
 import { st } from '../book/state.js';
 import { onePage, setPageScroll } from '../book/view.js';
-import { HAND, handsOf, saveNow, saveSoon, setLastWritten, shelf } from './storage.js';
+import { exportFile, HAND, handsOf, saveNow, saveSoon, setLastWritten, shelf } from './storage.js';
 import { toast } from '../ui/toast.js';
 import { emitSmoke, emitSparks } from '../fx/ink-fx.js';
 import { sfx } from '../audio/sound.js';
@@ -151,7 +151,7 @@ quill.addEventListener('keydown', e=>{
   if(mod && e.key === 'Enter'){ e.preventDefault(); quillTo(n + 1, 0); return; }
   if(e.key === 'PageDown' || e.key === 'PageUp'){ e.preventDefault(); quillTo(n + (e.key === 'PageDown' ? 1 : -1)); return; }
   if(e.key === 'Backspace' && !mod && !e.altKey && quill.selectionStart === 0 && quill.selectionEnd === 0 && n > 1){ e.preventDefault(); quillTo(n - 1); return; }
-  if((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'ы')){ e.preventDefault(); saveNow(); return; }
+  if(mod && e.code === 'KeyS'){ e.preventDefault(); if(e.shiftKey) exportFile(); else saveNow(); return; }
   if(e.key === 'Tab'){ e.preventDefault(); quill.setRangeText('    ', quill.selectionStart, quill.selectionEnd, 'end'); onQuillInput(); return; }
   const lay = pageEntry(n).lay;
   if(!lay) return;

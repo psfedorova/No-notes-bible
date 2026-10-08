@@ -21,7 +21,6 @@
   font-family:var(--ui-font); font-weight:600; font-size:13px; letter-spacing:1px; color:#ffe2a6;
   padding:2px 9px; border:1px solid var(--gold-line); border-radius:7px; background:rgba(255,210,120,.06); white-space:nowrap;
 }
-.spells .foot{ margin-top:14px; text-align:center; font-style:italic; color:var(--gold-dim); font-size:15px; }
 .spells .close{
   position:absolute; top:12px; right:12px; width:30px; height:30px; border-radius:50%;
   border:1px solid var(--gold-line); background:transparent; color:var(--gold); font-size:16px; cursor:pointer;
