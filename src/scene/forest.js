@@ -25,7 +25,7 @@ let depthWorker = null, depthJobs = 0;
 const depthWaits = new Map();
 function inWorker(url, smooth){
   if(!depthWorker){
-    depthWorker = new Worker(new URL('../assets/depth-worker.js', import.meta.url), { type: 'module' });
+    depthWorker = new Worker(import.meta.resolve('../assets/depth-worker.js'), { type: 'module' });
     depthWorker.onmessage = e=>{ const w = depthWaits.get(e.data.id); depthWaits.delete(e.data.id); if(w) e.data.error ? w.rej(new Error(e.data.error)) : w.res(e.data); };
     depthWorker.onerror = e=>{ depthWaits.forEach(w=>w.rej(new Error('depth worker: ' + (e.message || 'failed')))); depthWaits.clear(); };
   }

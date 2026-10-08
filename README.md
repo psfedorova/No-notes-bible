@@ -50,6 +50,7 @@ assets/               audio, forest panorama, the opening's music, leather, rock
 firestore.rules       access rules for shared books; firebase.json points the CLI at them
 tests/firestore/      rules tests against the emulator
 tools/film/           shoots and encodes the opening film
+tools/stamp.mjs       stamps index.html with a content hash on every script, module and stylesheet
 blender/              (local, not in git) builds the models and the forest panorama
 ```
 
@@ -62,7 +63,34 @@ import lines show how the parts depend on each other.
 - Text the app shows is English.
 - Shared mutable values are changed only by the module that owns them, through its
   `setX()` functions; other modules read them as live imports.
-- Cache busting: bump `?v=` on `src/main.js` in index.html, and on an asset's URL in
-  `src/core/config.js` when the file behind it changes.
+- Cache busting: run `node tools/stamp.mjs` before committing a change to `src/` or
+  `css/` (see Releasing). Bump `?v=` by hand only on an asset's URL in `src/core/config.js`
+  when the file behind it changes.
 - The opening plays live on the scene itself, so a change to the scene or the book
   needs no re-shoot. `node tools/film/shoot.mjs` still renders it as a video to share.
+
+## Releasing
+
+Modules import each other by plain relative paths, and a browser caches each file on
+its own. Bumping only `src/main.js?v=` would leave the other modules cached, and a new
+module could then load beside a stale one (a shader built from both fails to compile).
+So before each commit that changes `src/` or `css/`:
+
+```bash
+node tools/stamp.mjs
+```
+
+It hashes every file under `src/` and rewrites the importmap in index.html so that each
+module path maps to the same path with `?v=<hash>`. It also stamps the `<script src>` and
+stylesheet links. A changed file gets a new URL, and every unchanged one keeps its URL and
+stays in the visitor's cache. The source files are not touched. `node tools/stamp.mjs
+--check` exits with 1 when index.html is out of date (for a pre-commit hook or CI).
+
+What follows from this:
+
+- Code that builds a URL to one of its own files goes through the importmap with
+  `import.meta.resolve('./x.js')`, not `new URL('./x.js', import.meta.url)`, which skips
+  the map and so loses the version (the depth worker in `src/scene/forest.js` does this).
+- While working locally, run the stamp after an edit too, or tick Disable cache in
+  DevTools. `python3 -m http.server` sends no Cache-Control, so the browser may keep using
+  an older copy of a file whose URL did not change.

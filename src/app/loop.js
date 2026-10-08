@@ -28,7 +28,7 @@ import { coverAnim, coverEvent, coverLanded, fallCover, setCoverAnim, stepFall, 
 import { seek, spreadOf, stepWisps } from '../ink/spells.js';
 import { stepRiffle, stepSeek } from '../book/seek.js';
 import { refreshUI } from '../ui/controls.js';
-import { meterBegin, meterEnd, meterTick } from '../ui/fps.js';
+import { meterTick } from '../ui/fps.js';
 import { rockTime } from '../scene/rock.js';
 import { backdrop, FOREST_CAP } from '../scene/forest.js';
 import { nearTime } from '../scene/plants.js';
@@ -335,8 +335,7 @@ function rafLoop(now){
   if(now - drawnAt < step - rafDt*0.6) return;
   drawnAt = now;
   const t0 = performance.now();
-  meterBegin();
-  try{ frame(); }finally{ meterEnd(); }
+  frame();
   meterTick(now, step > 20, performance.now() - t0);
 }
 setInterval(()=>{ if(document.hidden && !FILM && !still()) frame(); }, 250);
