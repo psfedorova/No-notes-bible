@@ -61,7 +61,7 @@ let last = performance.now(), clock = 0, bobAmt = 1;
 let story = null;
 function setStory(fn){ story = fn; }
 const _bc = new THREE.Vector3(), _rd = new THREE.Vector3(), _rc = new THREE.Vector3();
-const EYE_SPHERE = 20;
+const EYE_SPHERE = 20, EYE_SIDE = 13, EYE_TURN = [0.35, 1.1];
 function update(dt){
   clock += dt;
   if(story) story(dt);
@@ -198,7 +198,9 @@ function update(dt){
   sdamp(camTarget, 'x', _bc.x, 0.4, dt); sdamp(camTarget, 'y', _bc.y, 0.3, dt); sdamp(camTarget, 'z', _bc.z, 0.4, dt);
   _rd.subVectors(camera.position, camTarget).normalize();
   _rc.subVectors(camTarget, FOREST_CAP);
-  const rb = _rd.dot(_rc), reach = Math.max(fitDistance(), Math.min(CAM_REACH, -rb + Math.sqrt(Math.max(0, rb*rb - _rc.lengthSq() + EYE_SPHERE*EYE_SPHERE))));
+  const side = (1 - fz)*smooth(clamp((Math.abs(Math.atan2(Math.sin(orbit.az), Math.cos(orbit.az))) - EYE_TURN[0])/(EYE_TURN[1] - EYE_TURN[0]), 0, 1));
+  const eyeR = lerp(EYE_SPHERE, EYE_SIDE, side);
+  const rb = _rd.dot(_rc), reach = Math.max(lerp(fitDistance(), 6, side), Math.min(CAM_REACH, -rb + Math.sqrt(Math.max(0, rb*rb - _rc.lengthSq() + eyeR*eyeR))));
   st.zoom = Math.min(st.zoom, Math.max(1, reach/fitDistance()));
   sdamp(st, 'camD', lerp(Math.min(fitDistance()*st.zoom, reach), pageD, fz), 0.45, dt);
   if(st.camEl === undefined) st.camEl = camElevation();
