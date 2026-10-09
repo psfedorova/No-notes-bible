@@ -37,7 +37,7 @@ function inWorker(url, smooth){
 }
 function depthTexture(out, w, h, smooth){
   const t = new THREE.DataTexture(out, w, h, THREE.RedFormat, THREE.HalfFloatType);
-  t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter; t.needsUpdate = true;
+  t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
   return t;
 }
 function softTexture(out, W, H){
@@ -131,7 +131,27 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), u.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), u.x), u.y); }
       vec2 eqUv(vec3 q){ return vec2(atan(q.z, q.x)*0.15915494 + 0.5, asin(clamp(q.y, -1.0, 1.0))*0.31830989 + 0.5); }
       float unpack(float inv){ return 1.0/(inv*(1.0/uNear - 1.0/uFar) + 1.0/uFar); }
-      float distF(vec3 q){ vec2 u = eqUv(q); float a = textureLod(tDepth, u, 0.0).r;
+      float depthAt(vec2 u){
+        ivec2 sz = textureSize(tDepth, 0);
+        vec2 p = u*vec2(sz) - 0.5, f = fract(p);
+        ivec2 i0 = ivec2(floor(p)), i1 = i0 + 1;
+        i0.x = (i0.x + sz.x) % sz.x; i1.x = i1.x % sz.x;
+        i0.y = clamp(i0.y, 0, sz.y - 1); i1.y = clamp(i1.y, 0, sz.y - 1);
+        vec4 a = vec4(texelFetch(tDepth, i0, 0).r, texelFetch(tDepth, ivec2(i1.x, i0.y), 0).r,
+          texelFetch(tDepth, ivec2(i0.x, i1.y), 0).r, texelFetch(tDepth, i1, 0).r);
+        vec4 w = vec4((1.0 - f.x)*(1.0 - f.y), f.x*(1.0 - f.y), (1.0 - f.x)*f.y, f.x*f.y);
+        float hi = max(max(a.x, a.y), max(a.z, a.w)), lo = min(min(a.x, a.y), min(a.z, a.w));
+        if(hi - lo < 0.12*hi) return dot(a, w);
+        float mid = 0.5*(hi + lo);
+        vec4 n = step(mid, a);
+        float wn = dot(n, w);
+        float nearV = wn > 1e-4 ? dot(a*n, w)/wn : hi, farV = wn < 0.9999 ? dot(a*(1.0 - n), w)/(1.0 - wn) : lo;
+        vec2 e = 1.5/vec2(sz);
+        float b = 0.25*(textureLod(tDepth, u + e, 0.0).r + textureLod(tDepth, u - e, 0.0).r
+          + textureLod(tDepth, u + vec2(e.x, -e.y), 0.0).r + textureLod(tDepth, u + vec2(-e.x, e.y), 0.0).r);
+        return b > lo + 0.25*(hi - lo) ? nearV : farV;
+      }
+      float distF(vec3 q){ vec2 u = eqUv(q); float a = depthAt(u);
         float w = max(smoothstep(0.14, 0.42, q.y), smoothstep(120.0, 300.0, unpack(a)));
         if(w > 0.0){ float s = textureLod(tSoft, u, 0.0).r; a = mix(a, s, w*smoothstep(80.0, 150.0, unpack(s))); }
         return unpack(a); }
@@ -275,8 +295,16 @@ function makeBackdrop(pano, depth, water, back, backDepth){
     fragmentShader: `uniform sampler2D tLow; uniform mat4 uProj; varying vec4 vClip; varying vec3 vDir;
       void main(){
         vec2 s = vClip.xy/vClip.w*0.5 + 0.5;
-        gl_FragColor = vec4(texture2D(tLow, s).rgb, 1.0);
         ivec2 sz = textureSize(tLow, 0);
+        vec2 px = 1.0/vec2(sz);
+        vec4 c0 = texture2D(tLow, s), n1 = texture2D(tLow, s + vec2(px.x, 0.0)), n2 = texture2D(tLow, s - vec2(px.x, 0.0)),
+          n3 = texture2D(tLow, s + vec2(0.0, px.y)), n4 = texture2D(tLow, s - vec2(0.0, px.y));
+        vec4 f1 = texture2D(tLow, s + 2.0*vec2(px.x, 0.0)), f2 = texture2D(tLow, s - 2.0*vec2(px.x, 0.0)),
+          f3 = texture2D(tLow, s + 2.0*vec2(0.0, px.y)), f4 = texture2D(tLow, s - 2.0*vec2(0.0, px.y));
+        float zh = max(max(max(n1.a, n2.a), max(n3.a, n4.a)), c0.a), zl = min(min(min(n1.a, n2.a), min(n3.a, n4.a)), c0.a);
+        float edge = zh > 0.0 ? smoothstep(0.06, 0.3, (zh - zl)/zh) : 0.0;
+        vec3 soft = (c0.rgb*3.0 + (n1.rgb + n2.rgb + n3.rgb + n4.rgb)*2.0 + f1.rgb + f2.rgb + f3.rgb + f4.rgb)/15.0;
+        gl_FragColor = vec4(mix(c0.rgb, soft, edge), 1.0);
         float z = texelFetch(tLow, clamp(ivec2(s*vec2(sz)), ivec2(0), sz - 1), 0).a;
         vec4 c = uProj*viewMatrix*vec4(cameraPosition + normalize(vDir)*z, 1.0);
         gl_FragDepth = z > 0.0 ? clamp(c.z/c.w*0.5 + 0.5, 0.0, 1.0) : 1.0;

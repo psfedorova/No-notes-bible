@@ -272,8 +272,7 @@ const wingBlur = (()=>{
     fly.add(wh);
     flyWings.push({ g: wh, w, sx });
   }
-  fly.add(flyLight);
-  flyLight.position.set(0, -0.02, -0.06);
+  scene.add(flyLight);
 }
 fly.scale.setScalar(2.4);
 scene.add(fly);
@@ -342,6 +341,8 @@ function stepFirefly(t, dt){
   flyLamp.color.setRGB(0.95*L*2.2, 1.0*L*2.2, 0.45*L*2.2);
   flyLight.intensity = L*0.45;
   _lamp.set(0, -0.012, -0.062).multiplyScalar(2.4).applyQuaternion(fly.quaternion).add(p);
+  flyLight.position.copy(_lamp);
+  if(!fly.visible) flyLight.intensity = 0;
   litPos.set([_lamp.x, _lamp.y, _lamp.z], 0);
   litA[0] = fly.visible ? Math.min(1, L)*0.85 : 0;
   litS[0] = 8.0*(0.6 + 0.4*Math.min(1.4, L));

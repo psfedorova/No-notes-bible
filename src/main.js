@@ -111,7 +111,7 @@ async function boot(){
     return;
   }
   requestAnimationFrame(rafLoop);
-  Promise.resolve(settled && settled.p).then(()=>loadMore(calm));
+  Promise.resolve(settled && settled.p).then(()=>new Promise(r=>setTimeout(r, settled ? 2500 : 0))).then(()=>loadMore(calm));
 }
 document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', ()=>{ pageCache.forEach((e,n)=>paintPage(n)); });
 

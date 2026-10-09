@@ -10,8 +10,8 @@ import { BURN_T, burnNoise, CHAR, COOL_T, EMBER, NIB_DX, NIB_DY, ramp, setBurnNo
 import { lend, pageEntry, paintPage } from '../book/pages.js';
 import { pagePointWorld } from '../book/leaves.js';
 import { invalidateLayout, layout, st } from '../book/state.js';
-import { camTarget, fitDistance, homeQuat, orbit, spinGoal } from '../book/view.js';
-import { homeSpread } from '../ink/storage.js';
+import { camTarget, fitDistance, homeQuat, orbit, sideOf, spinGoal } from '../book/view.js';
+import { homePage, homeSpread } from '../ink/storage.js';
 import { nextSmoke, smokeAge, smokeKind, smokeLife, smokePos, smokeSeed, smokeVel, smokeWait } from '../fx/ink-fx.js';
 import { coverAnim } from '../book/turning.js';
 import { seekSpread } from '../book/seek.js';
@@ -206,12 +206,15 @@ function titleBurn(o){
     const X0 = Math.max(0, Math.floor(G.x0 - s*0.14)), Y0 = Math.max(0, Math.floor(G.y0 - s*0.12));
     const X1 = Math.min(W, Math.ceil(G.x1 + s*0.32)), Y1 = Math.min(H, Math.ceil(G.y1 + s*0.12));
     const w = X1 - X0, h = Y1 - Y0;
-    const ink = new Uint8ClampedArray(w*h*4);
-    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
-      const X = X0 + x;
-      ink[(y*w + x)*4 + 3] = X >= G.x0 && X <= G.x1 ? T.inkA[(Y0 + y)*W + X] : 0;
+    if(!G.ink){
+      G.ink = new Uint8ClampedArray(w*h*4);
+      for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+        const X = X0 + x;
+        G.ink[(y*w + x)*4 + 3] = X >= G.x0 && X <= G.x1 ? T.inkA[(Y0 + y)*W + X] : 0;
+      }
+      G.soft = softMask(G.ink, w, h, Math.max(1, Math.round(2.4*FS))).slice(0, w*h);
     }
-    const soft = softMask(ink, w, h, Math.max(1, Math.round(2.4*FS)));
+    const ink = G.ink, soft = G.soft;
     const sMin = G.x0*NIB_DX + G.y0*NIB_DY, sSpan = Math.max(1, G.x1*NIB_DX + G.y1*NIB_DY - sMin);
     const [cc, pc, lc] = T.cvs;
     [cc, pc, lc].forEach(c=>{ if(c.width < w || c.height < h){ c.width = Math.max(c.width, w); c.height = Math.max(c.height, h); } });
@@ -310,6 +313,10 @@ function stepCamBlend(dt){
   camera.updateProjectionMatrix();
   if(k >= 1){ camBlend = null; settle(); }
 }
+function goHome(){
+  st.focusSide = sideOf(homePage());
+  seekSpread(homeSpread());
+}
 function takeOver(mode, poses){
   const pose = poses && poses[intro.kind];
   if(mode === 'open'){ st.open = true; st.k = 0; }
@@ -331,7 +338,7 @@ function takeOver(mode, poses){
   refreshUI();
   frame();
   setTimeout(()=>{
-    if(mode === 'open'){ if(homeSpread() !== st.k) seekSpread(homeSpread()); }
+    if(mode === 'open'){ if(homeSpread() !== st.k) goHome(); }
     else if(!st.open && !coverAnim) seekSpread(homeSpread(), { flourish: false });
   }, mode === 'open' ? 1300 : 1500);
 }
@@ -347,7 +354,7 @@ function playLive(L){
     }else settle();
     refreshUI();
     if(intro.end) intro.end();
-    setTimeout(()=>{ if(homeSpread() !== st.k) seekSpread(homeSpread()); }, how === 'skip' ? 1800 : 900);
+    setTimeout(()=>{ if(homeSpread() !== st.k) goHome(); }, how === 'skip' ? 1800 : 900);
   };
   if(intro.started) intro.started(L);
   refreshUI();

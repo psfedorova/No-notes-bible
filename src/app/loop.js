@@ -323,7 +323,7 @@ function still(){
     && !coverAnim && !spinAnim && !inertia && !orbit.coast && seek.goal === null;
 }
 function calm(){
-  const quiet = ()=> !story && !g && !pinch && !st.flight && !st.riffle && !coverAnim && !spinAnim && !inertia && !orbit.coast;
+  const quiet = ()=> !story && !g && !pinch && !st.flight && !st.riffle && !coverAnim && !spinAnim && !inertia && !orbit.coast && !camBlend && seek.goal === null;
   return new Promise(r=>{ const check = ()=> quiet() ? r() : setTimeout(check, 150); check(); });
 }
 let rafDt = 1000/60, rafAt = 0;
