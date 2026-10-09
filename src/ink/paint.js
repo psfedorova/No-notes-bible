@@ -9,6 +9,10 @@ const GLOW_T = 3.6;
 const BURN_T = 0.42, BURN_CAP = 1.2, COOL_T = 0.42, COOL_CAP = 0.65;
 const CHAR = 0.04;
 const lineText = (text, ln)=> text.slice(ln.start + (ln.skip||0), ln.end);
+function fillLine(ctx, s, x, ln){
+  if(!ln.rtl){ ctx.fillText(s, x, ln.y); return; }
+  ctx.save(); ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.fillText(s, x, ln.y); ctx.restore();
+}
 function eachBurning(lay, text, born, now, fn){
   if(!born) return;
   for(let i=0;i<text.length;i++){
@@ -34,7 +38,7 @@ function paintThroughClip(ctx, lay, text, gb){
     ctx.rect(gb.x - 0.5, gb.y - lay.size*INK_UP, gb.w + 1, lay.size*(INK_UP + INK_DN));
     ctx.clip();
     ctx.font = fontCss(lay.f, lay.size);
-    ctx.fillText(lineText(text, gb.ln), gb.ln.x0, gb.ln.y);
+    fillLine(ctx, lineText(text, gb.ln), gb.ln.x0, gb.ln);
   }
   ctx.restore();
 }
@@ -50,8 +54,9 @@ function burnRegion(lay, text, born, now, gb, i){
   }
   const ln = gb.ln, a0 = ln.start + (ln.skip||0);
   const open = j => j < a0 || j >= ln.end || /\s/.test(text[j]);
-  const x0 = gb.x - (open(i-1) ? s*0.14 : 0.5);
-  const x1 = gb.x + gb.w + (open(i+1) || !burnDone(born, now, i+1) ? s*0.32 : 1);
+  const back = open(i-1) ? s*0.14 : 0.5, ahead = open(i+1) || !burnDone(born, now, i+1) ? s*0.32 : 1;
+  const x0 = gb.x - (ln.rtl ? ahead : back);
+  const x1 = gb.x + gb.w + (ln.rtl ? back : ahead);
   const y0 = gb.y - s*INK_UP, bh = s*(INK_UP + INK_DN);
   return { x0, y0, x1, y1: y0 + bh, rects: [[x0, y0, x1 - x0, bh]] };
 }
@@ -227,7 +232,8 @@ function vaporRects(lay, text, a, b, pad){
     const a0 = ln.start + (ln.skip||0);
     const s = Math.max(a, a0), e = Math.min(b, ln.end);
     if(e <= s || !text.slice(s, e).trim()) return;
-    out.push({ x0: ln.xs[s - ln.start] - pad, x1: ln.xs[e - ln.start] + pad, y0: ln.y - lay.size*INK_UP - pad, y1: ln.y + lay.size*INK_DN + pad, a: s, b: e, ln });
+    const xa = ln.xs[s - ln.start], xb = ln.xs[e - ln.start];
+    out.push({ x0: Math.min(xa, xb) - pad, x1: Math.max(xa, xb) + pad, y0: ln.y - lay.size*INK_UP - pad, y1: ln.y + lay.size*INK_DN + pad, a: s, b: e, ln });
   });
   return out;
 }
@@ -244,7 +250,7 @@ function addVapor(n, text, lay, a, b, stagger){
     sx.translate(-X0, -Y0);
     sx.fillStyle = '#fff';
     if(r.cap){ sx.font = capFont(lay.f, lay.cap.size); sx.fillText(lay.cap.ch, lay.cap.x, lay.cap.y); }
-    else{ sx.font = fontCss(lay.f, lay.size); sx.fillText(text.slice(r.a, r.b), r.ln.xs[r.a - r.ln.start], r.ln.y); }
+    else{ sx.font = fontCss(lay.f, lay.size); fillLine(sx, text.slice(r.a, r.b), r.ln.xs[r.a - r.ln.start], r.ln); }
     const ink = sx.getImageData(0, 0, w, h).data;
     const soft = softMask(ink, w, h, Math.max(1, Math.round(1.8*FS)));
     const px = new Uint8ClampedArray(w*h*4);
@@ -364,9 +370,9 @@ function drawInkBase(ctx, text, lay, hide){
   lines.forEach(ln=>{
     if(ln.y + size*0.3 > lay.box.bottom + lh) return;
     const a0 = ln.start + (ln.skip||0);
-    if(!hide){ const s = text.slice(a0, ln.end); if(s) ix.fillText(s, ln.x0, ln.y); return; }
+    if(!hide){ const s = text.slice(a0, ln.end); if(s) fillLine(ix, s, ln.x0, ln); return; }
     [[a0, Math.min(ln.end, hide.a)], [Math.max(a0, hide.b), ln.end]].forEach(([a, b])=>{
-      if(b > a) ix.fillText(text.slice(a, b), ln.xs[a - ln.start], ln.y);
+      if(b > a) fillLine(ix, text.slice(a, b), ln.xs[a - ln.start], ln);
     });
   });
   if(cap && !(hide && hide.a === 0)) drawInitial(ix, lay);
@@ -420,7 +426,8 @@ function drawInkOverlay(ctx, text, lay, sel, born, now, bg, caretA){
     lines.forEach(ln=>{
       const a = Math.max(sel.a, ln.start), b = Math.min(sel.b, ln.end);
       if(a >= b) return;
-      ctx.fillRect(ln.xs[a-ln.start], ln.y - size*0.86, ln.xs[b-ln.start]-ln.xs[a-ln.start], lh*0.98);
+      const xa = ln.xs[a-ln.start], xb = ln.xs[b-ln.start];
+      ctx.fillRect(Math.min(xa, xb), ln.y - size*0.86, Math.abs(xb - xa), lh*0.98);
     });
     ctx.restore();
   }

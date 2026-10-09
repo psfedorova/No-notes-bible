@@ -127,9 +127,11 @@ addEventListener('storage', e=>{
   let d = null;
   try{ d = JSON.parse(e.newValue); }catch(err){ return; }
   clearTimeout(saveTm);
+  const held = composing && writing ? { n: writing.n, pg: { ...pages[writing.n] } } : null;
   applyData(d);
   lastWritten = (d.w|0) >= 1 ? d.w|0 : null;
-  if(writing){
+  if(held) Object.assign(pages[held.n], held.pg);
+  else if(writing){
     const n = writing.n, i = Math.min(quill.selectionEnd, pages[n].t.length);
     quill.value = pages[n].t; quill.setSelectionRange(i, i);
     setLastGood({ v: quill.value, a: i, b: i });
@@ -193,10 +195,18 @@ function takePersonal(d){
   saveNow(true);
   refreshUI();
 }
+const plain = o => !!o && typeof o === 'object' && Object.getPrototypeOf(o) === Object.prototype;
+const bookOf = d => ({ pages: d.pages || {}, hands: d.hands || [], w: d.w || null, font: d.font || null, fv: d.fv || 5 });
+/* a backup is { liber:'arcanum', book }; files from the old Ctrl+Shift+S are { format:'liber-arcanum', pages, ... } */
+function backupBook(d){
+  const b = !plain(d) ? null : d.liber === 'arcanum' ? d.book : d.format === 'liber-arcanum' ? d : null;
+  if(!plain(b) || !plain(b.pages) || (b.hands !== undefined && !Array.isArray(b.hands))) return null;
+  const ok = Object.entries(b.pages).every(([n, v])=> /^\d{1,3}$/.test(n) && +n < 2*N && plain(v) && typeof v.t === 'string');
+  return ok ? bookOf(b) : null;
+}
 function saveCopy(personal){
   saveNow(true);
-  const d = personal ? personalData() : serialise();
-  const book = { pages: d.pages || {}, hands: d.hands || [], w: d.w || null, font: d.font || null, fv: d.fv || 5 };
+  const book = bookOf(personal ? personalData() : serialise());
   const name = personal || !shelf || !shelf.shared() ? 'private-book' : 'shared-book';
   download(`liber-arcanum-${name}-${fileDate()}.json`, JSON.stringify({ liber: 'arcanum', v: 1, book }), 'application/json');
   toast('BACKED UP TO A FILE', 1800);
@@ -210,7 +220,7 @@ copyPicker.addEventListener('change', async ()=>{
   if(!f) return;
   let d = null;
   try{ d = JSON.parse(await f.text()); }catch(e){}
-  const book = d && d.liber === 'arcanum' && d.book && typeof d.book.pages === 'object' ? d.book : null;
+  const book = backupBook(d);
   if(!book){ toast('THIS IS NOT A BACKUP OF THE BOOK', 2400); return; }
   const now = personalPages().length;
   if(now && shelf){
@@ -256,15 +266,9 @@ function applyPage(n, t, a, f, c, quiet){
   saveSoon(true);
   return true;
 }
-function exportFile(){
-  saveNow(true);
-  const data = { format:'liber-arcanum', version:2, savedAt:new Date().toISOString(), ...serialise() };
-  download(`liber-arcanum-${fileDate()}.json`, JSON.stringify(data, null, 2), 'application/json');
-  toast('BACKUP DOWNLOADED', 1800);
-}
 
 export {
-  applyPage, booted, BROWSER_HAND, copyPicker, exportFile, exportText, HAND, handsOf,
+  applyPage, booted, BROWSER_HAND, copyPicker, exportText, HAND, handsOf,
   homePage, homeSpread, lastWritten, loadAll, personalData, personalPages, saveCopy,
   saveNow, saveSoon, setBooted, setLastWritten, setShelf, shelf, takePersonal, useBook
 };

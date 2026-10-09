@@ -2,7 +2,7 @@ import { sharingOn } from '../sharing/shelf.js';
 import { N } from '../core/config.js';
 import { st } from '../book/state.js';
 import { onePage, pageStep, shownPage } from '../book/view.js';
-import { copyPicker, exportFile, exportText, homeSpread, saveCopy, saveNow, shelf } from '../ink/storage.js';
+import { copyPicker, exportText, homeSpread, saveCopy, saveNow, shelf } from '../ink/storage.js';
 import { toast } from './toast.js';
 import { exitWriting, quill, readOnly, writing } from '../ink/writing.js';
 import { sfx } from '../audio/sound.js';
@@ -116,10 +116,17 @@ function toggleBook(){
   if(!st.open){ seekSpread(homeSpread(), { flourish: false }); return; }
   if(!st.flight && !st.riffle) setOpen(false);
 }
+/* e.key follows the layout (AZERTY, Dvorak); where it is no Latin letter (Cyrillic) the key's place stands in */
+function keyLetter(e){
+  const k = e.key && e.key.length === 1 ? e.key.toLowerCase() : '';
+  if(/^[a-z]$/.test(k)) return k;
+  return /\p{L}/u.test(k) && /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : '';
+}
+const pressable = t => t instanceof Element && !!t.closest('button, a[href], input, select, textarea, [contenteditable], [role="dialog"], [role="menu"]');
 document.addEventListener('keydown', e=>{
-  if(e.target === quill || e.target === seekIn) return;
+  if(e.target === quill || e.target === seekIn || e.isComposing) return;
   if(shelf && shelf.isOpen()){ if(e.key === 'Escape'){ e.preventDefault(); shelf.close(); } return; }
-  const mod = e.metaKey || e.ctrlKey, code = e.code;
+  const mod = e.metaKey || e.ctrlKey, code = e.code, key = keyLetter(e), bare = !mod && !e.altKey;
   if(!menuEl.hidden && e.key === 'Escape'){ e.preventDefault(); closeMenu(); return; }
   if(!spellsEl.hidden){
     if(e.key === 'Escape' || e.key === '?' || code === 'Slash'){ e.preventDefault(); closeSpells(); }
@@ -139,23 +146,22 @@ document.addEventListener('keydown', e=>{
   else if(e.key === 'Home'){ e.preventDefault(); seekSpread(0); }
   else if(e.key === 'End'){ e.preventDefault(); seekSpread(N); }
   else if(e.key === 'Escape'){ if(st.open && !st.flight && !st.riffle) setOpen(false); }
-  else if(e.key === 'Enter' && !mod){ e.preventDefault(); writePose(); }
-  else if(mod && code === 'KeyZ' && !e.shiftKey){ if(restoreErased()) e.preventDefault(); }
-  else if(code === 'KeyG' && !e.altKey){ e.preventDefault(); openSeek(); }
-  else if(/^(Digit|Numpad)[0-9]$/.test(code) && !mod && !e.altKey && !e.shiftKey){ e.preventDefault(); openSeek(code.slice(-1)); }
-  else if(code === 'KeyE' && !e.altKey && !e.shiftKey){ e.preventDefault(); eraseHere(); }
-  else if(code === 'KeyO' && !mod && !e.altKey){ e.preventDefault(); toggleBook(); }
-  else if(code === 'KeyM' && !mod){ toggleSound(); }
-  else if(mod && code === 'KeyS'){
+  else if(e.key === 'Enter'){ if(!mod && !pressable(e.target)){ e.preventDefault(); writePose(); } }
+  else if(mod && key === 'z' && !e.shiftKey){ if(restoreErased()) e.preventDefault(); }
+  else if(key === 'g' && !e.altKey){ e.preventDefault(); openSeek(); }
+  else if(/^(Digit|Numpad)[0-9]$/.test(code) && bare && !e.shiftKey){ e.preventDefault(); openSeek(code.slice(-1)); }
+  else if(key === 'e' && bare && !e.shiftKey){ e.preventDefault(); eraseHere(); }
+  else if(key === 'o' && bare){ e.preventDefault(); toggleBook(); }
+  else if(key === 'm' && bare){ toggleSound(); }
+  else if(mod && key === 's'){
     e.preventDefault();
-    if(e.shiftKey) exportFile(); else saveNow();
+    if(e.shiftKey) saveCopy(false); else saveNow();
   }
 });
 addEventListener('beforeunload', ()=>saveNow(true));
 addEventListener('pagehide', ()=>{ saveNow(true); if(shelf) shelf.flush(); });
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ saveNow(true); if(shelf) shelf.flush(); } });
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden) saveNow(true); });
 
 export {
-  closeMenu, menuEl, menuNotes, refreshUI, spreadLabel, toggleBook
+  closeMenu, keyLetter, menuEl, menuNotes, refreshUI, spreadLabel, toggleBook
 };

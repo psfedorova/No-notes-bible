@@ -89,8 +89,21 @@ function paintPage(n, now){
   e.glowing = lit;
   if(!editing && !burning.has(n) && !e.live){ freeCanvas(e.inked); e.inked = null; e.inkKey = null; }
 }
+function relayPage(n){
+  const e = pageCache.get(n);
+  if(!e) return;
+  e.layKey = null; e.inkKey = null;
+  paintPage(n);
+}
+/* a font arrived: lay the ink out again and redraw the printed page numbers and title; the opening keeps its own title */
+function freshPages(){
+  pageCache.forEach((e, n)=>{
+    if(!e.live && !lent.has(e.bg)){ freeCanvas(e.bg); e.bg = null; }
+    relayPage(n);
+  });
+}
 
 export {
-  defaultFont, freeCanvas, lend, pageCache, pageEntry, pageFont, pages, paintPage,
-  setDefaultFont, trimCache
+  defaultFont, freeCanvas, freshPages, lend, pageCache, pageEntry, pageFont, pages, paintPage,
+  relayPage, setDefaultFont, trimCache
 };

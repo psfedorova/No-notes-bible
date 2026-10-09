@@ -1,17 +1,17 @@
 import { clamp } from '../lib/textures.js';
-import { fontCss } from '../core/config.js';
+import { fontCss, N } from '../core/config.js';
 import { caretXY, indexOnLine, layoutText, textBox } from './layout.js';
 import { addVapor } from './paint.js';
-import { defaultFont, pageCache, pageEntry, pageFont, pages, paintPage } from '../book/pages.js';
+import { defaultFont, pageCache, pageEntry, pageFont, pages, paintPage, relayPage } from '../book/pages.js';
 import { st } from '../book/state.js';
 import { onePage, setPageScroll } from '../book/view.js';
-import { exportFile, HAND, handsOf, saveNow, saveSoon, setLastWritten, shelf } from './storage.js';
+import { HAND, handsOf, saveCopy, saveNow, saveSoon, setLastWritten, shelf } from './storage.js';
 import { toast } from '../ui/toast.js';
 import { emitSmoke, emitSparks } from '../fx/ink-fx.js';
 import { sfx } from '../audio/sound.js';
 import { applyPour, erasePages, lastErase, pour, pullBack, quillTo, restoreErased } from './spells.js';
 import { openSeek, openSpells } from '../ui/dialogs.js';
-import { refreshUI } from '../ui/controls.js';
+import { keyLetter, refreshUI } from '../ui/controls.js';
 
 const quill = document.getElementById('quill');
 let writing = null;
@@ -90,6 +90,7 @@ function onQuillInput(){
   if(!writing) return;
   setPageScroll(0);
   const n = writing.n, v = quill.value;
+  if(v.length > 2*N*2000 && !composing){ refuseStroke('THE BOOK IS FULL'); return; }
   const sp = editSpan(pages[n].t, v, lastGood.a, lastGood.b, quill.selectionEnd), was = handsOf(n);
   const hands = was.slice(0, sp.at).concat(Array(sp.ins).fill(HAND), was.slice(sp.at + sp.del));
   const lay = layoutText(v, pageFont(n), textBox(n));
@@ -116,7 +117,8 @@ function onQuillInput(){
   lastGood = { v, a:quill.selectionStart, b:quill.selectionEnd };
   blinkPhase = 0;
   burning.add(n);
-  document.fonts.load(fontCss(pageFont(n), 40), v.slice(-24) || 'a').then(()=>{ if(pageCache.has(n)) paintPage(n); }).catch(()=>{});
+  const css = fontCss(pageFont(n), 40), probe = v.slice(-24) || 'a';
+  if(!document.fonts.check(css, probe)) document.fonts.load(css, probe).then(()=> relayPage(n)).catch(()=>{});
   paintPage(n);
   if(ins.count > 0 && ins.count < 40){
     emitSparks(n, lay, v, ins.at, ins.count);
@@ -140,18 +142,18 @@ document.addEventListener('selectionchange', ()=>{ if(document.activeElement ===
 quill.addEventListener('keyup', onSel);
 quill.addEventListener('keydown', e=>{
   e.stopPropagation();
-  if(!writing) return;
+  if(!writing || e.isComposing || e.keyCode === 229) return;
   const n = writing.n;
   if(e.key === 'Escape'){ e.preventDefault(); exitWriting(); return; }
-  const mod = e.metaKey || e.ctrlKey;
-  if(mod && e.code === 'KeyE'){ e.preventDefault(); erasePages([n]); return; }
-  if(mod && e.code === 'KeyZ' && !e.shiftKey && lastErase && restoreErased()){ e.preventDefault(); return; }
-  if(mod && e.code === 'KeyG'){ e.preventDefault(); openSeek(); return; }
+  const mod = e.metaKey || e.ctrlKey, key = keyLetter(e);
+  if(mod && key === 'e'){ e.preventDefault(); erasePages([n]); return; }
+  if(mod && key === 'z' && !e.shiftKey && lastErase && restoreErased()){ e.preventDefault(); return; }
+  if(mod && key === 'g'){ e.preventDefault(); openSeek(); return; }
   if(mod && e.code === 'Slash'){ e.preventDefault(); openSpells(); return; }
   if(mod && e.key === 'Enter'){ e.preventDefault(); quillTo(n + 1, 0); return; }
   if(e.key === 'PageDown' || e.key === 'PageUp'){ e.preventDefault(); quillTo(n + (e.key === 'PageDown' ? 1 : -1)); return; }
   if(e.key === 'Backspace' && !mod && !e.altKey && quill.selectionStart === 0 && quill.selectionEnd === 0 && n > 1){ e.preventDefault(); quillTo(n - 1); return; }
-  if(mod && e.code === 'KeyS'){ e.preventDefault(); if(e.shiftKey) exportFile(); else saveNow(); return; }
+  if(mod && key === 's'){ e.preventDefault(); if(e.shiftKey) saveCopy(false); else saveNow(); return; }
   if(e.key === 'Tab'){ e.preventDefault(); quill.setRangeText('    ', quill.selectionStart, quill.selectionEnd, 'end'); onQuillInput(); return; }
   const lay = pageEntry(n).lay;
   if(!lay) return;

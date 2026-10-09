@@ -8,7 +8,7 @@ import { composer } from './scene/post.js';
 import { bookRoot, floatGrp, spinGrp } from './scene/rig.js';
 import { matGold } from './book/materials.js';
 import { blankMat, invitePaper, MOTTO, pageBackground, TITLE } from './book/print.js';
-import { pageCache, pages, paintPage } from './book/pages.js';
+import { freshPages, pageCache, pages } from './book/pages.js';
 import { frontGem, frontGrp } from './book/boards.js';
 import { matSpine } from './book/spine.js';
 import { leaves, pagePointWorld } from './book/leaves.js';
@@ -72,9 +72,7 @@ async function boot(){
   loadAll();
   setShelf(sharing);
   shelf.start();
-  blankMat[0].map.image = pageBackground(-2); blankMat[0].map.needsUpdate = true;
-  blankMat[1].map.image = pageBackground(-1); blankMat[1].map.needsUpdate = true;
-  pageCache.forEach((e,n)=>{ e.bg = pageBackground(n); paintPage(n); });
+  printPages();
   if(FILM) st.open = false;
   const live = intro && intro.live;
   if(live){
@@ -113,7 +111,14 @@ async function boot(){
   requestAnimationFrame(rafLoop);
   Promise.resolve(settled && settled.p).then(()=>new Promise(r=>setTimeout(r, settled ? 2500 : 0))).then(()=>loadMore(calm));
 }
-document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', ()=>{ pageCache.forEach((e,n)=>paintPage(n)); });
+let printed = false;
+function printPages(){
+  printed = true;
+  blankMat[0].map.image = pageBackground(-2); blankMat[0].map.needsUpdate = true;
+  blankMat[1].map.image = pageBackground(-1); blankMat[1].map.needsUpdate = true;
+  freshPages();
+}
+document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', ()=>{ if(printed) printPages(); });
 
 window.__book = { st, orbit, leaves, pages, composer, get backdrop(){ return backdrop; }, flip, setOpen, seekSpread, turnToPage, erasePages, restoreErased, quillTo, pour, enterWriting, exitWriting, pickAt, camera, scene, renderer, spinGrp, THREE, glideSpin, homeQuat,
   shelf: ()=> shelf,

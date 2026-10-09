@@ -90,8 +90,7 @@ function pour(n, v, caret, hv){
   for(;;){
     const lay = layoutText(text, pageFont(page), page === n ? textBox(page) : { ...textBox(page), flow: true });
     if(lay.ok){ out.set(page, text); hout.set(page, hands); break; }
-    const bad = lay.lines.findIndex(ln => ln.y + lay.size*0.3 > lay.box.bottom);
-    const cut = lay.lines[bad].start;
+    const cut = lay.cut;
     const m = page + 1;
     if(cut <= 0 || m >= 2*N) return null;
     let keep = text.slice(0, cut), kh = hands.slice(0, cut);

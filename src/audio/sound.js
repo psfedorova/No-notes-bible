@@ -16,11 +16,13 @@ const sfx = (()=>{
       const d = noise.getChannelData(0);
       for(let i=0;i<d.length;i++) d[i] = Math.random()*2 - 1;
     }
-    if(ac.state === 'suspended') ac.resume();
+    if(ac.state === 'suspended' || ac.state === 'interrupted') Promise.resolve(ac.resume()).catch(()=>{});
     return ac;
   }
+  /* iOS starts audio only from a finished touch, a click or a key, not a pointerdown; a call leaves it 'interrupted' */
+  ['pointerup', 'touchend', 'click', 'keydown'].forEach(t=>addEventListener(t, ()=>{ if(ac && ac.state !== 'running') ready(); }, { capture:true, passive:true }));
   function hiss(at, dur, f0, f1, q, gain, type){
-    const src = ac.createBufferSource(); src.buffer = noise;
+    const src = ac.createBufferSource(); src.buffer = noise; src.loop = true;
     src.playbackRate.value = 0.8 + Math.random()*0.4;
     const flt = ac.createBiquadFilter(); flt.type = type || 'bandpass'; flt.Q.value = q;
     flt.frequency.setValueAtTime(f0, at); flt.frequency.exponentialRampToValueAtTime(f1, at + dur);
@@ -29,7 +31,7 @@ const sfx = (()=>{
     g.gain.exponentialRampToValueAtTime(gain, at + Math.min(0.04, dur*0.3));
     g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
     src.connect(flt); flt.connect(g); g.connect(out);
-    src.start(at, Math.random()*1.5, dur + 0.05);
+    src.start(at, Math.random()*noise.duration); src.stop(at + dur + 0.05);
   }
   const load = url => fetch(url).then(r=>r.arrayBuffer()).then(b=>ac.decodeAudioData(b));
   function twinkles(bufs){

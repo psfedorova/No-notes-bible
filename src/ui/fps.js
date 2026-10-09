@@ -22,8 +22,10 @@ function meterTick(now, resting, cpuMs){
   el.dataset.tone = resting ? 'rest' : fps >= 50 ? 'good' : fps >= 30 ? 'ok' : 'bad';
   el.textContent = `${fps} fps\ncpu ${c.toFixed(1)} ms\nmax ${Math.round(worst)} ms${resting ? '\nrest' : ''}`;
 }
+/* Option+5 types [ { or ∞ on a Mac, so text fields keep it */
+const typing = t => t instanceof Element && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 addEventListener('keydown', e=>{
-  if(e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'Digit5'){ e.preventDefault(); e.stopPropagation(); toggleMeter(); }
+  if(e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'Digit5' && !e.isComposing && !typing(e.target)){ e.preventDefault(); e.stopPropagation(); toggleMeter(); }
 }, true);
 if(/[?&]fps\b/.test(location.search)) toggleMeter();
 

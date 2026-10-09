@@ -81,13 +81,14 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   font-family:var(--ui-font); font-weight:600; color:rgba(242,214,146,.95);
   font-size:14px; letter-spacing:3px; opacity:0; pointer-events:none;
   transition:opacity .5s; text-shadow:0 0 10px rgba(255,200,90,.5), 0 1px 3px #000;
-  white-space:nowrap;
+  width:max-content; max-width:calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  text-align:center; text-wrap:balance;
 }
 .toast.show{ opacity:1; }
 .toast.act{ display:flex; align-items:center; gap:14px; }
 .toast.act.show{ pointer-events:auto; }
 .toast button{
-  position:relative; padding:6px 16px; border:1px solid var(--gold-line); border-radius:999px;
+  position:relative; flex:none; padding:6px 16px; border:1px solid var(--gold-line); border-radius:999px;
   background:rgba(20,18,10,.72); color:var(--gold); cursor:pointer;
   font:600 13px var(--ui-font); letter-spacing:2px; text-transform:uppercase; text-shadow:none;
 }
@@ -104,6 +105,9 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   background:var(--face) padding-box, var(--gilt) border-box;
   box-shadow:0 10px 30px rgba(0,0,0,.55);
   animation:fadein .2s ease-out;
+  max-height:calc(100vh - 90px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height:calc(100dvh - 90px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y;
 }
 .menu[hidden]{ display:none; }
 .menu button{
@@ -138,7 +142,11 @@ body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
   .rune{ width:40px; height:40px; font-size:18px; position:relative; }
   .rune::after{ content:''; position:absolute; inset:-3px; border-radius:50%; }
   .pager{ bottom:calc(12px + env(safe-area-inset-bottom)); }
-  .menu{ top:calc(62px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); }
+  .menu{
+    top:calc(62px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right));
+    max-height:calc(100vh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height:calc(100dvh - 74px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
 }
 
 .fps{
