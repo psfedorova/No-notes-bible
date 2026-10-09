@@ -195,11 +195,13 @@ canvasEl.addEventListener('pointermove', e=>{
   if(pp){ pp.x = e.clientX; pp.y = e.clientY; }
   if(pinch && pointers.size === 2){
     const [a,b] = [...pointers.values()];
-    const d = Math.hypot(a.x-b.x, a.y-b.y);
-    if(pinch.read && d >= pinch.d*0.92) return;
+    const d = Math.hypot(a.x-b.x, a.y-b.y), mx = (a.x+b.x)/2, my = (a.y+b.y)/2, k = 0.0052;
+    if(pinch.read && d >= pinch.d*0.92){
+      if(Math.hypot(mx - pinch.mx, my - pinch.my) < 24) return;
+      pinch.mx = mx; pinch.my = my;
+    }
     pinch.read = false;
     st.zoom = clamp(pinch.z * pinch.d/Math.max(20,d), 0.3, 3.2);
-    const mx = (a.x+b.x)/2, my = (a.y+b.y)/2, k = 0.0052;
     lookAway();
     orbit.azTo -= (mx-pinch.mx)*k; orbit.elTo += (my-pinch.my)*k;
     pinch.mx = mx; pinch.my = my;
