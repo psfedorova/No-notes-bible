@@ -16,7 +16,7 @@ const st = {
   flight: null,
   riffle: null,
   open: false,
-  zoom: 1, camD: 14,
+  zoom: 1, zoomS: 1, mag: 1, camD: 14,
   bob: 1,
   lift: 0,
   focus: 0, focusTo: 0, focusSide: 1,

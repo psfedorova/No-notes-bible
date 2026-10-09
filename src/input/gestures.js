@@ -11,7 +11,7 @@ import { backGrp } from '../book/sapphire.js';
 import { spineMesh } from '../book/spine.js';
 import { flightAngleFn, hingeOf, layoutCtx, leaves, restParams } from '../book/leaves.js';
 import { _H, invalidateLayout, st } from '../book/state.js';
-import { angVel, atHome, glideSpin, homeQuat, inertia, onePage, orbit, pagePerPx, pageScroll, pageStep, qOpenHome, rotateBy, setClosedHome, setInertia, setPageScroll, setSpinAnim, shownPage, spinAnim, spinGoal, stepPage } from '../book/view.js';
+import { angVel, atHome, camGoal, camTarget, glideSpin, homeQuat, inertia, onePage, orbit, pagePerPx, pageScroll, pageStep, pan, qOpenHome, resetPan, rotateBy, setClosedHome, setInertia, setPageScroll, setSpinAnim, shownPage, spinAnim, spinGoal, stepPage } from '../book/view.js';
 import { homePage, homeSpread } from '../ink/storage.js';
 import { enterWriting, exitWriting, onSel, quill, writing } from '../ink/writing.js';
 import { sfx } from '../audio/sound.js';
@@ -121,7 +121,34 @@ function solveCoverTheta(local, px, py, prev){
 }
 
 const THRESH = { mouse:6, pen:10, touch:14 };
-const FAR_ZOOM = 1.25;
+const FAR_ZOOM = 1.25, ZMIN = 0.15, MAG_MIN = 0.5;
+function anchorAt(x, y){
+  ndc.set((x/VW)*2-1, -(y/VH)*2+1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(pickables(), false)[0];
+  return hit ? hit.point.clone() : camTarget.clone();
+}
+const vcam = new THREE.PerspectiveCamera();
+function grip(x, y, k){
+  const w = new THREE.Vector3().subVectors(camera.position, camTarget).normalize();
+  return { a: anchorAt(x, y), w, k, D: st.camDTo || st.camD, c: camGoal.clone(), lift: st.camLift || 0, bx: camGoal.x - pan.x, bz: camGoal.z - pan.z };
+}
+function holdAt(G, x, y, s){
+  const D = G.D*s;
+  vcam.copy(camera);
+  vcam.position.copy(G.c).addScaledVector(G.w, D);
+  vcam.lookAt(G.c.x, G.c.y + G.lift*Math.min(1, G.k*s), G.c.z);
+  vcam.updateMatrixWorld();
+  ndc.set((x/VW)*2-1, -(y/VH)*2+1);
+  ray.setFromCamera(ndc, vcam);
+  const r = ray.ray.direction;
+  if(Math.abs(r.y) < 0.02) return;
+  const t = (G.a.y - G.w.y*D - G.c.y)/r.y;
+  if(t <= 0) return;
+  pan.x = G.a.x - G.w.x*D - r.x*t - G.bx;
+  pan.z = G.a.z - G.w.z*D - r.z*t - G.bz;
+}
+const magnified = () => st.open && st.focusTo > 0.5 && st.mag < 0.97;
 const pointers = new Map();
 let g = null;
 let pinch = null;
@@ -136,19 +163,24 @@ canvasEl.addEventListener('pointerdown', e=>{
     if(g && g.mode === 'turn') endTurn(true);
     if(g && g.mode === 'cover') endCover(true);
     const [a,b] = [...pointers.values()];
-    pinch = { d: Math.hypot(a.x-b.x, a.y-b.y), z: st.zoom, mx:(a.x+b.x)/2, my:(a.y+b.y)/2, read: onePage() && st.open && st.focusTo > 0.5 };
+    const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+    pan.coast = false; orbit.coast = false; orbit.vx = orbit.vy = 0;
+    pinch = { d: Math.max(20, Math.hypot(a.x-b.x, a.y-b.y)), z: st.zoom, m: st.mag, mx, my, sx: mx, sy: my, ang: Math.atan2(b.y-a.y, b.x-a.x), tw: 0, twist: false,
+              G: null, read: onePage() && st.open && st.focusTo > 0.5 };
+    pinch.G = grip(mx, my, pinch.read ? st.mag : st.zoom);
     g = null;
     return;
   }
   if(pointers.size > 2) return;
   setInertia(false); angVel.x = angVel.y = 0;
   orbit.coast = false; orbit.vx = orbit.vy = 0;
+  pan.coast = false; pan.vx = pan.vz = 0;
   const cut = spinAnim && { left: spinAnim.dur - spinAnim.t, settle: spinAnim.settle };
   if(spinAnim){ setSpinAnim(null); spinGoal.copy(spinGrp.quaternion); }
   const hit = e.button === 2 ? null : pickAt(e.clientX, e.clientY) || (e.pointerType === 'touch' && !st.open ? pickNear(e.clientX, e.clientY) : null);
   g = { id:e.pointerId, cut, sx:e.clientX, sy:e.clientY, px:e.clientX, py:e.clientY, t:performance.now(),
         moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1, q0: spinGoal.clone(), o0: [orbit.azTo, orbit.elTo],
-        slop: THRESH[e.pointerType] || THRESH.mouse, far: e.pointerType === 'touch' && st.open && st.focusTo < 0.5 && (st.zoom > FAR_ZOOM || Math.abs(orbit.azTo) > 0.35) };
+        slop: THRESH[e.pointerType] || THRESH.mouse, pan: e.pointerType === 'touch' && magnified(), far: e.pointerType === 'touch' && st.open && st.focusTo < 0.5 && (st.zoom > FAR_ZOOM || Math.abs(orbit.azTo) > 0.35) };
   const now = performance.now(), again = now - downs.t < 450 && Math.hypot(e.clientX - downs.x, e.clientY - downs.y) < 8;
   downs.n = again ? downs.n + 1 : 1; downs.t = now; downs.x = e.clientX; downs.y = e.clientY;
   const at = e.pointerType !== 'touch' && !g.force && hit && hit.s < PW*0.95 ? textAt(hit) : null;
@@ -204,15 +236,34 @@ canvasEl.addEventListener('pointermove', e=>{
   if(pp){ pp.x = e.clientX; pp.y = e.clientY; }
   if(pinch && pointers.size === 2){
     const [a,b] = [...pointers.values()];
-    const d = Math.hypot(a.x-b.x, a.y-b.y), mx = (a.x+b.x)/2, my = (a.y+b.y)/2, k = 0.0052;
-    if(pinch.read && d >= pinch.d*0.92){
-      if(Math.hypot(mx - pinch.mx, my - pinch.my) < 24) return;
+    const d = Math.max(20, Math.hypot(a.x-b.x, a.y-b.y)), mx = (a.x+b.x)/2, my = (a.y+b.y)/2, k = 0.0052;
+    const ang = Math.atan2(b.y-a.y, b.x-a.x), da = Math.atan2(Math.sin(ang - pinch.ang), Math.cos(ang - pinch.ang));
+    pinch.ang = ang; pinch.tw += da;
+    if(!pinch.twist && Math.abs(pinch.tw) > 0.22) pinch.twist = true;
+    if(pinch.read){
+      const m = pinch.m*pinch.d/d;
+      if(m > 1.08 || pinch.twist || (st.mag > 0.97 && m > 0.97 && Math.hypot(mx - pinch.sx, my - pinch.sy) >= 24)){
+        pinch.read = false; resetPan(); lookAway();
+        pinch.d = d; pinch.z = st.zoom = 1; pinch.mx = mx; pinch.my = my; pinch.G = null;
+        return;
+      }
+      const to = clamp(m, MAG_MIN, 1);
+      if(to < 0.97 && writing) exitWriting();
+      st.mag = to;
+      holdAt(pinch.G, mx, my, to/pinch.G.k);
       pinch.mx = mx; pinch.my = my;
+      return;
     }
-    pinch.read = false;
-    st.zoom = clamp(pinch.z * pinch.d/Math.max(20,d), 0.3, 3.2);
+    st.zoom = clamp(pinch.z*pinch.d/d, ZMIN, 3.2);
     lookAway();
-    orbit.azTo -= (mx-pinch.mx)*k; orbit.elTo += (my-pinch.my)*k;
+    if(st.zoom < 0.9 && !pinch.twist){
+      if(!pinch.G) pinch.G = grip(mx, my, st.zoom);
+      holdAt(pinch.G, mx, my, st.zoom/pinch.G.k);
+    }else{
+      pinch.G = null;
+      orbit.azTo -= (mx-pinch.mx)*k; orbit.elTo += (my-pinch.my)*k;
+      if(pinch.twist) orbit.azTo += da;
+    }
     pinch.mx = mx; pinch.my = my;
     return;
   }
@@ -232,6 +283,7 @@ canvasEl.addEventListener('pointermove', e=>{
   if(g.mode === 'pending'){
     if(Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < g.slop) return;
     if(g.far) g.force = true;
+    if(g.pan){ g.mode = 'pan'; g.G = grip(g.sx, g.sy, st.mag); return; }
     const h = g.hit && g.hit.type === 'book' && !g.force ? pageOfBook(g.hit) || g.hit : g.hit;
     const sideways = Math.abs(e.clientX - g.sx) > Math.abs(e.clientY - g.sy)*0.8;
     const back = e.clientX > g.sx;
@@ -275,6 +327,15 @@ canvasEl.addEventListener('pointermove', e=>{
     orbit.vy = clamp(lerp(orbit.vy, dy*k/dt, a), -4, 4);
     return;
   }
+  if(g.mode === 'pan'){
+    const x0 = pan.x, z0 = pan.z;
+    holdAt(g.G, e.clientX, e.clientY, 1);
+    const now = performance.now(), dt = clamp((now - (g.lt||now-16))/1000, 0.004, 0.1);
+    g.lt = now;
+    const a = 1 - Math.exp(-dt*18);
+    pan.vx = lerp(pan.vx, (pan.x - x0)/dt, a); pan.vz = lerp(pan.vz, (pan.z - z0)/dt, a);
+    return;
+  }
   if(g.mode === 'turn'){
     const fl = st.flight;
     fl.goal = solveDragP(fl, e.clientX, e.clientY, fl.goal);
@@ -301,7 +362,7 @@ function returnHome(wait = 700){
     if(!atHome() && !spinAnim) glideSpin(homeQuat(), st.open ? 1.4 : 2.2, st.lift < 0.05);
   }, st.open ? wait : Math.max(wait, 3000));
 }
-function recenter(){ orbit.coast = false; orbit.azTo = 0; orbit.elTo = 0; }
+function recenter(){ orbit.coast = false; orbit.azTo = 0; orbit.elTo = 0; resetPan(); }
 function lookAway(){
   st.focusTo = 0;
   if(writing) exitWriting();
@@ -318,9 +379,14 @@ function releasePointer(e, cancelled){
   try{ canvasEl.releasePointerCapture(e.pointerId); }catch(_){}
   if(pinch){
     if(pointers.size < 2){
+      const p = pinch;
       pinch = null; rotating = false;
       returnHome();
-      if(onePage() && st.open && st.focusTo < 0.5 && st.zoom < 0.8){ st.zoom = 1; st.focusTo = 1; refreshUI(); }
+      if(onePage() && st.open && st.focusTo < 0.5 && st.zoom < 0.8){
+        const h = pickAt(p.mx, p.my);
+        if(h && h.type === 'page' && !st.flight && !st.riffle) st.focusSide = h.side === 'right' ? 1 : -1;
+        resetPan(); st.zoom = 1; st.focusTo = 1; refreshUI();
+      }
     }
     return;
   }
@@ -346,6 +412,11 @@ function releasePointer(e, cancelled){
   if(gg.mode === 'orbit'){
     if(performance.now() - (gg.lt||0) < 70 && Math.hypot(orbit.vx, orbit.vy) > 0.2) orbit.coast = true;
     returnHome(atHome() ? 700 : 2500);
+    return;
+  }
+  if(gg.mode === 'pan'){
+    if(gg.moved < 18 && performance.now() - gg.t < 350 && !cancelled){ pan.vx = pan.vz = 0; click(gg.hit); return; }
+    if(performance.now() - (gg.lt||0) < 70 && Math.hypot(pan.vx, pan.vz) > 0.3) pan.coast = true;
     return;
   }
   if(gg.mode === 'swept' || gg.mode === 'scroll') return;

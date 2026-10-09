@@ -22,6 +22,9 @@ function setInertia(v){ inertia = v; }
 const camTarget = new THREE.Vector3();
 const orbit = { az:0, azTo:0, el:0, elTo:0, vx:0, vy:0, coast:false };
 const ORBIT_EL = [0.06, 1.38];
+const pan = { x:0, z:0, vx:0, vz:0, coast:false };
+const camGoal = new THREE.Vector3();
+function resetPan(){ pan.x = pan.z = pan.vx = pan.vz = 0; pan.coast = false; st.mag = 1; }
 const CAM_REACH = 30;
 
 let closedHome = qClosedHome;
@@ -78,6 +81,7 @@ function stepPage(d){
   if(st.riffle || !st.open) return;
   const n = shownPage(), m = clamp(n + d, 0, 2*N - 1);
   if(m === n) return;
+  resetPan();
   if(writing && m >= 1){ quillTo(m); refreshUI(); return; }
   if(writing) exitWriting();
   st.focusSide = sideOf(m); st.focusTo = 1;
@@ -128,9 +132,9 @@ function glideSpin(to, dur, settle){
 function atHome(){ return (spinAnim && spinAnim.settle) || (shut.spin && shut.spin.settle) || spinGoal.angleTo(homeQuat()) < 0.05; }
 
 export {
-  angVel, atHome, CAM_REACH, camElevation, camTarget, fitDistance, frameTheta, freeFrame,
+  angVel, atHome, CAM_REACH, camElevation, camGoal, camTarget, fitDistance, frameTheta, freeFrame,
   glideSpin, holdFrame, homeQuat, inertia, onePage, orbit, ORBIT_EL, pageMid, pagePerPx,
-  pageScroll, pageStep, qClosedHome, qOpenHome, releaseFrame, closedQuat, setClosedHome, rotateBy, setInertia,
+  pageScroll, pageStep, pan, qClosedHome, resetPan, qOpenHome, releaseFrame, closedQuat, setClosedHome, rotateBy, setInertia,
   setPagePerPx, setPageScroll, setSpinAnim, shownPage, sideOf, spinAnim, spinGoal,
   stepFrame, stepPage, uiInsets, visibleBand, WRITE_EL
 };

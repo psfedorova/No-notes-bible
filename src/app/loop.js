@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clamp, lerp, smooth } from '../lib/textures.js';
 import { FILM, intro } from '../core/launch.js';
 import { damp, easeIO, glideStep, sdamp } from '../core/easing.js';
-import { CVR, CW, GROUND_Y, HI_RES, LIFT_H, measureViewport, N, OPEN, PAGE_H, PAGE_W, PH, PW, ROCK_TOP, VH, VW, XJ_C, XJ_O, ZB } from '../core/config.js';
+import { CH, CVR, CW, GROUND_Y, HI_RES, LIFT_H, measureViewport, N, OPEN, PAGE_H, PAGE_W, PH, PW, ROCK_TOP, VH, VW, XJ_C, XJ_O, ZB } from '../core/config.js';
 import { camera, deskRatio, DPR, gemLight, PR_LEVELS, PR_PIN, renderer, scene, setDPR, setShadowDirty, shadowDirty, shadowKey } from '../scene/renderer.js';
 import { BEAM_AT, beamMotes, beamU, dust, rayGroup } from '../scene/sunbeam.js';
 import { composer } from '../scene/post.js';
@@ -16,7 +16,7 @@ import { frontGem } from '../book/boards.js';
 import { stepGems } from '../book/sapphire.js';
 import { FLOAT_T, leaves, pagePointWorld } from '../book/leaves.js';
 import { layout, st } from '../book/state.js';
-import { angVel, atHome, CAM_REACH, camElevation, camTarget, fitDistance, frameTheta, inertia, onePage, orbit, ORBIT_EL, pageMid, pageScroll, releaseFrame, rotateBy, setInertia, setPagePerPx, setPageScroll, setSpinAnim, sideOf, spinAnim, spinGoal, stepFrame, uiInsets, visibleBand, WRITE_EL } from '../book/view.js';
+import { angVel, atHome, CAM_REACH, camElevation, camGoal, camTarget, fitDistance, frameTheta, inertia, onePage, orbit, ORBIT_EL, pageMid, pageScroll, pan, releaseFrame, rotateBy, setInertia, setPagePerPx, setPageScroll, setSpinAnim, sideOf, spinAnim, spinGoal, stepFrame, uiInsets, visibleBand, WRITE_EL } from '../book/view.js';
 import { booted, homePage, homeSpread } from '../ink/storage.js';
 import { blinkPhase, burning, quill, setBlinkPhase, writing } from '../ink/writing.js';
 import { inkSparkMat, smokeMat, sparkMat, stepSmoke, stepSparks } from '../fx/ink-fx.js';
@@ -195,6 +195,18 @@ function update(dt){
     const c = pageMid[st.focusSide] || { x: st.focusSide*(XJ_O + PW*0.5), z: 0.12 };
     _bc.set(fz*c.x, floatGrp.position.y, fz*c.z);
   }else _bc.set(fz*st.focusSide*(XJ_O + PW*0.5), floatGrp.position.y, fz*0.12);
+  if(st.focusTo < 0.5) st.mag = 1;
+  if(pan.coast){
+    pan.x += pan.vx*dt; pan.z += pan.vz*dt;
+    const f = Math.exp(-dt*4);
+    pan.vx *= f; pan.vz *= f;
+    if(Math.hypot(pan.vx, pan.vz) < 0.02) pan.coast = false;
+  }
+  const room = Math.min(1, Math.max(0, 1 - lerp(st.zoom, st.mag, fz))*lerp(2, 1, fz)), wide = Math.max(CW, CH)/2;
+  const ex = lerp(lerp(wide, XJ_O + PW, b), PW/2, fz)*room, ez = lerp(lerp(wide, PH/2, b), PH/2, fz)*room;
+  pan.x = clamp(pan.x, -ex, ex); pan.z = clamp(pan.z, -ez, ez);
+  _bc.x += pan.x; _bc.z += pan.z;
+  camGoal.copy(_bc);
   sdamp(camTarget, 'x', _bc.x, 0.4, dt); sdamp(camTarget, 'y', _bc.y, 0.3, dt); sdamp(camTarget, 'z', _bc.z, 0.4, dt);
   _rd.subVectors(camera.position, camTarget).normalize();
   _rc.subVectors(camTarget, FOREST_CAP);
@@ -202,7 +214,8 @@ function update(dt){
   const eyeR = lerp(EYE_SPHERE, EYE_SIDE, side);
   const rb = _rd.dot(_rc), reach = Math.max(lerp(fitDistance(), 6, side), Math.min(CAM_REACH, -rb + Math.sqrt(Math.max(0, rb*rb - _rc.lengthSq() + eyeR*eyeR))));
   st.zoom = Math.min(st.zoom, Math.max(1, reach/fitDistance()));
-  sdamp(st, 'camD', lerp(Math.min(fitDistance()*st.zoom, reach), pageD, fz), 0.45, dt);
+  st.camDTo = lerp(Math.min(fitDistance()*st.zoom, reach), pageD*st.mag, fz);
+  sdamp(st, 'camD', st.camDTo, 0.45, dt);
   if(st.camEl === undefined) st.camEl = camElevation();
   const el0 = sdamp(st, 'camEl', lerp(camElevation(), WRITE_EL, fz), 0.5, dt);
   if(orbit.coast){
@@ -220,7 +233,8 @@ function update(dt){
   const ce = Math.cos(el)*st.camD;
   camera.position.set(camTarget.x + Math.sin(az)*ce, camTarget.y + Math.sin(el)*st.camD, camTarget.z + Math.cos(az)*ce);
   camera.position.y = Math.max(camera.position.y, GROUND_Y + 1.0);
-  const lift = lerp(2.4, 0, smooth(clamp(frameTheta()/OPEN, 0, 1)))*(1 - fz);
+  st.camLift = lerp(2.4, 0, smooth(clamp(frameTheta()/OPEN, 0, 1)))*(1 - fz);
+  const lift = st.camLift*Math.min(1, sdamp(st, 'zoomS', st.zoom, 0.45, dt));
   _bc.set(camTarget.x, camTarget.y + lift, camTarget.z);
   camera.lookAt(_bc);
   if(camBlend) stepCamBlend(dt);
@@ -322,10 +336,10 @@ let activeAt = 0, drawnAt = 0;
 ['pointerdown', 'pointermove', 'keydown', 'input'].forEach(t=>addEventListener(t, ()=>{ activeAt = performance.now(); }, { capture:true, passive:true }));
 function still(){
   return !story && performance.now() - activeAt > 2500 && !g && !pinch && !st.flight && !st.riffle
-    && !coverAnim && !spinAnim && !inertia && !orbit.coast && seek.goal === null;
+    && !coverAnim && !spinAnim && !inertia && !orbit.coast && !pan.coast && seek.goal === null;
 }
 function calm(){
-  const quiet = ()=> !story && !g && !pinch && !st.flight && !st.riffle && !coverAnim && !spinAnim && !inertia && !orbit.coast && !camBlend && seek.goal === null;
+  const quiet = ()=> !story && !g && !pinch && !st.flight && !st.riffle && !coverAnim && !spinAnim && !inertia && !orbit.coast && !pan.coast && !camBlend && seek.goal === null;
   return new Promise(r=>{ const check = ()=> quiet() ? r() : setTimeout(check, 150); check(); });
 }
 let rafDt = 1000/60, rafAt = 0;
