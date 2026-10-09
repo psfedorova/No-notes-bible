@@ -394,7 +394,7 @@ function grassField(G, stones, tufts){
         vec3 fs = pow(textureLod(tPano, uv, 5.0).rgb, vec3(1.0/2.2));
         float hue = (fs.g - fs.b)/max(fs.r - fs.b, 1e-3);
         float bank = smoothstep(0.02, 0.15, textureLod(tWater, uv, 5.0).r);
-        float keep = max(smoothstep(0.45, 0.75, hue), bank)*(1.0 - smoothstep(0.0, 0.08, wet))*step(L*0.4, seen);
+        float keep = max(smoothstep(0.45, 0.75, hue), bank)*(1.0 - smoothstep(0.0, 0.08, wet))*step(L*0.4, seen)*step(L - max(1.2, 0.035*L), seen);
         float t = position.y, H = aBlade.y*step(fract(aRoot.w*17.31), keep), lean = aBlade.w;
         vec2 f = vec2(cos(aBlade.x), sin(aBlade.x)), sd = vec2(-f.y, f.x);
         float w = aBlade.z*pow(1.0 - t, 0.6);

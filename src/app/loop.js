@@ -61,7 +61,7 @@ let last = performance.now(), clock = 0, bobAmt = 1;
 let story = null;
 function setStory(fn){ story = fn; }
 const _bc = new THREE.Vector3(), _rd = new THREE.Vector3(), _rc = new THREE.Vector3();
-const EYE_SPHERE = 20, EYE_SIDE = 13, EYE_TURN = [0.35, 1.1];
+const EYE_SPHERE = 20, EYE_SIDE = 13, EYE_TURN = [0.35, 1.1], EYE_RISE = 6;
 function update(dt){
   clock += dt;
   if(story) story(dt);
@@ -212,7 +212,7 @@ function update(dt){
     if(Math.hypot(orbit.vx, orbit.vy) < 0.02) orbit.coast = false;
   }
   orbit.elTo = clamp(orbit.elTo, ORBIT_EL[0] - camElevation(), ORBIT_EL[1] - camElevation());
-  const elTop = Math.asin(clamp((FOREST_CAP.y + 6 - camTarget.y)/Math.max(1e-3, st.camD), -1, 1));
+  const elTop = Math.asin(clamp((FOREST_CAP.y + (window.__rise ?? EYE_RISE) - camTarget.y)/Math.max(1e-3, st.camD), -1, 1));
   orbit.elTo = Math.min(orbit.elTo, Math.max(0, elTop - camElevation()));
   if(fz < 0.001 && Math.abs(orbit.azTo) > Math.PI){ const w = Math.round(orbit.azTo/(2*Math.PI))*2*Math.PI; orbit.azTo -= w; orbit.az -= w; }
   sdamp(orbit, 'az', orbit.azTo, 0.22, dt); sdamp(orbit, 'el', orbit.elTo, 0.22, dt);
