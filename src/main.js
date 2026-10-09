@@ -36,21 +36,20 @@ function filmHooks(){
 }
 
 async function boot(){
+  const fontsReady = (async ()=>Promise.race([
+    Promise.all([
+      ...FONTS.map(f=>document.fonts.load(fontCss(f, 40), 'AaЯяЖж')),
+      document.fonts.load('600 40px "Cormorant SC"', 'LIBER ARCANUM'),
+      document.fonts.load('700 40px "Cormorant SC"', 'LIBER ARCANUM'),
+      document.fonts.load('40px "UnifrakturMaguntia"', TITLE),
+      ...FONTS.map(f=>document.fonts.load(capFont(f, 80), 'HIZЗЖВ')),
+      document.fonts.load('italic 500 40px "Cormorant Garamond"', MOTTO.join(' '))
+    ]),
+    new Promise(r=>setTimeout(r, 4000))
+  ]))().catch(()=>{});
   try{
-    await Promise.race([
-      Promise.all([
-        ...FONTS.map(f=>document.fonts.load(fontCss(f, 40), 'AaЯяЖж')),
-        document.fonts.load('600 40px "Cormorant SC"', 'LIBER ARCANUM'),
-        document.fonts.load('700 40px "Cormorant SC"', 'LIBER ARCANUM'),
-        document.fonts.load('40px "UnifrakturMaguntia"', TITLE),
-        ...FONTS.map(f=>document.fonts.load(capFont(f, 80), 'HIZЗЖВ')),
-        document.fonts.load('italic 500 40px "Cormorant Garamond"', MOTTO.join(' '))
-      ]),
-      new Promise(r=>setTimeout(r, 4000))
-    ]);
-  }catch(e){}
-  try{
-    await loadAssets();
+    await loadAssets(fontsReady);
+    await fontsReady;
     if(intro && intro.stage) intro.stage(.88);
   }catch(e){
     const l = document.getElementById('introNote');

@@ -251,7 +251,13 @@ function makeBackdrop(pano, depth, water, back, backDepth){
           vec3 Wz = o + tz*d + uCap;
           vec2 gz = (Wz.xz/max(uGround.y, 1.0) + 0.5)*(uGround.x - 1.0)/max(uGround.x, 1.0) + 0.5/max(uGround.x, 1.0);
           float fz = uGround.x > 0.0 && abs(Wz.x) < uGround.y*0.5 && abs(Wz.z) < uGround.y*0.5 ? textureLod(tGround, gz, 0.0).r : ${GROUND_Y.toFixed(2)};
-          if(tz < 350.0 && wf.r <= 0.02 && Wz.y > fz + 1.5) zFar = tz; }
+          bool solid = Wz.y > fz + 1.5;
+          if(!solid && wBack <= 0.5 && q.y < -0.02){
+            float H = float(textureSize(tDepth, 0).y), dv = 2.0/H, sa = -q.y, a = asin(sa), da = dv*3.14159265;
+            float D0 = unpack(textureLod(tDepth, uv, 0.0).r), D1 = unpack(textureLod(tDepth, vec2(uv.x, uv.y + dv), 0.0).r);
+            solid = a > 2.0*da && D1/D0 - 1.0 < 0.3*(sa/sin(a - da) - 1.0);
+          }
+          if(tz < 350.0 && wf.r <= 0.02 && solid) zFar = tz; }
         gl_FragColor = vec4(col*uGain, zFar);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

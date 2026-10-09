@@ -14,7 +14,7 @@
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
     "./src/app/loop.js": "./src/app/loop.js?v=acdfbedf8c",
     "./src/assets/depth-worker.js": "./src/assets/depth-worker.js?v=613be400b3",
-    "./src/assets/load.js": "./src/assets/load.js?v=c774dd051e",
+    "./src/assets/load.js": "./src/assets/load.js?v=e634880017",
     "./src/assets/loaders.js": "./src/assets/loaders.js?v=13f4820c2e",
     "./src/audio/sound.js": "./src/audio/sound.js?v=31c7284f6b",
     "./src/book/boards.js": "./src/book/boards.js?v=700bd060f8",
@@ -30,12 +30,12 @@
     "./src/book/state.js": "./src/book/state.js?v=2ab2336769",
     "./src/book/turning.js": "./src/book/turning.js?v=b9df93ac6c",
     "./src/book/view.js": "./src/book/view.js?v=b087b89d77",
-    "./src/core/config.js": "./src/core/config.js?v=eb94efbfd8",
+    "./src/core/config.js": "./src/core/config.js?v=0dc2927a76",
     "./src/core/easing.js": "./src/core/easing.js?v=387623d1e5",
     "./src/core/errors.js": "./src/core/errors.js?v=68797020b6",
     "./src/core/launch.js": "./src/core/launch.js?v=2092a1ccde",
     "./src/film/capture.js": "./src/film/capture.js?v=64819f7c94",
-    "./src/film/intro.js": "./src/film/intro.js?v=11db9d1fdc",
+    "./src/film/intro.js": "./src/film/intro.js?v=d989ca1b37",
     "./src/film/opening.js": "./src/film/opening.js?v=16321397ca",
     "./src/fx/ink-fx.js": "./src/fx/ink-fx.js?v=4dc8c5cd0e",
     "./src/fx/magic.js": "./src/fx/magic.js?v=f067fee0ad",
@@ -47,11 +47,11 @@
     "./src/input/gestures.js": "./src/input/gestures.js?v=088534b411",
     "./src/lib/noise.js": "./src/lib/noise.js?v=85ceeb418c",
     "./src/lib/textures.js": "./src/lib/textures.js?v=39f45ea3f3",
-    "./src/main.js": "./src/main.js?v=96f240f7ab",
+    "./src/main.js": "./src/main.js?v=eaad39e681",
     "./src/scene/contact.js": "./src/scene/contact.js?v=c653fbbf79",
-    "./src/scene/forest-life.js": "./src/scene/forest-life.js?v=0e059473ad",
-    "./src/scene/forest.js": "./src/scene/forest.js?v=39536d8f76",
-    "./src/scene/plants.js": "./src/scene/plants.js?v=e52f664098",
+    "./src/scene/forest-life.js": "./src/scene/forest-life.js?v=47bfe8ea17",
+    "./src/scene/forest.js": "./src/scene/forest.js?v=42182af19c",
+    "./src/scene/plants.js": "./src/scene/plants.js?v=55b8a30efb",
     "./src/scene/post.js": "./src/scene/post.js?v=d2c9136f74",
     "./src/scene/renderer.js": "./src/scene/renderer.js?v=e895a81187",
     "./src/scene/rig.js": "./src/scene/rig.js?v=ba96264aba",
@@ -74,6 +74,23 @@
 <link rel="stylesheet" href="css/cards.css?v=014ffc61e5">
 <link rel="stylesheet" href="css/shelf.css?v=2818ef91eb">
 <link rel="stylesheet" href="css/invitation.css?v=b102d78883">
+<link rel="preload" as="image" href="assets/leather/brown_leather_albedo_1k.jpg">
+<link rel="preload" as="image" href="assets/leather/brown_leather_nor_gl_1k.jpg">
+<link rel="preload" as="image" href="assets/leather/brown_leather_rough_1k.jpg">
+<link rel="preload" as="image" href="assets/models/gold_front_mask.png?v=2">
+<link rel="preload" as="image" href="assets/models/gold_back_mask.png?v=2">
+<link rel="preload" as="image" href="assets/forest/forest_4k.jpg?v=6">
+<link rel="preload" as="image" href="assets/forest/water.webp?v=2">
+<link rel="preload" as="image" href="assets/rock/granite.jpg">
+<link rel="preload" as="image" href="assets/rock/moss.jpg">
+<link rel="preload" as="image" href="assets/rock/stone_nor.jpg">
+<link rel="preload" as="image" href="assets/rock/stone_1k.jpg" media="(pointer: coarse)">
+<link rel="preload" as="image" href="assets/rock/stone_2k.jpg" media="not all and (pointer: coarse)">
+<link rel="preload" as="fetch" crossorigin="anonymous" href="assets/models/gold_front.glb?v=2">
+<link rel="preload" as="fetch" crossorigin="anonymous" href="assets/models/gold_back.glb?v=2">
+<link rel="preload" as="fetch" crossorigin="anonymous" href="assets/models/rock.glb?v=3">
+<link rel="preload" as="fetch" crossorigin="anonymous" href="assets/forest/light_1k.hdr">
+<link rel="preload" as="fetch" crossorigin="anonymous" href="assets/forest/near.json?v=5">
 </head>
 <body>
 <div id="intro" aria-hidden="true">
@@ -93,7 +110,7 @@
   </div>
   <p id="tapSound">Tap for sound</p>
 </div>
-<script src="src/film/intro.js?v=11db9d1fdc"></script>
+<script src="src/film/intro.js?v=d989ca1b37"></script>
 
 <canvas id="gl"></canvas>
 <div id="vignette"></div>
@@ -142,6 +159,6 @@
 <pre id="err"></pre>
 
 <script src="src/core/errors.js?v=68797020b6"></script>
-<script type="module" src="src/main.js?v=96f240f7ab"></script>
+<script type="module" src="src/main.js?v=eaad39e681"></script>
 </body>
 </html>

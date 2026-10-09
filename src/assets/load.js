@@ -10,12 +10,18 @@ import { firstMesh, gltfLoader, loadImage, retry } from './loaders.js';
 import { applyLeather } from '../book/leather.js';
 import { mossShells, rockMaterial, trimBuried } from '../scene/rock.js';
 import { backdrop, decodeDepth, makeBackdrop, measureFoot } from '../scene/forest.js';
-import { nearField } from '../scene/plants.js';
+import { fetchNear, nearField } from '../scene/plants.js';
 
 const imgs = {};
-async function loadAssets(){
-  const imgJobs = ['forest','forestWater','granite','moss','stone','stoneNor','leaAlbedo','leaNor','leaRough','maskFront','maskBack']
-    .map(k=>loadImage(ASSETS[k]).then(i=>{ imgs[k] = i; }));
+async function loadAssets(fontsReady = Promise.resolve()){
+  const near = fetchNear();
+  const img = {};
+  ['leaAlbedo','leaNor','leaRough','maskFront','maskBack','forest','forestWater','granite','moss','stone','stoneNor']
+    .forEach(k=>{ img[k] = loadImage(ASSETS[k]).then(i=>{ imgs[k] = i; }); });
+  const leather = Promise.all(['leaAlbedo','leaNor','leaRough','maskFront','maskBack'].map(k=>img[k]))
+    .then(()=>fontsReady).then(()=>applyLeather(imgs));
+  leather.catch(()=>{});
+  const imgJobs = Object.values(img);
   const model = url => retry(()=>gltfLoader.loadAsync(url));
   const models = Promise.all([model(ASSETS.goldFront), model(ASSETS.goldBack), model(ASSETS.rock)]);
   const depth = retry(()=>decodeDepth(ASSETS.forestDepth));
@@ -30,7 +36,7 @@ async function loadAssets(){
   scene.environmentIntensity = 1.15;
   scene.environmentRotation.set(0, FOREST_YAW, 0);
   scene.background = null;
-  applyLeather(imgs);
+  await leather;
   scene.add(makeBackdrop(imgs.forest, await depth, imgs.forestWater, null, null));
   backdrop.setDetail(imgs.moss);
   leafHaze.value = backdrop.picture;
@@ -60,7 +66,7 @@ async function loadAssets(){
   measureFoot(rock, rockGrp);
   rockGrp.traverse(o=>{ if(o.isMesh) o.renderOrder = -6; });
   spinGrp.traverse(o=>{ if(o.isMesh && !o.renderOrder) o.renderOrder = -8; });
-  await nearField(rockMaterial(imgs, true));
+  await nearField(rockMaterial(imgs, true), near);
 }
 async function loadMore(calm = ()=>Promise.resolve()){
   try{

@@ -7,7 +7,9 @@
    Modules import each other by plain relative paths ('./plants.js'); the importmap in
    index.html maps each of them to the same path with ?v=<hash of that file>, so a
    changed file gets a new URL and every unchanged one stays in the browser's cache.
-   The <script src> and stylesheet links get the same ?v=<hash> */
+   The <script src> and stylesheet links get the same ?v=<hash>. Every <link rel="preload">
+   of an asset must name the exact URL src/core/config.js loads, ?v included, or the
+   stamp stops: a stale one would download the file twice. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,6 +37,10 @@ html = html.replace(MAP, (_, a, __, c) => a + JSON.stringify(map, null, 2) + c);
 
 html = html.replace(/(<script\b[^>]*\bsrc="|<link\b[^>]*\bhref=")((?:src|css)\/[^"?]+)(?:\?v=[^"]*)?"/g,
   (_, a, rel) => `${a}${rel}?v=${hashOf(rel)}"`);
+
+const config = fs.readFileSync(path.join(ROOT, 'src/core/config.js'), 'utf8');
+const stale = [...html.matchAll(/<link\b[^>]*\brel="preload"[^>]*\bhref="(assets\/[^"]+)"/g)].map(p => p[1]).filter(u => !config.includes(`'${u}'`));
+if(stale.length){ console.error('preloads in index.html that src/core/config.js no longer loads (fix their ?v):\n  ' + stale.join('\n  ')); process.exit(1); }
 
 if(html === before){ console.log('index.html is up to date'); process.exit(0); }
 if(check){ console.error('index.html is out of date: run node tools/stamp.mjs'); process.exit(1); }

@@ -95,9 +95,24 @@ function footPlants(G, list){
   });
   return out;
 }
-async function nearField(skirtMat){
-  let data;
-  try{ data = await retry(async ()=>{ const r = await fetch(ASSETS.forestNear); if(!r.ok) throw new Error(r.status); return r.json(); }); }catch(e){ return; }
+const SWAY = { fern_02: 1.0 };
+function fetchNear(){
+  return retry(async ()=>{ const r = await fetch(ASSETS.forestNear); if(!r.ok) throw new Error(r.status); return r.json(); }).then(data=>{
+    const models = new Map();
+    data.items.forEach(({ a })=>{
+      if(GONE.includes(a) || models.has(a)) return;
+      models.set(a, Promise.all([
+        retry(()=>gltfLoader.loadAsync(`assets/plants/${a}/${a}${HI_RES && SWAY[a] !== undefined ? '_2k' : ''}.glb?v=2`)).catch(e=>{ console.warn('Plant left out:', a, e); return null; }),
+        SWAY[a] === undefined ? retry(()=>gltfLoader.loadAsync(`assets/plants/${a}/${a}_far.glb?v=3`)).catch(()=>null) : null
+      ]));
+    });
+    return { data, models };
+  }).catch(()=>null);
+}
+async function nearField(skirtMat, near = fetchNear()){
+  const got = await near;
+  if(!got) return;
+  const { data, models } = got;
   const list = (data.ground ? data.items.concat(footPlants(data.ground, data.items)) : data.items)
     .filter(it => !GONE.includes(it.a));
   let floorGeo = null;
@@ -120,7 +135,6 @@ async function nearField(skirtMat){
   }
   const byAsset = new Map();
   list.forEach(it=>{ if(!byAsset.has(it.a)) byAsset.set(it.a, []); byAsset.get(it.a).push(it); });
-  const SWAY = { fern_02: 1.0 };
   const SHADE = { fern_02: 0.4 };
   const grp = new THREE.Group();
   grp.name = 'near';
@@ -138,10 +152,7 @@ async function nearField(skirtMat){
     return true;
   };
   await Promise.all([...byAsset].map(async ([a, items])=>{
-    const [gl, far] = await Promise.all([
-      retry(()=>gltfLoader.loadAsync(`assets/plants/${a}/${a}${HI_RES && SWAY[a] !== undefined ? '_2k' : ''}.glb?v=2`)).catch(e=>{ console.warn('Plant left out:', a, e); return null; }),
-      SWAY[a] === undefined ? retry(()=>gltfLoader.loadAsync(`assets/plants/${a}/${a}_far.glb?v=3`)).catch(()=>null) : null
-    ]);
+    const [gl, far] = await (models.get(a) || [null, null]);
     if(!gl) return;
     const index = g=>{
       const meshes = new Map();
@@ -460,5 +471,5 @@ function grassField(G, stones, tufts){
 }
 
 export {
-  gust, GUST_GLSL, nearField, nearGust, nearTime
+  fetchNear, gust, GUST_GLSL, nearField, nearGust, nearTime
 };

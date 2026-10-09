@@ -43,6 +43,9 @@
   }
   Promise.race([document.fonts.load('600 16px "Cormorant SC"', 'LIBER ARCANUM'), new Promise(r=>setTimeout(r, 1500))])
     .then(()=>box.classList.add('named'), ()=>box.classList.add('named'));
+  [['italic 500 40px "Cormorant Garamond"', 'AaЯяЖж'], ['600 40px "Cormorant Garamond"', 'HIZЗЖВ'],
+    ['700 40px "Cormorant SC"', 'LIBER ARCANUM'], ['40px "UnifrakturMaguntia"', 'No Notes Bible']]
+    .forEach(([f, t])=>document.fonts.load(f, t).catch(()=>{}));
 
   const kind = innerWidth/innerHeight < 0.9 ? 'tall' : 'wide';
   const I = window.__intro = { kind, fit: 'cover', take: null, gone: false, live: false };

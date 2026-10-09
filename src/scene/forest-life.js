@@ -4,7 +4,7 @@ import { GROUND_Y } from '../core/config.js';
 import { scene, SUN_DIR } from './renderer.js';
 import { clock } from '../app/loop.js';
 
-const leafTex = new THREE.TextureLoader().load('assets/leaves/fall_leaves.png');
+const leafTex = new THREE.TextureLoader().load('assets/leaves/fall_leaves.webp');
 leafTex.colorSpace = THREE.SRGBColorSpace; leafTex.anisotropy = 4;
 const leafSun = { value: SUN_DIR }, leafHaze = { value: null };
 const leafMats = [0xd6dcc4, 0xe8dc9a, 0xd8b06c, 0xa88660].map(tint=>{

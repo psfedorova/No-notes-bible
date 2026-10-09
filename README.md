@@ -51,6 +51,7 @@ firestore.rules       access rules for shared books; firebase.json points the CL
 tests/firestore/      rules tests against the emulator
 tools/film/           shoots and encodes the opening film
 tools/stamp.mjs       stamps index.html with a content hash on every script, module and stylesheet
+tools/webp.mjs        packs the forest depth, water and leaf PNGs into lossless WebP for the page
 blender/              (local, not in git) builds the models and the forest panorama
 ```
 
@@ -65,7 +66,8 @@ import lines show how the parts depend on each other.
   `setX()` functions; other modules read them as live imports.
 - Cache busting: run `node tools/stamp.mjs` before committing a change to `src/` or
   `css/` (see Releasing). Bump `?v=` by hand only on an asset's URL in `src/core/config.js`
-  when the file behind it changes.
+  when the file behind it changes. After editing a depth, water or leaf PNG, run
+  `node tools/webp.mjs`: the page loads the WebP copies, not the PNGs.
 - The opening plays live on the scene itself, so a change to the scene or the book
   needs no re-shoot. `node tools/film/shoot.mjs` still renders it as a video to share.
 
