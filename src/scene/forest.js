@@ -32,11 +32,11 @@ function inWorker(url, smooth){
   const id = ++depthJobs;
   return new Promise((res, rej)=>{
     depthWaits.set(id, { res, rej });
-    depthWorker.postMessage({ id, url: new URL(url, location.href).href, smooth, band: HI_RES ? 4194304 : 1048576 });
+    depthWorker.postMessage({ id, url: new URL(url, location.href).href, smooth, band: HI_RES ? 4194304 : 1048576, near: DEPTH_NEAR, far: DEPTH_FAR });
   });
 }
 function depthTexture(out, w, h, smooth){
-  const t = new THREE.DataTexture(out, w, h, THREE.RedFormat, THREE.HalfFloatType);
+  const t = new THREE.DataTexture(out, w, h, smooth ? THREE.RedFormat : THREE.RGFormat, THREE.HalfFloatType);
   t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
   return t;
 }
@@ -70,10 +70,10 @@ async function decodeDepth(url, smooth){
     for(let i=0, o=y0*w;i<w*rows;i++) q[o + i] = d[i*4]*256 + d[i*4 + 1];
   }
   bmp.close && bmp.close();
-  const out = new Uint16Array(w*h);
+  const ch = smooth ? 1 : 2, out = new Uint16Array(w*h*ch);
   for(let y=0;y<h;y++){
     const src = (h - 1 - y)*w, dst = y*w;
-    for(let i=0;i<w;i++) out[dst + i] = THREE.DataUtils.toHalfFloat(q[src + i]/65535);
+    for(let i=0;i<w;i++){ const v = THREE.DataUtils.toHalfFloat(q[src + i]/65535); out[(dst + i)*ch] = v; if(ch > 1) out[(dst + i)*ch + 1] = v; }
   }
   const t = depthTexture(out, w, h, smooth);
   if(!smooth) t.userData.soft = softDepth(q, w, h, Math.max(1, Math.round(w/768)));
@@ -146,9 +146,7 @@ function makeBackdrop(pano, depth, water, back, backDepth){
         vec4 n = step(mid, a);
         float wn = dot(n, w);
         float nearV = wn > 1e-4 ? dot(a*n, w)/wn : hi, farV = wn < 0.9999 ? dot(a*(1.0 - n), w)/(1.0 - wn) : lo;
-        vec2 e = 1.5/vec2(sz);
-        float b = 0.25*(textureLod(tDepth, u + e, 0.0).r + textureLod(tDepth, u - e, 0.0).r
-          + textureLod(tDepth, u + vec2(e.x, -e.y), 0.0).r + textureLod(tDepth, u + vec2(-e.x, e.y), 0.0).r);
+        float b = textureLod(tDepth, u, 0.0).g;
         return b > lo + 0.25*(hi - lo) ? nearV : farV;
       }
       float distF(vec3 q){ vec2 u = eqUv(q); float a = depthAt(u);
