@@ -31,6 +31,7 @@
 }
 .shelf.invite .sign input[type=text]:focus{ border-bottom-color:var(--ink); }
 .shelf.invite .sign input[type=text]::placeholder{ color:rgba(59,38,18,.3); }
+.shelf.invite .sign input[type=text]:-webkit-autofill{ -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:var(--ink); box-shadow:none; }
 .shelf.invite .sign .cap{ margin-top:6px; font:600 var(--fs-s) var(--text-font); letter-spacing:2.5px; text-transform:uppercase; color:var(--ink); }
 .shelf.invite .acts{ margin-top:var(--gap-act); align-items:center; gap:4px; }
 .shelf.invite .btn.main{

@@ -199,10 +199,9 @@ canvasEl.addEventListener('pointermove', e=>{
     if(pinch.read && d >= pinch.d*0.92) return;
     pinch.read = false;
     st.zoom = clamp(pinch.z * pinch.d/Math.max(20,d), 0.3, 3.2);
-    const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
-    rotating = true;
+    const mx = (a.x+b.x)/2, my = (a.y+b.y)/2, k = 0.0052;
     lookAway();
-    rotateBy((mx-pinch.mx)*0.006, (my-pinch.my)*0.006);
+    orbit.azTo -= (mx-pinch.mx)*k; orbit.elTo += (my-pinch.my)*k;
     pinch.mx = mx; pinch.my = my;
     return;
   }
