@@ -72,7 +72,11 @@
   }
   let invited = /^#join=[A-Za-z0-9]{6,40}\.[a-z0-9]{24,64}/.test(location.hash);
   try{ invited = invited || !!sessionStorage.getItem('liber-arcanum.join'); }catch(e){}
-  if(invited) seen = false;
+  if(invited){
+    seen = false;
+    [['400 40px "Great Vibes"', 'You have been chosen'], ['500 40px "Cormorant Garamond"', 'Any keeper writes']]
+      .forEach(([f, t])=>document.fonts.load(f, t).catch(()=>{}));
+  }
   I.live = !seen && !matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* browsers block audio before the first user activation */

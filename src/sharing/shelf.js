@@ -19,6 +19,7 @@ const KEEP_PART = 200000;       // firestore.rules allows 250000
 const KEEP_MS = 15000;
 const SLOW_MS = 6000;
 const MAKE_MS = 20000;
+const FONT_MS = 2500;
 const wait = ms => new Promise(res => setTimeout(res, ms));
 
 export const sharingOn = !!FIREBASE || EMU;
@@ -860,10 +861,12 @@ export function createShelf(api){
       const b = await F.getDoc(ref('books', want.id));
       const name = b.exists() ? b.data().name : 'Our book';
       await F.setDoc(ref('users', me, 'books', want.id), { name, at: F.serverTimestamp() });
+      const bye = isStarted ? null : farewell();
+      await startedP;
       if(cur) leaveBook();
       openCached({ id: want.id, uid: me, name, owner: b.exists() ? b.data().owner : null });
       openLive();
-      await farewell();
+      await (bye || farewell());
       Promise.resolve(api.settled && api.settled()).then(()=> api.toast(back && !want.vowed ? `BACK IN ${name.toUpperCase()}` : 'AMEN. NO NOTES', 2600));
     }catch(e){
       show('badInvite');
@@ -1276,10 +1279,10 @@ export function createShelf(api){
     return spell;
   }
   const kindle = ()=> burnIn(card, body, ()=> sound('burn'));
-  const settledCard = ()=> Promise.all([
+  const settledCard = ()=> Promise.race([Promise.all([
     Promise.all(card.getAnimations().map(a => a.finished)).catch(()=>{}),
     document.fonts.ready,
-  ]);
+  ]), wait(FONT_MS)]);
   function arrive(){
     if(calm()) return;
     body.classList.add('ghost', 'arriving');
@@ -1390,8 +1393,12 @@ export function createShelf(api){
     if(joinWant !== want) return;
     if(back) join(); else invite();
   }
-  function start(){
-    if(!sharingOn) return;
+  let greeted = null, isStarted = false, started = null;
+  const startedP = new Promise(r => started = ()=>{ isStarted = true; r(); });
+  function greet(){
+    if(!sharingOn) return false;
+    if(greeted !== null) return greeted;
+    greeted = false;
     const m = /^#join=([A-Za-z0-9]{6,40})\.([a-z0-9]{24,64})((?:&[a-z]+=[^&]*)*)$/.exec(location.hash);
     let kept = null;
     try{ kept = JSON.parse(sessionStorage.getItem(JOIN_KEY)); }catch(e){}
@@ -1405,8 +1412,13 @@ export function createShelf(api){
       const opening = window.__intro;
       if(opening && !opening.gone && opening.wait){ opening.wait(new Promise(r=>{ invited = r; })); welcome(); }
       else Promise.resolve(api.settled && api.settled()).then(welcome);
+      greeted = true;
     }
-    else if(lsGet(SIGNED_KEY)) firebase().catch(()=>{});
+    return greeted;
+  }
+  function start(){
+    if(!sharingOn) return started();
+    if(!greet() && lsGet(SIGNED_KEY)) firebase().catch(()=>{});
     const c = lsGet(CUR_KEY);
     if(c && typeof c.id === 'string' && typeof c.uid === 'string'){
       openCached(c);
@@ -1414,6 +1426,7 @@ export function createShelf(api){
         if(cur && user && user.uid === cur.uid) openLive();
       }).catch(()=>{});
     }
+    started();
   }
 
   function attention(){
@@ -1427,7 +1440,7 @@ export function createShelf(api){
   }
 
   return {
-    start, sync, flush,
+    greet, start, sync, flush,
     open: ()=>{ if(!locked()) show('share'); },
     isOpen: ()=> !view.hidden,
     close: dismiss,

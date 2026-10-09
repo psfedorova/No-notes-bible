@@ -47,17 +47,7 @@ async function boot(){
     ]),
     new Promise(r=>setTimeout(r, 4000))
   ]))().catch(()=>{});
-  try{
-    await loadAssets(fontsReady);
-    await fontsReady;
-    if(intro && intro.stage) intro.stage(.88);
-  }catch(e){
-    const l = document.getElementById('introNote');
-    if(l){ l.textContent = 'THE TOME COULD NOT BE KINDLED'; l.parentNode.classList.add('wait'); }
-    throw e;
-  }
-  loadAll();
-  setShelf(createShelf({
+  const sharing = createShelf({
     N, page: n => pages[n], handsOf, personalHand: BROWSER_HAND, toast, personalPages, applyPage,
     personalData, takePersonal, exportText, saveCopy,
     useBook: (key, hand)=> useBook(key, hand, !booted),
@@ -68,7 +58,19 @@ async function boot(){
     focusQuill: ()=>{ if(writing) quill.focus({ preventScroll: true }); },
     paper: invitePaper,
     sfx: (k, arg)=>{ if(sfx[k]) sfx[k](arg); },
-  }));
+  });
+  sharing.greet();
+  try{
+    await loadAssets(fontsReady);
+    await fontsReady;
+    if(intro && intro.stage) intro.stage(.88);
+  }catch(e){
+    const l = document.getElementById('introNote');
+    if(l){ l.textContent = 'THE TOME COULD NOT BE KINDLED'; l.parentNode.classList.add('wait'); }
+    throw e;
+  }
+  loadAll();
+  setShelf(sharing);
   shelf.start();
   blankMat[0].map.image = pageBackground(-2); blankMat[0].map.needsUpdate = true;
   blankMat[1].map.image = pageBackground(-1); blankMat[1].map.needsUpdate = true;

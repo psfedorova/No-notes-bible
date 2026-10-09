@@ -23,7 +23,7 @@ matLeafEdge.onBeforeCompile = sh=>{
         float seam = 1.0 - smoothstep(0.0, 0.08 + 1.5*w, d);
         float tone = fract(sin(floor(a)*91.7 + vColor.r*613.0)*43758.5);
         float fade = 1.0 - smoothstep(0.25, 0.6, w);
-        diffuseColor.rgb *= mix(0.94, 1.0 + 0.06*(tone - 0.5) - 0.2*seam, fade); }`)
+        diffuseColor.rgb = mix(vec3(0.79, 0.64, 0.383)*0.94, diffuseColor.rgb*(1.0 + 0.06*(tone - 0.5) - 0.2*seam), fade); }`)
     .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb*0.16;');
 };
 const matLeafStack = new THREE.MeshStandardMaterial({ color: 0xb39769, vertexColors: true, roughness: 0.85, metalness: 0, envMapIntensity: 0.8 });

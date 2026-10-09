@@ -133,7 +133,7 @@ function makeBackdrop(pano, depth, water, back, backDepth){
       float unpack(float inv){ return 1.0/(inv*(1.0/uNear - 1.0/uFar) + 1.0/uFar); }
       float distF(vec3 q){ vec2 u = eqUv(q); float a = textureLod(tDepth, u, 0.0).r;
         float w = max(smoothstep(0.14, 0.42, q.y), smoothstep(120.0, 300.0, unpack(a)));
-        if(w > 0.0) a = mix(a, textureLod(tSoft, u, 0.0).r, w);
+        if(w > 0.0){ float s = textureLod(tSoft, u, 0.0).r; a = mix(a, s, w*smoothstep(80.0, 150.0, unpack(s))); }
         return unpack(a); }
       float distB(vec3 q){ return unpack(textureLod(tBackDepth, eqUv(q), 0.0).r); }
       #define SLIP 0.04

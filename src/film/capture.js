@@ -578,8 +578,8 @@ function buildRig(end){
     { t: SEALED, ...sph(c0.clone().add(new THREE.Vector3(0, 0.3, 0)), -0.5, 0.68, 11.0*m[3]) },
     { t: OPEN_AT + 1.5, ...sph(c0.clone().lerp(E.l, 0.5).add(new THREE.Vector3(0, 1.8, 0)), -0.24, 0.62, 11.0*m[4]) },
     ...(TALL ? [
-      { t: LAND, ...sph(E.l.clone().add(new THREE.Vector3(1.6, 0, 0.1)), -0.04, 1.0, 7.6) },
-      { t: LAND + 2.3, ...sph(E.l.clone().add(new THREE.Vector3(1.6, 0, 0.1)), 0, 1.03, 7.0) },
+      { t: LAND, ...sph(E.l.clone().add(new THREE.Vector3(0, 0, 0.1)), -0.04, 1.0, 7.6) },
+      { t: LAND + 2.3, ...sph(E.l.clone().add(new THREE.Vector3(0, 0, 0.1)), 0, 1.03, 7.0) },
       { t: END - 0.4, p: E.p, l: E.l }
     ] : [
       { t: LAND, ...sph(E.l.clone().add(new THREE.Vector3(0.7, 0, 0)), -0.07, 0.88, 7.6) },
