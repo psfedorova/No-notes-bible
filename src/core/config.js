@@ -38,10 +38,10 @@ const capFont = (f, size) => `${f.capWeight || 400} ${Math.round(size)}px ${f.ca
 const fontCss = (f, size, weight) => `${f.style==='italic'?'italic ':''}${weight||f.weight} ${Math.round(size)}px ${f.css}, "Cormorant Garamond", serif`;
 
 const ASSETS = {
-  forest: 'assets/forest/forest_4k.jpg?v=8', forestDepth: 'assets/forest/depth_4k.webp?v=8',
-  forestFull: HI_RES ? 'assets/forest/forest.jpg?v=8' : null, depthFull: HI_RES ? 'assets/forest/depth.webp?v=8' : null,
+  forest: 'assets/forest/forest_4k.jpg?v=9', forestDepth: 'assets/forest/depth_4k.webp?v=9',
+  forestFull: HI_RES ? 'assets/forest/forest.jpg?v=9' : null, depthFull: HI_RES ? 'assets/forest/depth.webp?v=9' : null,
   forestWater: 'assets/forest/water.webp?v=2', forestLight: 'assets/forest/light_1k.hdr',
-  forestBack: 'assets/forest/back.jpg?v=7', forestBackDepth: 'assets/forest/back_depth.webp?v=8', forestNear: 'assets/forest/near.json?v=5',
+  forestBack: 'assets/forest/back.jpg?v=7', forestBackDepth: 'assets/forest/back_depth.webp?v=9', forestNear: 'assets/forest/near.json?v=5',
   brook: 'assets/audio/forest_brook.wav', magicBed: 'assets/audio/magic_forest.wav',
   twinkles: ['assets/audio/twinkle_a.mp3', 'assets/audio/twinkle_b.mp3', 'assets/audio/twinkle_c.mp3'],
   leaAlbedo: 'assets/leather/brown_leather_albedo_1k.jpg', leaNor: 'assets/leather/brown_leather_nor_gl_1k.jpg',

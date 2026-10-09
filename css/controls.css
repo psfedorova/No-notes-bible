@@ -36,7 +36,7 @@
 }
 .pager[hidden]{ display:none; }
 .bar{ transition:opacity .5s; }
-.settling .bar, .settling .pager{ opacity:0; pointer-events:none; }
+.settling .bar, .settling .pager{ opacity:0; pointer-events:none; animation:none; }
 .pager{ transition:opacity .4s; }
 body.quill-up .pager:not(:hover):not(:focus-within){ opacity:.4; }
 .pager::after, .pager .fillet{
