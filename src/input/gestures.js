@@ -143,7 +143,7 @@ canvasEl.addEventListener('pointerdown', e=>{
   setInertia(false); angVel.x = angVel.y = 0;
   orbit.coast = false; orbit.vx = orbit.vy = 0;
   if(spinAnim){ setSpinAnim(null); spinGoal.copy(spinGrp.quaternion); }
-  const hit = e.button === 2 ? null : pickAt(e.clientX, e.clientY);
+  const hit = e.button === 2 ? null : pickAt(e.clientX, e.clientY) || (e.pointerType === 'touch' && !st.open ? pickNear(e.clientX, e.clientY) : null);
   g = { id:e.pointerId, sx:e.clientX, sy:e.clientY, px:e.clientX, py:e.clientY, t:performance.now(),
         moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1, q0: spinGoal.clone(), o0: [orbit.azTo, orbit.elTo],
         slop: THRESH[e.pointerType] || THRESH.mouse };
@@ -159,6 +159,13 @@ canvasEl.addEventListener('pointerdown', e=>{
     g.mode = 'select'; g.anchor = a; select(a, b);
   }else if(overText(hit)) g.anchor = at;
 });
+function pickNear(x, y){
+  for(const r of [10, 22]) for(let k=0;k<8;k++){
+    const h = pickAt(x + Math.cos(k*Math.PI/4)*r, y + Math.sin(k*Math.PI/4)*r);
+    if(h) return h;
+  }
+  return null;
+}
 function overText(h){
   const lay = pageEntry(h.n).lay;
   if(!lay) return false;
