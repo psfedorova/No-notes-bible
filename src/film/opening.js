@@ -129,7 +129,8 @@ function burnInit(){
     }
   });
   if(!burnNoise) setBurnNoise(fbm(256, 256, 12, 12, 3, 4242));
-  tb = { W, H, inkA, bands, glyphs, mix: lend(cv(W, H)), done: cv(W, H), tmp: cv(W, H), cvs: [cv(8, 8), cv(8, 8), cv(8, 8)], M: null };
+  const bare = titleBare.getContext('2d').getImageData(0, 0, W, H).data;
+  tb = { W, H, inkA, bare, bands, glyphs, mix: lend(cv(W, H)), done: cv(W, H), cvs: [cv(8, 8), cv(8, 8), cv(8, 8)], M: null };
   tb.done.getContext('2d').drawImage(titleBare, 0, 0);
 }
 function titleBurnPlan(pace = 1){
@@ -163,7 +164,7 @@ function titleBurn(o){
   const e = pageEntry(0), T = tb, W = T.W, H = T.H;
   const g = e.glow.getContext('2d'), gw = e.glow.width, gh = e.glow.height;
   if(o.done){
-    e.bg = titleFull; e.inkKey = null; paintPage(0);
+    e.live = false; e.bg = titleFull; e.inkKey = null; paintPage(0);
     g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(0, 0, gw, gh);
     e.glowTex.needsUpdate = true; e.mat.emissiveIntensity = 0; e.glowing = false;
     return;
@@ -221,13 +222,15 @@ function titleBurn(o){
     const cover = new ImageData(w, h), paint = new ImageData(w, h), glow = new ImageData(w, h);
     const cd = cover.data, pd = paint.data, ld = glow.data, rise = age*70;
     for(let y=0, p=0; y<h; y++){
-      const Y = Y0 + y, ny = ((Y*nk) & 255) << 8, fy = (((Y*nk*1.7 + rise) | 0) & 255) << 8;
+      const Y = Y0 + y, bo = (Y*W + X0)*4, ny = ((Y*nk) & 255) << 8, fy = (((Y*nk*1.7 + rise) | 0) & 255) << 8;
       for(let x=0; x<w; x++, p+=4){
         const a = ink[p+3]/255, sa = soft[p>>2];
         if(sa < 0.004) continue;
         const X = X0 + x;
         const F = clamp((X*NIB_DX + Y*NIB_DY - sMin)/sSpan, -0.2, 1.2)*0.74 + burnNoise[ny | ((X*nk) & 255)]*0.42 - 0.08;
         const la = age - Tb*F;
+        const bp = bo + x*4;
+        cd[p] = T.bare[bp]; cd[p+1] = T.bare[bp+1]; cd[p+2] = T.bare[bp+2];
         if(la < 0){
           cd[p+3] = Math.min(255, sa*640);
           if(la > -PRE){
@@ -258,13 +261,7 @@ function titleBurn(o){
     m.save(); m.beginPath(); m.rect(X0, Y0, w, h); m.clip();
     m.drawImage(titleFull, 0, 0);
     cc.getContext('2d').putImageData(cover, 0, 0);
-    const t2 = T.tmp.getContext('2d');
-    t2.globalCompositeOperation = 'source-over'; t2.clearRect(X0, Y0, w, h);
-    t2.drawImage(titleBare, X0, Y0, w, h, X0, Y0, w, h);
-    t2.globalCompositeOperation = 'destination-in';
-    t2.drawImage(cc, 0, 0, w, h, X0, Y0, w, h);
-    t2.globalCompositeOperation = 'source-over';
-    m.drawImage(T.tmp, X0, Y0, w, h, X0, Y0, w, h);
+    m.drawImage(cc, 0, 0, w, h, X0, Y0, w, h);
     pc.getContext('2d').putImageData(paint, 0, 0);
     m.drawImage(pc, 0, 0, w, h, X0, Y0, w, h);
     m.restore();
@@ -272,7 +269,7 @@ function titleBurn(o){
     ga.drawImage(lc, 0, 0, w, h, X0*gw/W, Y0*gh/H, w*gw/W, h*gh/H);
   }
   }
-  e.bg = T.mix; e.inkKey = null; paintPage(0);
+  e.live = true; e.bg = T.mix; e.inkKey = null; paintPage(0);
   g0.globalCompositeOperation = 'source-over'; g0.globalAlpha = 1;
   g0.drawImage(T.acc, 0, 0);
   e.glowTex.needsUpdate = true; e.mat.emissiveIntensity = 1.4; e.glowing = true;

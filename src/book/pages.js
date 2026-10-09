@@ -87,7 +87,7 @@ function paintPage(n, now){
     e.mat.emissiveIntensity = lit ? 1.4 : 0;
   }
   e.glowing = lit;
-  if(!editing && !burning.has(n)){ freeCanvas(e.inked); e.inked = null; e.inkKey = null; }
+  if(!editing && !burning.has(n) && !e.live){ freeCanvas(e.inked); e.inked = null; e.inkKey = null; }
 }
 
 export {
