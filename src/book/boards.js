@@ -3,7 +3,7 @@ import { lerp } from '../lib/textures.js';
 import { CH, CVR, CW } from '../core/config.js';
 import { bookRoot } from '../scene/rig.js';
 import { matCoverBack, matCoverFront, matLeatherEdge } from './materials.js';
-import { EP_H, EP_X0, EP_X1, HINGE_U, matEndpaper } from './paper.js';
+import { EP_H, EP_X0, EP_X1, HINGE_U, matPastedown } from './paper.js';
 import { backGrp, sapphire } from './sapphire.js';
 
 function roundedRectShape(w, h, rSpine, rFore){
@@ -30,7 +30,7 @@ function endpaper(flipV){
   g.translate((EP_X0 + EP_X1)/2, 0, 0);
   const uv = g.attributes.uv;
   for(let i=0;i<uv.count;i++) uv.setXY(i, lerp(HINGE_U, 1, uv.getX(i)), flipV ? 1 - uv.getY(i) : uv.getY(i));
-  const m = new THREE.Mesh(g, matEndpaper);
+  const m = new THREE.Mesh(g, matPastedown);
   m.receiveShadow = true;
   return m;
 }

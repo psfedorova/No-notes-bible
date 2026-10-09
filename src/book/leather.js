@@ -1,7 +1,7 @@
 import { clamp, lerp, smooth, fbm, upsample, cv, tex, crackCanvas, fieldFromCanvas } from '../lib/textures.js';
 import { CH, CW } from '../core/config.js';
 import { matCoverBack, matCoverFront, matLeatherEdge } from './materials.js';
-import { EP_H, EP_HINGE, EP_X0, EP_X1, HINGE_U, matEndpaper } from './paper.js';
+import { EP_H, EP_HINGE, EP_X0, EP_X1, HINGE_U, matEndpaper, matPastedown } from './paper.js';
 import { spiralPath } from './print.js';
 import { paintSpine } from './spine.js';
 import { shed } from '../assets/loaders.js';
@@ -197,6 +197,9 @@ function buildDoublure(img){
   matEndpaper.color.set(0xffffff); matEndpaper.roughness = 1; matEndpaper.metalness = 1;
   matEndpaper.envMapIntensity = 1.0;
   matEndpaper.needsUpdate = true;
+  matPastedown.copy(matEndpaper);
+  matPastedown.polygonOffset = false;
+  matPastedown.needsUpdate = true;
 }
 function applyLeather(img){
   const dyed = dyeLeather(img.leaAlbedo, 1024);

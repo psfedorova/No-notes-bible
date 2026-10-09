@@ -66,7 +66,8 @@ const EP_X0 = 0.14, EP_X1 = CW - 0.07, EP_H = CH - 0.14, EP_HINGE = 0.45, JOINT_
 const HINGE_U = EP_HINGE/(EP_X1 - EP_X0 + EP_HINGE);
 const matEndpaper = new THREE.MeshStandardMaterial({ color: 0x2a1d14, roughness: 0.7, metalness: 0, side: THREE.DoubleSide,
   polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+const matPastedown = new THREE.MeshStandardMaterial({ color: 0x2a1d14, roughness: 0.7, metalness: 0, side: THREE.DoubleSide });
 
 export {
-  edgeTone, EP_H, EP_HINGE, EP_X0, EP_X1, HINGE_U, JOINT_H, matEndpaper, parch
+  edgeTone, EP_H, EP_HINGE, EP_X0, EP_X1, HINGE_U, JOINT_H, matEndpaper, matPastedown, parch
 };

@@ -2,7 +2,8 @@ import * as THREE from 'three';
 
 const boardArt = side => new THREE.MeshPhysicalMaterial({
   color: 0x18233f, metalness: 0, roughness: 0.62, clearcoat: 0.1, clearcoatRoughness: 0.6,
-  normalScale: new THREE.Vector2(1.0, 1.0), name: 'board-' + side
+  normalScale: new THREE.Vector2(1.0, 1.0), name: 'board-' + side,
+  polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2
 });
 const matCoverFront = boardArt('front');
 const matCoverBack  = boardArt('back');
