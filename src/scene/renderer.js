@@ -4,14 +4,15 @@ import { HI_RES, VH, VW } from '../core/config.js';
 
 const canvasEl = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: false, alpha: false, powerPreference: 'high-performance' });
-const DPR_MAX = Math.min(devicePixelRatio, HI_RES ? 2 : 1.5);
+const dprCap = ()=> Math.min(devicePixelRatio || 1, HI_RES ? 2 : 1.5);
+const DPR_MAX = dprCap();
 const PR_FLOOR = Math.min(DPR_MAX, 1);
 const PR_LEVELS = [];
 for(let p = DPR_MAX; p > PR_FLOOR + 0.02; p *= 0.875) PR_LEVELS.push(+p.toFixed(3));
 PR_LEVELS.push(PR_FLOOR);
 const PR_PIN = +new URLSearchParams(location.search).get('pr') || 0;
 const PX_MAX = 6.2e6;
-const deskRatio = ()=> Math.min(DPR_MAX, Math.max(1.25, Math.sqrt(PX_MAX/(VW*VH))));
+const deskRatio = ()=> Math.min(dprCap(), Math.max(1.25, Math.sqrt(PX_MAX/(VW*VH))));
 let DPR = PR_PIN || (HI_RES ? deskRatio() : DPR_MAX);
 function setDPR(v){ DPR = v; }
 renderer.setPixelRatio(DPR);
@@ -22,8 +23,13 @@ renderer.toneMappingExposure = 1.04;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
-/* iOS Safari drops the WebGL context of a background tab; shed textures cannot be uploaded again */
-canvasEl.addEventListener('webglcontextrestored', ()=>{ if(!HI_RES) location.reload(); });
+/* a window moved to a sharper screen, or zoomed, changes the ratio without always resizing */
+if(HI_RES && !PR_PIN){
+  const watch = ()=> matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', ()=>{ watch(); dispatchEvent(new Event('resize')); }, { once: true });
+  watch();
+}
+/* a restored context comes back empty: shed textures, the forest light, the held-stone mask and the shadow maps cannot be drawn again; the pages are saved on pagehide */
+canvasEl.addEventListener('webglcontextrestored', ()=> location.reload());
 const SUN_TAPS = HI_RES ? 20 : 12;
 THREE.ShaderChunk.shadowmap_pars_fragment = THREE.ShaderChunk.shadowmap_pars_fragment
   .replace('float getShadow(', `float sunShadow( sampler2D map, vec2 mapSize, float spread, vec4 c ){

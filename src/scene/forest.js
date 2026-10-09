@@ -27,7 +27,7 @@ function inWorker(url, smooth){
   if(!depthWorker){
     depthWorker = new Worker(import.meta.resolve('../assets/depth-worker.js'), { type: 'module' });
     depthWorker.onmessage = e=>{ const w = depthWaits.get(e.data.id); depthWaits.delete(e.data.id); if(w) e.data.error ? w.rej(new Error(e.data.error)) : w.res(e.data); };
-    depthWorker.onerror = e=>{ depthWaits.forEach(w=>w.rej(new Error('depth worker: ' + (e.message || 'failed')))); depthWaits.clear(); };
+    depthWorker.onerror = e=>{ depthWorker.terminate(); depthWorker = false; depthWaits.forEach(w=>w.rej(new Error('depth worker: ' + (e.message || 'failed')))); depthWaits.clear(); };
   }
   const id = ++depthJobs;
   return new Promise((res, rej)=>{
@@ -46,7 +46,7 @@ function softTexture(out, W, H){
   return shed(t);
 }
 async function decodeDepth(url, smooth){
-  if(typeof OffscreenCanvas !== 'undefined' && typeof Worker !== 'undefined'){
+  if(depthWorker !== false && typeof OffscreenCanvas !== 'undefined' && typeof Worker !== 'undefined'){
     try{
       const r = await inWorker(url, smooth);
       const t = depthTexture(r.data, r.w, r.h, smooth);

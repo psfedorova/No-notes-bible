@@ -7,7 +7,7 @@ import { camera } from '../scene/renderer.js';
 import { spinGrp } from '../scene/rig.js';
 import { borderArt, drawTitle, gilt, pageBackground, runeStroke, setTitleHidden } from '../book/print.js';
 import { BURN_T, burnNoise, CHAR, COOL_T, EMBER, NIB_DX, NIB_DY, ramp, setBurnNoise, SINGE, softMask } from '../ink/paint.js';
-import { lend, pageEntry, paintPage } from '../book/pages.js';
+import { lend, pageCache, pageEntry, paintPage } from '../book/pages.js';
 import { pagePointWorld } from '../book/leaves.js';
 import { invalidateLayout, layout, st } from '../book/state.js';
 import { camTarget, fitDistance, homeQuat, orbit, sideOf, spinGoal } from '../book/view.js';
@@ -330,8 +330,22 @@ function goHome(){
   st.focusSide = sideOf(homePage());
   seekSpread(homeSpread());
 }
+function homeLater(ms, go){
+  const k = st.k, open = st.open, cover = coverAnim;
+  setTimeout(()=>{ if(st.k === k && st.open === open && (!coverAnim || coverAnim === cover) && !st.flight && !st.riffle) go(); }, ms);
+}
+function freeTitle(){
+  const e = pageCache.get(0), T = tb || {}, ours = !!e && !!e.bg && [titleFull, titleBare, titleMix, T.mix].includes(e.bg);
+  if(ours){ e.bg = null; e.inkKey = null; e.live = false; }
+  for(const c of [titleFull, titleBare, titleMix, titleMask, soak && soak.c, T.mix, T.done, T.acc, T.sigLine, T.sigSoft, ...(T.cvs || []), shineLayer, ...shineMasks.values()])
+    if(c) c.width = c.height = 0;
+  titleFull = titleBare = titleMix = titleMask = soak = tb = shineLayer = null;
+  shineMasks.clear();
+  return ours;
+}
 function takeOver(mode, poses){
   const pose = poses && poses[intro.kind];
+  if(freeTitle()) paintPage(0);
   if(mode === 'open'){ st.open = true; st.k = 0; }
   else { st.open = false; st.k = homeSpread(); }
   invalidateLayout();
@@ -350,10 +364,10 @@ function takeOver(mode, poses){
   else settle();
   refreshUI();
   frame();
-  setTimeout(()=>{
+  homeLater(mode === 'open' ? 1300 : 1500, ()=>{
     if(mode === 'open'){ if(homeSpread() !== st.k) goHome(); }
     else if(!st.open && !coverAnim) seekSpread(homeSpread(), { flourish: false });
-  }, mode === 'open' ? 1300 : 1500);
+  });
 }
 
 function playLive(L){
@@ -367,8 +381,10 @@ function playLive(L){
     }else settle();
     refreshUI();
     if(intro.end) intro.end();
-    setTimeout(()=>{ if(homeSpread() !== st.k) goHome(); }, how === 'skip' ? 1800 : 900);
+    freeTitle();
+    homeLater(how === 'skip' ? 1800 : 900, ()=>{ if(homeSpread() !== st.k) goHome(); });
   };
+  if(L.start) L.start();
   if(intro.started) intro.started(L);
   refreshUI();
 }

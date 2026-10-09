@@ -12,6 +12,9 @@ const OPEN_AT = 4.6;
 const LAND = 7.8;
 const TALL = F.camera.aspect < 0.9;
 const END = TALL ? 12.0 : 11.0;
+const ends = await fetch('assets/intro/poses.json' + (LIVE ? '?v=2' : '?v=' + Date.now())).then(r => { if(!r.ok) throw new Error('poses.json ' + r.status); return r.json(); });
+const endPose = ends[TALL ? 'tall' : 'wide'].end;
+if(!endPose.pos || !endPose.quat) throw new Error('poses.json has no end pose');
 
 const lerp = (a, b, t) => a + (b - a)*t;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -385,6 +388,7 @@ const sparks = (()=>{
   scene.add(pts);
   const _p = new THREE.Vector3();
   return {
+    pts,
     add(from, to, t0, d){ list.push({ from, to, t0, d, i: list.length % MAX, side: rnd() - 0.5 }); return true; },
     step(t){
       alpha.fill(0);
@@ -633,8 +637,7 @@ const pose = () => ({
 F.titleReveal(0);
 F.titleBurnPlan(0.7);
 for(let i=0;i<240;i++) F.update(1/FPS);
-const ends =await fetch('assets/intro/poses.json' + (LIVE ? '?v=2' : '?v=' + Date.now())).then(r => r.json());
-buildRig(ends[TALL ? 'tall' : 'wide'].end);
+buildRig(endPose);
 at(0, 0);
 for(let i=0;i<240;i++) F.update(1/FPS);
 F.frame(1/FPS);
@@ -646,11 +649,12 @@ window.__film = {
   pose
 };
 
-let liveT = 0, liveEnd = null;
+let liveT = 0, liveEnd = null, liveAt = null;
 function putAway(){
   rig.keys = null;
   if(sigM && !burnt){ burnt = true; F.titleBurn({ M: sigM, t: liveT, start: 0, sig: 0, done: true }); }
-  circle.visible = false; motes.visible = false; lights.visible = false;
+  for(const o of [circle, motes, lights, sparks.pts]){ scene.remove(o); o.geometry.dispose(); o.material.dispose(); }
+  for(const k of ['uLines', 'uGlow']){ const t = circleMat.uniforms[k].value; t.dispose(); t.image.width = t.image.height = 0; }
   fly.position.set(0, -200, 0); flyLight.intensity = 0;
   flowU.uFlowK.value = 0;
   window.__filmCam = null;
@@ -658,10 +662,15 @@ function putAway(){
 const live = {
   get t(){ return liveT; },
   end: END,
-  tick(dt){
+  start(){ if(liveAt === null) liveAt = performance.now(); },
+  /* the story keeps to the wall clock, as its music does; a long stall still lands the circle before the burn reads its pose */
+  tick(){
     if(liveEnd) return;
-    liveT = Math.min(END, liveT + dt);
-    at(liveT, dt);
+    live.start();
+    const to = Math.min(END, (performance.now() - liveAt)/1000);
+    if(liveT < LAND && to > LAND){ at(LAND, LAND - liveT); liveT = LAND; }
+    at(to, to - liveT);
+    liveT = to;
     if(liveT >= END){ putAway(); liveEnd = 'end'; live.done && live.done('end'); }
   },
   skip(){

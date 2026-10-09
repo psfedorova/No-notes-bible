@@ -83,8 +83,6 @@ try{
   }
   fs.writeFileSync(posesFile, JSON.stringify(poses, null, 1) + '\n');
 }finally{
-  const gone = new Promise(r => chrome.once('exit', r));
-  chrome.kill();
-  await gone;
+  if(chrome.exitCode === null && chrome.signalCode === null){ const gone = new Promise(r => chrome.once('exit', r)); chrome.kill(); await gone; }
   try{ fs.rmSync(prof, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); }catch(_){}
 }

@@ -13,6 +13,11 @@ fs.mkdirSync(outDir, { recursive: true });
 const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'stills-chrome-'));
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${prof}`,
   '--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--hide-scrollbars', '--mute-audio', 'about:blank'], { stdio: 'ignore' });
+const stop = async ()=>{
+  if(chrome.exitCode === null && chrome.signalCode === null){ const gone = new Promise(r => chrome.once('exit', r)); chrome.kill(); await gone; }
+  try{ fs.rmSync(prof, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); }catch(_){}
+};
+for(const sig of ['SIGINT', 'SIGTERM']) process.once(sig, ()=> stop().then(()=> process.exit(130)));
 for(let i = 0; i < 50; i++){ try{ await fetch(`http://localhost:${PORT}/json/version`); break; }catch(_){ await sleep(200); } }
 try{
   const t = await (await fetch(`http://localhost:${PORT}/json/new?about:blank`, { method: 'PUT' })).json();
@@ -46,18 +51,18 @@ try{
     for(let i = 1; i < tr.length; i += 6) secs.push((i/fps).toFixed(1) + ':' + (Math.hypot(...[0,1,2].map(k => tr[i][k] - tr[i-1][k]))*fps).toFixed(1) + '/' + (Math.hypot(...[3,4,5].map(k => tr[i][k] - tr[i-1][k]))*fps).toFixed(2));
     console.log('peak speed', vmax.toFixed(2), 'at', at.toFixed(2), 'peak turn', wmax.toFixed(2), 'at', wat.toFixed(2));
     console.log(secs.join('  '));
-    ws.close(); process.exit(0);
-  }
-  const total = await ev('__film.frames');
-  const want = new Set(list === 'all' ? [...Array(total).keys()] : list.split(',').map(s => Math.round(parseFloat(s)*fps)));
-  const last = Math.max(...want);
-  for(let i = 0; i <= last; i++){
-    if(want.has(i)){
-      await ev(`__film.shot(${i})`);
-      const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
-      if(process.env.PROBE) console.log((i/fps).toFixed(2), JSON.stringify(await ev(process.env.PROBE)));
-      fs.writeFileSync(path.join(outDir, list === 'all' ? `f${String(i).padStart(4, '0')}.jpg` : `${cut}_${(i/fps).toFixed(2)}.jpg`), Buffer.from(r.data, 'base64'));
-    }else await ev(`__film.run(${i})`);
+  }else{
+    const total = await ev('__film.frames');
+    const want = new Set(list === 'all' ? [...Array(total).keys()] : list.split(',').map(s => Math.round(parseFloat(s)*fps)));
+    const last = Math.max(...want);
+    for(let i = 0; i <= last; i++){
+      if(want.has(i)){
+        await ev(`__film.shot(${i})`);
+        const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
+        if(process.env.PROBE) console.log((i/fps).toFixed(2), JSON.stringify(await ev(process.env.PROBE)));
+        fs.writeFileSync(path.join(outDir, list === 'all' ? `f${String(i).padStart(4, '0')}.jpg` : `${cut}_${(i/fps).toFixed(2)}.jpg`), Buffer.from(r.data, 'base64'));
+      }else await ev(`__film.run(${i})`);
+    }
   }
   ws.close();
-}finally{ chrome.kill(); }
+}finally{ await stop(); }
