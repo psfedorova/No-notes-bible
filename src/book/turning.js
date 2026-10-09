@@ -111,7 +111,8 @@ function landFlight(to){
   sfx.settle();
   saveSoon(true);
   refreshUI();
-  if(queue.length){ flip(queue.shift()); return; }
+  while(queue.length && !st.flight) flip(queue.shift());
+  if(st.flight) return;
   if(resumeWriting){ resumeWriting = false; if(st.k > 0) writePose(); }
 }
 let resumeWriting = false;
@@ -120,6 +121,7 @@ function flip(dir, magic){
   if(!st.open || st.theta < OPEN - 1e-3 || coverAnim){ return; }
   if(st.riffle) return;
   if(!magic && seek.goal !== null){ seek.goal = null; seek.resume = null; st.auraTo = 0; pageNoEl.classList.remove('seeking'); }
+  if(!st.flight && !(dir > 0 ? st.k < N : dir < 0 && st.k > 0)) return;
   if(writing && !(magic && seek.keepQuill)){ resumeWriting = !magic; exitWriting(true); }
   if(st.flight){ if(queue.length < 8) queue.push(dir); return; }
   if(dir > 0 && st.k < N){

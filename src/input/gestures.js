@@ -160,18 +160,17 @@ canvasEl.addEventListener('pointerdown', e=>{
   try{ canvasEl.setPointerCapture(e.pointerId); }catch(_){}
   pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
   if(pointers.size === 2){
-    if(g && g.mode === 'turn') endTurn(true);
-    if(g && g.mode === 'cover') endCover(true);
-    const [a,b] = [...pointers.values()];
+    drop();
+    const [[ia, a], [ib, b]] = pointers;
     const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
     pan.coast = false; orbit.coast = false; orbit.vx = orbit.vy = 0;
-    pinch = { d: Math.max(20, Math.hypot(a.x-b.x, a.y-b.y)), z: st.zoom, m: st.mag, mx, my, sx: mx, sy: my, ang: Math.atan2(b.y-a.y, b.x-a.x), tw: 0, twist: false,
+    pinch = { ia, ib, d: Math.max(20, Math.hypot(a.x-b.x, a.y-b.y)), z: st.zoom, m: st.mag, mx, my, sx: mx, sy: my, ang: Math.atan2(b.y-a.y, b.x-a.x), tw: 0, twist: false,
               G: null, read: onePage() && st.open && st.focusTo > 0.5 };
     pinch.G = grip(mx, my, pinch.read ? st.mag : st.zoom);
-    g = null;
     return;
   }
   if(pointers.size > 2) return;
+  drop();
   setInertia(false); angVel.x = angVel.y = 0;
   orbit.coast = false; orbit.vx = orbit.vy = 0;
   pan.coast = false; pan.vx = pan.vz = 0;
@@ -193,6 +192,21 @@ canvasEl.addEventListener('pointerdown', e=>{
     g.mode = 'select'; g.anchor = a; select(a, b);
   }else if(overText(hit)) g.anchor = at;
 });
+function drop(){
+  const gg = g;
+  if(!gg) return;
+  g = null; rotating = false;
+  document.body.classList.remove('grabbing');
+  if(gg.mode === 'turn') endTurn(true);
+  else if(gg.mode === 'cover') endCover(true);
+}
+function rebase(){
+  const [[ia, a], [ib, b]] = pointers;
+  const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+  pinch.sx += mx - pinch.mx; pinch.sy += my - pinch.my;
+  Object.assign(pinch, { ia, ib, d: Math.max(20, Math.hypot(a.x-b.x, a.y-b.y)), z: st.zoom, m: st.mag, mx, my, ang: Math.atan2(b.y-a.y, b.x-a.x) });
+  pinch.G = pinch.G && grip(mx, my, pinch.read ? st.mag : st.zoom);
+}
 function pickNear(x, y){
   for(const r of [10, 22]) for(let k=0;k<8;k++){
     const h = pickAt(x + Math.cos(k*Math.PI/4)*r, y + Math.sin(k*Math.PI/4)*r);
@@ -205,7 +219,7 @@ function overText(h){
   if(!lay) return false;
   const x = h.uv.x*PAGE_W, y = (1-h.uv.y)*PAGE_H, pad = lay.size*0.6;
   return lay.lines.some(ln => ln.end > ln.start && y > ln.y - lay.size*1.05 && y < ln.y + lay.size*0.4
-    && x > ln.xs[0] - pad && x < ln.xs[ln.xs.length - 1] + pad);
+    && x > Math.min(ln.xs[0], ln.xs[ln.xs.length - 1]) - pad && x < Math.max(ln.xs[0], ln.xs[ln.xs.length - 1]) + pad);
 }
 const downs = { t: 0, x: 0, y: 0, n: 0 };
 function textAt(h){
@@ -234,8 +248,9 @@ function paragraphAround(t, i){
 canvasEl.addEventListener('pointermove', e=>{
   const pp = pointers.get(e.pointerId);
   if(pp){ pp.x = e.clientX; pp.y = e.clientY; }
-  if(pinch && pointers.size === 2){
-    const [a,b] = [...pointers.values()];
+  if(pinch && pointers.size >= 2){
+    if(e.pointerId !== pinch.ia && e.pointerId !== pinch.ib) return;
+    const a = pointers.get(pinch.ia), b = pointers.get(pinch.ib);
     const d = Math.max(20, Math.hypot(a.x-b.x, a.y-b.y)), mx = (a.x+b.x)/2, my = (a.y+b.y)/2, k = 0.0052;
     const ang = Math.atan2(b.y-a.y, b.x-a.x), da = Math.atan2(Math.sin(ang - pinch.ang), Math.cos(ang - pinch.ang));
     pinch.ang = ang; pinch.tw += da;
@@ -301,7 +316,7 @@ canvasEl.addEventListener('pointermove', e=>{
       g.mode = 'scroll'; g.scroll0 = pageScroll;
       return;
     }
-    if(!g.force && h && h.type === 'page') startTurn(h);
+    if(!g.force && h && h.type === 'page' && st.open && st.theta > OPEN - 1e-3 && !st.flight && !st.riffle && !coverAnim) startTurn(h);
     else if(!g.force && h && h.type === 'front' && st.open && h.inner && st.k === 0 && h.outer && !st.flight && !st.riffle) startCover(h);
     else if(g.force || st.open){ g.mode = 'orbit'; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
     else { g.mode = 'rot'; rotating = true; lookAway(); dx = e.clientX - g.sx; dy = e.clientY - g.sy; }
@@ -347,16 +362,16 @@ canvasEl.addEventListener('pointermove', e=>{
   }
 });
 let rotating = false;
-let homeTimer = 0;
+let homeTimer = 0, homeDue = false;
 const UP = new THREE.Vector3(0, 1, 0);
 function restWhereTurned(){
   const n = new THREE.Vector3(0, 0, 1).applyQuaternion(spinGoal);
   return new THREE.Quaternion().setFromUnitVectors(n, UP).multiply(spinGoal).normalize();
 }
 function returnHome(wait = 700){
-  clearTimeout(homeTimer);
+  clearTimeout(homeTimer); homeDue = false;
   homeTimer = setTimeout(function check(){
-    if(g || pinch) return;
+    if(g || pinch){ homeDue = true; return; }
     if(orbit.coast || inertia){ homeTimer = setTimeout(check, 150); return; }
     if(!st.open && !spinAnim && !atHome()) setClosedHome(restWhereTurned());
     if(!atHome() && !spinAnim) glideSpin(homeQuat(), st.open ? 1.4 : 2.2, st.lift < 0.05);
@@ -371,6 +386,7 @@ function liftGate(){ return smooth(clamp(st.lift*1.6, 0, 1)); }
 function endPointer(e, cancelled){
   const gg = g && g.id === e.pointerId ? g : null;
   releasePointer(e, cancelled);
+  if(homeDue && !g && !pinch) returnHome();
   if(gg && gg.cut && !g && !spinAnim && !inertia && !atHome() && spinGoal.angleTo(gg.q0) < 1e-3)
     glideSpin(homeQuat(), Math.max(0.8, gg.cut.left), gg.cut.settle);
 }
@@ -387,7 +403,7 @@ function releasePointer(e, cancelled){
         if(h && h.type === 'page' && !st.flight && !st.riffle) st.focusSide = h.side === 'right' ? 1 : -1;
         resetPan(); st.zoom = 1; st.focusTo = 1; refreshUI();
       }
-    }
+    }else if(e.pointerId === pinch.ia || e.pointerId === pinch.ib) rebase();
     return;
   }
   if(!g || g.id !== e.pointerId) return;
@@ -424,13 +440,14 @@ function releasePointer(e, cancelled){
 }
 canvasEl.addEventListener('pointerup', e=>endPointer(e, false));
 canvasEl.addEventListener('pointercancel', e=>endPointer(e, true));
+canvasEl.addEventListener('lostpointercapture', e=>{ if(pointers.has(e.pointerId)) endPointer(e, true); });
 let padUntil = 0;
 canvasEl.addEventListener('wheel', e=>{
   e.preventDefault();
-  if(e.ctrlKey){ st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.01), 0.3, 3.2); return; }
+  if(e.ctrlKey){ st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.01), ZMIN, 3.2); return; }
   const now = performance.now();
   if(e.deltaMode === 0 && (e.deltaX !== 0 || !Number.isInteger(e.deltaY))) padUntil = now + 400;
-  if(now >= padUntil){ st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.0012), 0.3, 3.2); return; }
+  if(now >= padUntil){ st.zoom = clamp(st.zoom * Math.exp(e.deltaY*0.0012), ZMIN, 3.2); return; }
   if(g && g.mode !== 'pending') return;
   const k = 0.0045;
   orbit.coast = false; orbit.vx = orbit.vy = 0;
@@ -439,11 +456,13 @@ canvasEl.addEventListener('wheel', e=>{
   orbit.elTo -= e.deltaY*k;
   returnHome();
 }, { passive:false });
-/* Safari reports a trackpad pinch as gesture events, not ctrl+wheel */
-let gestureZoom = 1;
-addEventListener('gesturestart', e=>{ e.preventDefault(); gestureZoom = st.zoom; });
-addEventListener('gesturechange', e=>{ e.preventDefault(); st.zoom = clamp(gestureZoom / Math.max(0.05, e.scale), 0.3, 3.2); });
-addEventListener('gestureend', e=>e.preventDefault());
+/* Safari reports a trackpad pinch as gesture events, not ctrl+wheel; on iOS a touch pinch sends them too, and the pointer pinch owns that */
+let gestureZoom = null, touches = 0;
+['touchstart', 'touchend', 'touchcancel'].forEach(t=>addEventListener(t, e=>{ touches = e.touches.length; }, { passive:true, capture:true }));
+const touchPinch = () => pinch || touches > 0;
+addEventListener('gesturestart', e=>{ e.preventDefault(); gestureZoom = touchPinch() ? null : st.zoom; });
+addEventListener('gesturechange', e=>{ e.preventDefault(); if(gestureZoom !== null && !touchPinch()) st.zoom = clamp(gestureZoom / Math.max(0.05, e.scale), ZMIN, 3.2); });
+addEventListener('gestureend', e=>{ e.preventDefault(); gestureZoom = null; });
 
 function startTurn(h){
   if(writing){ setResumeWriting(true); exitWriting(true); }

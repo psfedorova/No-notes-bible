@@ -188,9 +188,12 @@ function update(dt){
     _bc.set(fz*c.x, floatGrp.position.y, fz*c.z);
   }else if(one && st.open){
     pageD = fitWide;
-    if(!st.flight && !st.riffle && st.theta > OPEN - 1e-3) for(const sd of [-1, 1]){
-      const n = sd > 0 ? 2*st.k : 2*st.k - 1;
-      if(n >= 0 && n < 2*N){ const c = pagePointWorld(n, PAGE_W/2, PAGE_H/2).p; pageMid[sd] = { x: c.x, z: c.z }; }
+    if(!st.flight && !st.riffle && st.theta > OPEN - 1e-3){
+      if(st.k === 0) st.focusSide = 1; else if(st.k === N) st.focusSide = -1;
+      for(const sd of [-1, 1]){
+        const n = sd > 0 ? 2*st.k : 2*st.k - 1;
+        if(n >= 0 && n < 2*N){ const c = pagePointWorld(n, PAGE_W/2, PAGE_H/2).p; pageMid[sd] = { x: c.x, z: c.z }; }
+      }
     }
     const c = pageMid[st.focusSide] || { x: st.focusSide*(XJ_O + PW*0.5), z: 0.12 };
     _bc.set(fz*c.x, floatGrp.position.y, fz*c.z);
