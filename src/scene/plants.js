@@ -31,7 +31,7 @@ const GUST_GLSL = `uniform vec2 uGust;
 const GRASS_R1 = HI_RES ? 32 : 24, GRASS_R2 = HI_RES ? 58 : 42;
 const STONE_HAZE = [10, 0.012, 0.7];
 const FAR_R = 30;
-const FLOWERS = ['periwinkle_plant'], GONE = ['celandine_01'];
+const GONE = ['celandine_01', 'periwinkle_plant'];
 const GRASS_LOD = [16, 30];
 function footAround(a){
   const fa = (a/(2*Math.PI) + 1)*ROCK_FOOT_N, f0 = Math.floor(fa) % ROCK_FOOT_N, f1 = (f0 + 1) % ROCK_FOOT_N;
@@ -79,18 +79,18 @@ function footPlants(G, list){
   const pick = a => list.filter(it => it.a === a);
   const clumps = [rnd()*2*Math.PI];
   clumps.push(clumps[0] + Math.PI*(0.55 + 0.5*rnd()));
-  const kinds = [['fern_02', 3, 0.5, 1.6, 4.5, 7, 0], ['periwinkle_plant', 3, 0.6, 1.4, 5, 6.5, 0.95]];
+  const kinds = [['fern_02', 3, 0.5, 1.6, 4.5, 7]];
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-  kinds.forEach(([a, count, r0, r1, s0, s1, aside], ki)=>{
+  kinds.forEach(([a, count, r0, r1, s0, s1], ki)=>{
     const src = pick(a);
     if(!src.length) return;
     for(let c=0;c<count;c++){
-      const ang = clumps[(c + ki) % 2] + ((c >> 1) % 2 ? -aside : aside) + (rnd() - 0.5)*(aside ? 0.3 : 0.8), f = footAround(ang);
+      const ang = clumps[(c + ki) % 2] + (rnd() - 0.5)*0.8, f = footAround(ang);
       if(!(f > 0)) continue;
       const r = f + lerp(r0, r1, rnd()), x = r*Math.cos(ang), z = r*Math.sin(ang);
       const s = lerp(s0, s1, rnd());
       m.compose(p.set(x, hAt(x, z) - 0.1, z), q.setFromAxisAngle(up, rnd()*6.283), sc.set(s, s, s));
-      out.push({ a, v: src[Math.floor(rnd()*src.length)].v, m: m.toArray(), s: 0.25 + 0.2*rnd(), foot: true });
+      out.push({ a, v: src[Math.floor(rnd()*src.length)].v, m: m.toArray(), s: 0.25 + 0.2*rnd() });
     }
   });
   return out;
@@ -99,7 +99,7 @@ async function nearField(skirtMat){
   let data;
   try{ data = await retry(async ()=>{ const r = await fetch(ASSETS.forestNear); if(!r.ok) throw new Error(r.status); return r.json(); }); }catch(e){ return; }
   const list = (data.ground ? data.items.concat(footPlants(data.ground, data.items)) : data.items)
-    .filter(it => !GONE.includes(it.a) && (!FLOWERS.includes(it.a) || it.foot));
+    .filter(it => !GONE.includes(it.a));
   let floorGeo = null;
   if(data.ground){
     const G = data.ground, geo = floorGeo = new THREE.PlaneGeometry(G.size, G.size, G.n - 1, G.n - 1);
@@ -120,12 +120,12 @@ async function nearField(skirtMat){
   }
   const byAsset = new Map();
   list.forEach(it=>{ if(!byAsset.has(it.a)) byAsset.set(it.a, []); byAsset.get(it.a).push(it); });
-  const SWAY = { fern_02: 1.0, periwinkle_plant: 0.6 };
-  const SHADE = { fern_02: 0.4, periwinkle_plant: 0.32 };
+  const SWAY = { fern_02: 1.0 };
+  const SHADE = { fern_02: 0.4 };
   const grp = new THREE.Group();
   grp.name = 'near';
   const _m = new THREE.Matrix4(), _c = new THREE.Color(), _v = new THREE.Vector3();
-  const stones = [], tufts = [], bare = [];
+  const stones = [], tufts = [];
   const hAt = data.ground ? groundHeight(data.ground) : null;
   const buried = (geo, m)=>{
     if(!hAt) return false;
@@ -212,7 +212,6 @@ async function nearField(skirtMat){
             const b = src.geometry.boundingBox;
             const reach = Math.max(-b.min.x, b.max.x, -b.min.z, b.max.z)*_m.getMaxScaleOnAxis();
             tufts.push([_m.elements[12], _m.elements[14], reach, SHADE[a] ?? 0.35]);
-            if(FLOWERS.includes(a)) bare.push([_m.elements[12], _m.elements[14], Math.max(0.7, reach*0.9)]);
           }
         });
         im.instanceMatrix.needsUpdate = true;
@@ -224,14 +223,14 @@ async function nearField(skirtMat){
       });
     });
   }));
-  if(data.ground) grp.add(grassField(data.ground, stones, tufts, bare));
+  if(data.ground) grp.add(grassField(data.ground, stones, tufts));
   if(data.ground) backdrop.setHeld(stones, floorGeo);
   if(data.ground && skirtMat) grp.add(mossSkirt(data.ground, skirtMat));
   grp.rotation.y = FOREST_YAW;
   scene.add(grp);
 }
 
-function grassField(G, stones, tufts, bare){
+function grassField(G, stones, tufts){
   const N = HI_RES ? 220000 : 90000, SEG = HI_RES ? 4 : 2, WIDE = HI_RES ? 1 : 1.3;
   const R1 = GRASS_R1, R2 = GRASS_R2;
   const half = G.size/2, step = G.size/(G.n - 1);
@@ -258,11 +257,6 @@ function grassField(G, stones, tufts, bare){
       if(c >= 0) rocky[c] = 1;
     }
   });
-  const open = new Uint8Array(SPAN*SPAN);
-  bare.forEach(([x, z, r])=>{
-    for(let dz=-r;dz<=r;dz+=CELL*0.5) for(let dx=-r;dx<=r;dx+=CELL*0.5){ const c = dx*dx + dz*dz <= r*r ? cellOf(x + dx, z + dz) : -1; if(c >= 0) open[c] = 1; }
-  });
-  const cleared = (x, z)=>{ const c = cellOf(x, z); return c >= 0 && open[c] === 1; };
   const underStone = (x, z)=>{
     for(let dz=-CELL;dz<=CELL;dz+=CELL) for(let dx=-CELL;dx<=CELL;dx+=CELL){ const c = cellOf(x + dx, z + dz); if(c >= 0 && rocky[c]) return true; }
     return false;
@@ -306,7 +300,7 @@ function grassField(G, stones, tufts, bare){
     const k = 6 + Math.floor((4 + 3*lush)*rnd()), spread = 0.25 + 0.25*rnd(), tall = (0.62 + 0.18*lush)*(0.9 + 0.2*rnd());
     for(let b=0;b<k && n<N;b++){
       const q = Math.sqrt(rnd()), qa = rnd()*2*Math.PI, x = cx + spread*q*Math.cos(qa), z = cz + spread*q*Math.sin(qa);
-      if(Math.hypot(x, z) < footAt(x, z) - 0.12 || cleared(x, z)) continue;
+      if(Math.hypot(x, z) < footAt(x, z) - 0.12) continue;
       root[n*4] = x; root[n*4 + 1] = hAt(x, z) - 0.05; root[n*4 + 2] = z; root[n*4 + 3] = rnd();
       blade[n*4] = Math.atan2(z, x) + (rnd() - 0.5)*1.6;
       blade[n*4 + 1] = (0.7 + 0.9*rnd()*rnd())*(1.15 - 0.4*q)*tall;
@@ -325,7 +319,7 @@ function grassField(G, stones, tufts, bare){
     const k = 7 + Math.floor((4 + 3*dense)*rnd()), spread = 0.4 + 0.2*rnd() + 0.1*dense;
     for(let b=0;b<k && n<N;b++){
       const q = Math.sqrt(rnd()), qa = rnd()*2*Math.PI, x = cx + spread*q*Math.cos(qa), z = cz + spread*q*Math.sin(qa);
-      if(Math.hypot(x, z) < footAt(x, z) || underStone(x, z) || cleared(x, z)) continue;
+      if(Math.hypot(x, z) < footAt(x, z) || underStone(x, z)) continue;
       root[n*4] = x; root[n*4 + 1] = hAt(x, z) - 0.05; root[n*4 + 2] = z; root[n*4 + 3] = rnd();
       blade[n*4] = qa + (rnd() - 0.5)*1.4;
       blade[n*4 + 1] = (0.75 + 0.6*rnd()*rnd())*(1.1 - 0.3*q)*tall*(0.8 + 0.3*rnd());
