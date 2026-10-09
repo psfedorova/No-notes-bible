@@ -143,9 +143,10 @@ canvasEl.addEventListener('pointerdown', e=>{
   if(pointers.size > 2) return;
   setInertia(false); angVel.x = angVel.y = 0;
   orbit.coast = false; orbit.vx = orbit.vy = 0;
+  const cut = spinAnim && { left: spinAnim.dur - spinAnim.t, settle: spinAnim.settle };
   if(spinAnim){ setSpinAnim(null); spinGoal.copy(spinGrp.quaternion); }
   const hit = e.button === 2 ? null : pickAt(e.clientX, e.clientY) || (e.pointerType === 'touch' && !st.open ? pickNear(e.clientX, e.clientY) : null);
-  g = { id:e.pointerId, sx:e.clientX, sy:e.clientY, px:e.clientX, py:e.clientY, t:performance.now(),
+  g = { id:e.pointerId, cut, sx:e.clientX, sy:e.clientY, px:e.clientX, py:e.clientY, t:performance.now(),
         moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1, q0: spinGoal.clone(), o0: [orbit.azTo, orbit.elTo],
         slop: THRESH[e.pointerType] || THRESH.mouse, far: e.pointerType === 'touch' && st.open && st.focusTo < 0.5 && (st.zoom > FAR_ZOOM || Math.abs(orbit.azTo) > 0.35) };
   const now = performance.now(), again = now - downs.t < 450 && Math.hypot(e.clientX - downs.x, e.clientY - downs.y) < 8;
@@ -307,6 +308,12 @@ function lookAway(){
 }
 function liftGate(){ return smooth(clamp(st.lift*1.6, 0, 1)); }
 function endPointer(e, cancelled){
+  const gg = g && g.id === e.pointerId ? g : null;
+  releasePointer(e, cancelled);
+  if(gg && gg.cut && !g && !spinAnim && !inertia && !atHome() && spinGoal.angleTo(gg.q0) < 1e-3)
+    glideSpin(homeQuat(), Math.max(0.8, gg.cut.left), gg.cut.settle);
+}
+function releasePointer(e, cancelled){
   pointers.delete(e.pointerId);
   try{ canvasEl.releasePointerCapture(e.pointerId); }catch(_){}
   if(pinch){
