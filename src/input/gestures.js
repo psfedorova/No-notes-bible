@@ -121,6 +121,7 @@ function solveCoverTheta(local, px, py, prev){
 }
 
 const THRESH = { mouse:6, pen:10, touch:14 };
+const FAR_ZOOM = 1.25;
 const pointers = new Map();
 let g = null;
 let pinch = null;
@@ -146,7 +147,7 @@ canvasEl.addEventListener('pointerdown', e=>{
   const hit = e.button === 2 ? null : pickAt(e.clientX, e.clientY) || (e.pointerType === 'touch' && !st.open ? pickNear(e.clientX, e.clientY) : null);
   g = { id:e.pointerId, sx:e.clientX, sy:e.clientY, px:e.clientX, py:e.clientY, t:performance.now(),
         moved:0, hit, mode:'pending', force: e.button === 2 || e.button === 1, q0: spinGoal.clone(), o0: [orbit.azTo, orbit.elTo],
-        slop: THRESH[e.pointerType] || THRESH.mouse };
+        slop: THRESH[e.pointerType] || THRESH.mouse, far: e.pointerType === 'touch' && st.open && st.focusTo < 0.5 && (st.zoom > FAR_ZOOM || Math.abs(orbit.azTo) > 0.35) };
   const now = performance.now(), again = now - downs.t < 450 && Math.hypot(e.clientX - downs.x, e.clientY - downs.y) < 8;
   downs.n = again ? downs.n + 1 : 1; downs.t = now; downs.x = e.clientX; downs.y = e.clientY;
   const at = e.pointerType !== 'touch' && !g.force && hit && hit.s < PW*0.95 ? textAt(hit) : null;
@@ -229,6 +230,7 @@ canvasEl.addEventListener('pointermove', e=>{
   }
   if(g.mode === 'pending'){
     if(Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < g.slop) return;
+    if(g.far) g.force = true;
     const h = g.hit && g.hit.type === 'book' && !g.force ? pageOfBook(g.hit) || g.hit : g.hit;
     const sideways = Math.abs(e.clientX - g.sx) > Math.abs(e.clientY - g.sy)*0.8;
     const back = e.clientX > g.sx;
