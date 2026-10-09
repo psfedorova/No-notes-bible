@@ -159,9 +159,41 @@ function sigilLines(M, blur, col, wk = 1){
   for(let i=0;i<28;i++){ x.save(); x.rotate(i/28*Math.PI*2); x.translate(0, -98); runeStroke(x, Math.floor(rnd()*6), 7, 3.6); x.restore(); }
   return c;
 }
+const lut = K=>{ const L = new Uint8ClampedArray(1024*3); for(let i=0;i<1024;i++) L.set(ramp(i/1023, K), i*3); return L; };
+let SINGE_LUT = null, EMBER_LUT = null;
+function glyphPixels(G, T, X0, Y0, w, h, nk){
+  const W = T.W, ink = new Uint8ClampedArray(w*h*4);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    const X = X0 + x;
+    ink[(y*w + x)*4 + 3] = X >= G.x0 && X <= G.x1 ? T.inkA[(Y0 + y)*W + X] : 0;
+  }
+  const soft = softMask(ink, w, h, Math.max(1, Math.round(2.4*FS)));
+  const sMin = G.x0*NIB_DX + G.y0*NIB_DY, sSpan = Math.max(1, G.x1*NIB_DX + G.y1*NIB_DY - sMin);
+  let n = 0;
+  for(let i=0;i<w*h;i++) if(soft[i] >= 0.004) n++;
+  const at = new Uint32Array(n), F = new Float32Array(n), A = new Float32Array(n), S = new Float32Array(n);
+  const cov = new Uint8ClampedArray(n), inv = new Float32Array(n), fyb = new Float32Array(n), fxc = new Uint8Array(n);
+  const cover = new ImageData(w, h), cd = cover.data;
+  for(let y=0, j=0; y<h; y++){
+    const Y = Y0 + y, ny = ((Y*nk) & 255) << 8;
+    for(let x=0; x<w; x++){
+      const i = y*w + x, sa = soft[i];
+      if(sa < 0.004) continue;
+      const X = X0 + x, p = i*4, bp = (Y*W + X)*4;
+      at[j] = p; A[j] = ink[p+3]/255; S[j] = sa; cov[j] = Math.min(255, sa*640);
+      F[j] = clamp((X*NIB_DX + Y*NIB_DY - sMin)/sSpan, -0.2, 1.2)*0.74 + burnNoise[ny | ((X*nk) & 255)]*0.42 - 0.08;
+      inv[j] = 1/(COOL_T*(0.55 + 1.1*clamp((1 - sa)*2.5, 0, 1)));
+      fyb[j] = Y*nk*1.7; fxc[j] = ((X*nk*1.7) | 0) & 255;
+      cd[p] = T.bare[bp]; cd[p+1] = T.bare[bp+1]; cd[p+2] = T.bare[bp+2];
+      j++;
+    }
+  }
+  Object.assign(G, { at, F, A, S, cov, inv, fyb, fxc, cover, paint: new ImageData(w, h), glow: new ImageData(w, h) });
+}
 function titleBurn(o){
   if(!tb) burnInit();
   const e = pageEntry(0), T = tb, W = T.W, H = T.H;
+  if(!e.glow.width) paintPage(0);
   const g = e.glow.getContext('2d'), gw = e.glow.width, gh = e.glow.height;
   if(o.done){
     e.live = false; e.bg = titleFull; e.inkKey = null; paintPage(0);
@@ -194,7 +226,7 @@ function titleBurn(o){
     const age = o.t - (o.start + G.s);
     if(age < -PRE) continue;
     if(age > Tb + 2.8*C){
-      G.finished = true;
+      G.finished = true; G.at = G.ink = G.soft = G.cover = G.paint = G.glow = null;
       dn.save(); dn.beginPath(); dn.rect(G.x0 - s*0.2, G.y0 - s*0.2, G.x1 - G.x0 + s*0.6, G.y1 - G.y0 + s*0.4); dn.clip();
       dn.drawImage(titleFull, 0, 0); dn.restore();
       m.save(); m.beginPath(); m.rect(G.x0 - s*0.2, G.y0 - s*0.2, G.x1 - G.x0 + s*0.6, G.y1 - G.y0 + s*0.4); m.clip();
@@ -207,56 +239,39 @@ function titleBurn(o){
     const X0 = Math.max(0, Math.floor(G.x0 - s*0.14)), Y0 = Math.max(0, Math.floor(G.y0 - s*0.12));
     const X1 = Math.min(W, Math.ceil(G.x1 + s*0.32)), Y1 = Math.min(H, Math.ceil(G.y1 + s*0.12));
     const w = X1 - X0, h = Y1 - Y0;
-    if(!G.ink){
-      G.ink = new Uint8ClampedArray(w*h*4);
-      for(let y=0;y<h;y++) for(let x=0;x<w;x++){
-        const X = X0 + x;
-        G.ink[(y*w + x)*4 + 3] = X >= G.x0 && X <= G.x1 ? T.inkA[(Y0 + y)*W + X] : 0;
-      }
-      G.soft = softMask(G.ink, w, h, Math.max(1, Math.round(2.4*FS))).slice(0, w*h);
-    }
-    const ink = G.ink, soft = G.soft;
-    const sMin = G.x0*NIB_DX + G.y0*NIB_DY, sSpan = Math.max(1, G.x1*NIB_DX + G.y1*NIB_DY - sMin);
+    if(!SINGE_LUT){ SINGE_LUT = lut(SINGE); EMBER_LUT = lut(EMBER); }
+    if(!G.at) glyphPixels(G, T, X0, Y0, w, h, nk);
+    const { at, F, A, S, cov, inv, fyb, fxc, cover, paint, glow } = G;
     const [cc, pc, lc] = T.cvs;
     [cc, pc, lc].forEach(c=>{ if(c.width < w || c.height < h){ c.width = Math.max(c.width, w); c.height = Math.max(c.height, h); } });
-    const cover = new ImageData(w, h), paint = new ImageData(w, h), glow = new ImageData(w, h);
     const cd = cover.data, pd = paint.data, ld = glow.data, rise = age*70;
-    for(let y=0, p=0; y<h; y++){
-      const Y = Y0 + y, bo = (Y*W + X0)*4, ny = ((Y*nk) & 255) << 8, fy = (((Y*nk*1.7 + rise) | 0) & 255) << 8;
-      for(let x=0; x<w; x++, p+=4){
-        const a = ink[p+3]/255, sa = soft[p>>2];
-        if(sa < 0.004) continue;
-        const X = X0 + x;
-        const F = clamp((X*NIB_DX + Y*NIB_DY - sMin)/sSpan, -0.2, 1.2)*0.74 + burnNoise[ny | ((X*nk) & 255)]*0.42 - 0.08;
-        const la = age - Tb*F;
-        const bp = bo + x*4;
-        cd[p] = T.bare[bp]; cd[p+1] = T.bare[bp+1]; cd[p+2] = T.bare[bp+2];
-        if(la < 0){
-          cd[p+3] = Math.min(255, sa*640);
-          if(la > -PRE){
-            const k = 1 + la/PRE, q = k*k, c = la > -CH ? 1 + la/CH : 0;
-            pd[p] = lerp(120, 30, c); pd[p+1] = lerp(66, 14, c); pd[p+2] = lerp(28, 6, c);
-            pd[p+3] = Math.min(1, (a*0.55 + sa*0.1)*q + (a*0.9 + sa*0.25)*c)*255;
-            if(la > -HOT){ const e2 = a*(1 + la/HOT)*0.3; ld[p] = 210; ld[p+1] = 90; ld[p+2] = 30; ld[p+3] = e2*255; }
-          }
-          continue;
-        }
-        if(la < HOT) cd[p+3] = Math.min(255, sa*640)*(1 - la/HOT);
-        const fl = burnNoise[fy | (((X*nk*1.7) | 0) & 255)];
-        const edge = clamp((1 - sa)*2.5, 0, 1);
-        const heat = Math.min(1, Math.exp(-la/(C*(0.55 + 1.1*edge)))*(0.72 + 0.56*fl));
-        const rim = la < RIM ? 1 - la/RIM : 0;
-        if(heat < 0.01 && rim === 0) continue;
-        if(a > 0.004){
-          const c = ramp(heat, SINGE), r = rim*0.8;
-          pd[p] = lerp(c[0], 255, r); pd[p+1] = lerp(c[1], 246, r); pd[p+2] = lerp(c[2], 220, r);
-          pd[p+3] = a*Math.min(1, heat*3 + rim)*255;
-        }
-        const c = ramp(heat, EMBER);
-        const ea = Math.min(1, a*Math.min(1, heat*1.6) + sa*(rim*0.55 + heat*0.3));
-        ld[p] = lerp(c[0], 255, rim); ld[p+1] = lerp(c[1], 240, rim); ld[p+2] = lerp(c[2], 205, rim);
-        ld[p+3] = ea*255;
+    for(let j=0; j<at.length; j++){
+      const p = at[j], la = age - Tb*F[j], a = A[j], sa = S[j];
+      if(la < 0){
+        cd[p+3] = cov[j];
+        ld[p+3] = 0;
+        if(la > -PRE){
+          const k = 1 + la/PRE, q = k*k, c = la > -CH ? 1 + la/CH : 0;
+          pd[p] = 120 - 90*c; pd[p+1] = 66 - 52*c; pd[p+2] = 28 - 22*c;
+          pd[p+3] = Math.min(1, (a*0.55 + sa*0.1)*q + (a*0.9 + sa*0.25)*c)*255;
+          if(la > -HOT){ ld[p] = 210; ld[p+1] = 90; ld[p+2] = 30; ld[p+3] = a*(1 + la/HOT)*0.3*255; }
+        }else pd[p+3] = 0;
+        continue;
       }
+      cd[p+3] = la < HOT ? cov[j]*(1 - la/HOT) : 0;
+      const fl = burnNoise[((((fyb[j] + rise) | 0) & 255) << 8) | fxc[j]];
+      const heat = Math.min(1, Math.exp(-la*inv[j])*(0.72 + 0.56*fl));
+      const rim = la < RIM ? 1 - la/RIM : 0;
+      if(heat < 0.01 && rim === 0){ pd[p+3] = 0; ld[p+3] = 0; continue; }
+      const hi = (heat*1023) | 0;
+      if(a > 0.004){
+        const r = rim*0.8;
+        pd[p] = lerp(SINGE_LUT[hi*3], 255, r); pd[p+1] = lerp(SINGE_LUT[hi*3+1], 246, r); pd[p+2] = lerp(SINGE_LUT[hi*3+2], 220, r);
+        pd[p+3] = a*Math.min(1, heat*3 + rim)*255;
+      }else pd[p+3] = 0;
+      const ea = Math.min(1, a*Math.min(1, heat*1.6) + sa*(rim*0.55 + heat*0.3));
+      ld[p] = lerp(EMBER_LUT[hi*3], 255, rim); ld[p+1] = lerp(EMBER_LUT[hi*3+1], 240, rim); ld[p+2] = lerp(EMBER_LUT[hi*3+2], 205, rim);
+      ld[p+3] = ea*255;
     }
     m.save(); m.beginPath(); m.rect(X0, Y0, w, h); m.clip();
     m.drawImage(titleFull, 0, 0);

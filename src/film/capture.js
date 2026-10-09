@@ -631,6 +631,7 @@ const pose = () => ({
 });
 
 F.titleReveal(0);
+F.titleBurnPlan(0.7);
 for(let i=0;i<240;i++) F.update(1/FPS);
 const ends =await fetch('assets/intro/poses.json' + (LIVE ? '?v=2' : '?v=' + Date.now())).then(r => r.json());
 buildRig(ends[TALL ? 'tall' : 'wide'].end);
