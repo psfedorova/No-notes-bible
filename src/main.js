@@ -28,10 +28,10 @@ import { closeMenu, menuEl, menuNotes, refreshUI } from './ui/controls.js';
 import { backdrop } from './scene/forest.js';
 import { loadAssets, loadMore } from './assets/load.js';
 import { calm, frame, onResize, rafLoop, update, warmUp } from './app/loop.js';
-import { pagePuff, pageShine, playLive, settled, takeOver, titleBurn, titleBurnPlan, titleReveal } from './film/opening.js';
+import { pagePuff, pageShine, playLive, settled, takeOver, titleBurn, titleBurnPlan, titleLife, titleReveal } from './film/opening.js';
 
 function filmHooks(){
-  return { THREE, scene, renderer, st, orbit, setOpen, beam, beamU, BEAM_DIR, pageShine, frame, update, camera, frontGem, spinGrp, spinGoal, qOpenHome, fallers, emitOpenBurst, matGold, pagePointWorld, PAGE_W, PAGE_H, bookRoot, floatGrp, OPEN, frontGrp, CW, CH, CVR, titleReveal, matSpine, titleBurn, titleBurnPlan, pagePuff,
+  return { THREE, scene, renderer, st, orbit, setOpen, beam, beamU, BEAM_DIR, pageShine, frame, update, camera, frontGem, spinGrp, spinGoal, qOpenHome, fallers, emitOpenBurst, matGold, pagePointWorld, PAGE_W, PAGE_H, bookRoot, floatGrp, OPEN, frontGrp, CW, CH, CVR, titleReveal, matSpine, titleBurn, titleBurnPlan, titleLife, pagePuff,
     render(){ renderer.shadowMap.needsUpdate = true; if(backdrop){ backdrop.material.uniforms.uCam.value.copy(camera.position); backdrop.draw(); } composer.render(0); } };
 }
 

@@ -534,8 +534,8 @@ function at(t, dt){
     const last = Math.max(...plan.map(q => q.s));
     F.titleBurn({ M: sigM, t, start: START,
       sig: span(t, LAND - 0.05, LAND + 0.35)*(1 - span(t, START + 0.2, START + last + 0.2)),
-      done: t >= START + last + 1.15 });
-    burnt = t >= START + last + 1.15;
+      done: t >= START + last + F.titleLife() + 0.05 });
+    burnt = t >= START + last + F.titleLife() + 0.05;
     for(const q of plan){
       const t0 = START + q.s - FLY;
       if(q.flies && !q.spark && t >= t0){
@@ -649,6 +649,7 @@ window.__film = {
 let liveT = 0, liveEnd = null;
 function putAway(){
   rig.keys = null;
+  if(sigM && !burnt){ burnt = true; F.titleBurn({ M: sigM, t: liveT, start: 0, sig: 0, done: true }); }
   circle.visible = false; motes.visible = false; lights.visible = false;
   fly.position.set(0, -200, 0); flyLight.intensity = 0;
   flowU.uFlowK.value = 0;
@@ -669,8 +670,7 @@ const live = {
     putAway();
     st.auraTo = 0; st.gemFlare = 0;
     if(!opened){ opened = true; F.setOpen(true); }
-    if(sigM) F.titleBurn({ M: sigM, t: liveT, start: 0, sig: 0, done: true });
-    else F.titleReveal(1);
+    if(!sigM) F.titleReveal(1);
     live.done && live.done('skip');
   }
 };

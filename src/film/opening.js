@@ -160,6 +160,7 @@ function sigilLines(M, blur, col, wk = 1){
   return c;
 }
 const lut = K=>{ const L = new Uint8ClampedArray(1024*3); for(let i=0;i<1024;i++) L.set(ramp(i/1023, K), i*3); return L; };
+const titleLife = ()=> BURN_T*1.3 + 2.4*COOL_T;
 let SINGE_LUT = null, EMBER_LUT = null;
 function glyphPixels(G, T, X0, Y0, w, h, nk){
   const W = T.W, ink = new Uint8ClampedArray(w*h*4);
@@ -180,7 +181,8 @@ function glyphPixels(G, T, X0, Y0, w, h, nk){
       const i = y*w + x, sa = soft[i];
       if(sa < 0.004) continue;
       const X = X0 + x, p = i*4, bp = (Y*W + X)*4;
-      at[j] = p; A[j] = ink[p+3]/255; S[j] = sa; cov[j] = Math.min(255, sa*640);
+      const own = X >= G.x0 && X <= G.x1 && Y >= G.y0 && Y <= G.y1;
+      at[j] = p; A[j] = ink[p+3]/255; S[j] = sa; cov[j] = own ? Math.min(255, sa*640) : 0;
       F[j] = clamp((X*NIB_DX + Y*NIB_DY - sMin)/sSpan, -0.2, 1.2)*0.74 + burnNoise[ny | ((X*nk) & 255)]*0.42 - 0.08;
       inv[j] = 1/(COOL_T*(0.55 + 1.1*clamp((1 - sa)*2.5, 0, 1)));
       fyb[j] = Y*nk*1.7; fxc[j] = ((X*nk*1.7) | 0) & 255;
@@ -219,18 +221,15 @@ function titleBurn(o){
   }
   m.globalCompositeOperation = 'source-over'; m.globalAlpha = 1;
   m.drawImage(T.done, 0, 0);
-  const Tb = BURN_T, C = COOL_T, PRE = Tb*0.4, RIM = 0.08, CH = CHAR, HOT = 0.06, nk = 1/FS, s = 60*FS;
+  const Tb = BURN_T, C = COOL_T, PRE = Tb*0.4, RIM = 0.08, CH = CHAR, HOT = 0.06, nk = 1/FS, s = 60*FS, LIFE = titleLife();
   const live = [];
   for(const G of T.glyphs){
     if(G.finished) continue;
     const age = o.t - (o.start + G.s);
     if(age < -PRE) continue;
-    if(age > Tb + 2.8*C){
+    if(age > LIFE){
       G.finished = true; G.at = G.ink = G.soft = G.cover = G.paint = G.glow = null;
-      dn.save(); dn.beginPath(); dn.rect(G.x0 - s*0.2, G.y0 - s*0.2, G.x1 - G.x0 + s*0.6, G.y1 - G.y0 + s*0.4); dn.clip();
-      dn.drawImage(titleFull, 0, 0); dn.restore();
-      m.save(); m.beginPath(); m.rect(G.x0 - s*0.2, G.y0 - s*0.2, G.x1 - G.x0 + s*0.6, G.y1 - G.y0 + s*0.4); m.clip();
-      m.drawImage(titleFull, 0, 0); m.restore();
+      for(const c of [dn, m]){ c.save(); c.beginPath(); c.rect(G.x0, G.y0, G.x1 - G.x0 + 1, G.y1 - G.y0 + 1); c.clip(); c.drawImage(titleFull, 0, 0); c.restore(); }
       continue;
     }
     live.push([G, age]);
@@ -244,7 +243,7 @@ function titleBurn(o){
     const { at, F, A, S, cov, inv, fyb, fxc, cover, paint, glow } = G;
     const [cc, pc, lc] = T.cvs;
     [cc, pc, lc].forEach(c=>{ if(c.width < w || c.height < h){ c.width = Math.max(c.width, w); c.height = Math.max(c.height, h); } });
-    const cd = cover.data, pd = paint.data, ld = glow.data, rise = age*70;
+    const cd = cover.data, pd = paint.data, ld = glow.data, rise = age*70, fade = clamp((LIFE - age)/(1.2*C), 0, 1);
     for(let j=0; j<at.length; j++){
       const p = at[j], la = age - Tb*F[j], a = A[j], sa = S[j];
       if(la < 0){
@@ -253,15 +252,15 @@ function titleBurn(o){
         if(la > -PRE){
           const k = 1 + la/PRE, q = k*k, c = la > -CH ? 1 + la/CH : 0;
           pd[p] = 120 - 90*c; pd[p+1] = 66 - 52*c; pd[p+2] = 28 - 22*c;
-          pd[p+3] = Math.min(1, (a*0.55 + sa*0.1)*q + (a*0.9 + sa*0.25)*c)*255;
+          pd[p+3] = Math.min(1, a*(0.55*q + 0.9*c))*255;
           if(la > -HOT){ ld[p] = 210; ld[p+1] = 90; ld[p+2] = 30; ld[p+3] = a*(1 + la/HOT)*0.3*255; }
         }else pd[p+3] = 0;
         continue;
       }
       cd[p+3] = la < HOT ? cov[j]*(1 - la/HOT) : 0;
       const fl = burnNoise[((((fyb[j] + rise) | 0) & 255) << 8) | fxc[j]];
-      const heat = Math.min(1, Math.exp(-la*inv[j])*(0.72 + 0.56*fl));
-      const rim = la < RIM ? 1 - la/RIM : 0;
+      const heat = Math.min(1, Math.exp(-la*inv[j])*(0.72 + 0.56*fl))*fade;
+      const rim = la < RIM ? (1 - la/RIM)*fade : 0;
       if(heat < 0.01 && rim === 0){ pd[p+3] = 0; ld[p+3] = 0; continue; }
       const hi = (heat*1023) | 0;
       if(a > 0.004){
@@ -273,8 +272,10 @@ function titleBurn(o){
       ld[p] = lerp(EMBER_LUT[hi*3], 255, rim); ld[p+1] = lerp(EMBER_LUT[hi*3+1], 240, rim); ld[p+2] = lerp(EMBER_LUT[hi*3+2], 205, rim);
       ld[p+3] = ea*255;
     }
-    m.save(); m.beginPath(); m.rect(X0, Y0, w, h); m.clip();
+    m.save(); m.beginPath(); m.rect(G.x0, G.y0, G.x1 - G.x0 + 1, G.y1 - G.y0 + 1); m.clip();
     m.drawImage(titleFull, 0, 0);
+    m.restore();
+    m.save(); m.beginPath(); m.rect(X0, Y0, w, h); m.clip();
     cc.getContext('2d').putImageData(cover, 0, 0);
     m.drawImage(cc, 0, 0, w, h, X0, Y0, w, h);
     pc.getContext('2d').putImageData(paint, 0, 0);
@@ -374,5 +375,5 @@ function playLive(L){
 
 export {
   camBlend, pagePuff, pageShine, playLive, settled, stepCamBlend, takeOver, titleBurn,
-  titleBurnPlan, titleReveal
+  titleBurnPlan, titleLife, titleReveal
 };
