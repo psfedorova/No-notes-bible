@@ -1,6 +1,6 @@
 /* firestore.rules against the emulator: run `npm install` once, then `npm test` (Java must be installed) */
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc, getDocs, collection, deleteDoc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, getDoc, getDocs, collection, deleteDoc, updateDoc, serverTimestamp, writeBatch, Timestamp } from 'firebase/firestore';
 import fs from 'node:fs';
 
 const env = await initializeTestEnvironment({
@@ -18,7 +18,7 @@ const member = (name, code, g = false) => ({ name, code, guest: g, at: serverTim
 function make(db, uid, name, id, made, code = CODE, g = false){
   const b = writeBatch(db);
   b.set(doc(db, 'books', id), { name: 'Book', owner: uid, at: serverTimestamp() });
-  if(made !== null) b.set(doc(db, 'users', uid), { made });
+  if(made !== null) b.set(doc(db, 'users', uid), { made, last: id });
   b.set(doc(db, 'books', id, 'members', uid), member(name, '', g));
   b.set(doc(db, 'books', id, 'invite', 'code'), { code });
   b.set(doc(db, 'users', uid, 'books', id), { name: 'Book', at: serverTimestamp() });
@@ -35,6 +35,27 @@ await t('the count cannot repeat', assertFails(make(A, 'alice', 'Alona', 'x3', 1
 await t('a second book', assertSucceeds(make(A, 'alice', 'Alona', 'a2', 2)));
 await t('a third book', assertSucceeds(make(A, 'alice', 'Alona', 'a3', 3)));
 await t('no fourth book', assertFails(make(A, 'alice', 'Alona', 'a4', 4)));
+await t('one batch makes one book', assertFails((async ()=>{
+  const b = writeBatch(Bo);
+  b.set(doc(Bo, 'users', 'bob'), { made: 1, last: 'y1' });
+  ['y1', 'y2', 'y3'].forEach(id => b.set(doc(Bo, 'books', id), { name: 'Book', owner: 'bob', at: serverTimestamp() }));
+  await b.commit();
+})()));
+await t('a book is not made under a count naming another', assertFails((async ()=>{
+  const b = writeBatch(Bo);
+  b.set(doc(Bo, 'users', 'bob'), { made: 1, last: 'y1' });
+  b.set(doc(Bo, 'books', 'y1'), { name: 'Book', owner: 'bob', at: serverTimestamp() });
+  b.set(doc(Bo, 'books', 'y2'), { name: 'Book', owner: 'bob', at: serverTimestamp() });
+  await b.commit();
+})()));
+await t('the count does not go up without a book', assertFails(setDoc(doc(Bo, 'users', 'bob'), { made: 1, last: 'y9' })));
+await t('the count does not go up for a book already made', assertFails(setDoc(doc(Bo, 'users', 'bob'), { made: 1, last: B })));
+await t('the count does not go up unnamed', assertFails((async ()=>{
+  const b = writeBatch(Bo);
+  b.set(doc(Bo, 'users', 'bob'), { made: 1 });
+  b.set(doc(Bo, 'books', 'y1'), { name: 'Book', owner: 'bob', at: serverTimestamp() });
+  await b.commit();
+})()));
 await t('the count cannot be reset', assertFails(setDoc(doc(A, 'users', 'alice'), { made: 0 })));
 await t('the count takes no other fields', assertFails(setDoc(doc(A, 'users', 'alice'), { made: 4, x: 1 })));
 await t('alice reads her count', assertSucceeds(getDoc(doc(A, 'users', 'alice'))));
@@ -73,10 +94,26 @@ await t('bob writes his ink', assertSucceeds(setDoc(doc(Bo, 'books', B, 'ink', '
 await t('bob cannot pass his doc off as alice ink', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('bob', 1, ''))));
 await t('bob cannot change alice ink unmarked', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi'))));
 await t('bob cannot mark his change as alice', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi', { by: 'alice' }))));
-await t('bob changes alice ink, marked as his', assertSucceeds(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi', { by: 'bob' }))));
-await t('a guest changes bob ink, marked as hers', assertSucceeds(setDoc(doc(G, 'books', B, 'ink', '1_bob'), ink('bob', 1, 'Hi', { by: 'gina' }))));
-await t('bob cannot delete alice ink', assertFails(deleteDoc(doc(Bo, 'books', B, 'ink', '1_alice'))));
 const past = (n, t, by, extra = {}) => ({ n, t, a: '0:' + t.length, h: ['alice'], f: null, c: false, by, at: serverTimestamp(), ...extra });
+const change = (db, id, w, keep) => { const b = writeBatch(db); if(keep) b.set(doc(db, 'books', B, 'past', keep.id), keep.d); b.set(doc(db, 'books', B, 'ink', id), w); return b.commit(); };
+await t('bob cannot change alice ink without keeping the page', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi', { by: 'bob' }))));
+await t('bob cannot name a page he did not keep', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi', { by: 'bob', p: 'nothing' }))));
+await t('bob changes alice ink, marked as his, keeping the page', assertSucceeds(change(Bo, '1_alice', ink('alice', 1, 'Mi', { by: 'bob', p: 'bk1' }), { id: 'bk1', d: past(1, 'Mine', 'bob') })));
+await t('bob changes it again under the page he kept just now', assertSucceeds(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'M', { by: 'bob', p: 'bk1' }))));
+await t('the page kept must be the same page', assertFails(change(Bo, '1_alice', ink('alice', 1, 'Mi', { by: 'bob', p: 'bk2' }), { id: 'bk2', d: past(2, 'Mine', 'bob') })));
+await t('a guest cannot change ink under a page bob kept', assertFails(setDoc(doc(G, 'books', B, 'ink', '1_bob'), ink('bob', 1, 'Hi', { by: 'gina', p: 'bk1' }))));
+await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'books', B, 'past', 'bold'), past(1, 'Mine', 'bob', { at: Timestamp.fromMillis(Date.now() - 11*60000) })));
+await t('a page kept long ago does not cover a change', assertFails(setDoc(doc(Bo, 'books', B, 'ink', '1_alice'), ink('alice', 1, 'Mi', { by: 'bob', p: 'bold' }))));
+await t('a guest changes bob ink, marked as hers, keeping the page', assertSucceeds(change(G, '1_bob', ink('bob', 1, 'Hi', { by: 'gina', p: 'gk1' }), { id: 'gk1', d: past(1, 'His', 'gina') })));
+await t('bob changes alice ink on eight pages in one batch', assertSucceeds((async ()=>{
+  const b = writeBatch(Bo);
+  for(let n=10;n<18;n++){
+    b.set(doc(Bo, 'books', B, 'past', 'bm' + n), past(n, 'Old', 'bob'));
+    b.set(doc(Bo, 'books', B, 'ink', `${n}_alice`), ink('alice', n, 'New', { by: 'bob', p: 'bm' + n }));
+  }
+  await b.commit();
+})()));
+await t('bob cannot delete alice ink', assertFails(deleteDoc(doc(Bo, 'books', B, 'ink', '1_alice'))));
 await t('bob keeps a page as it was', assertSucceeds(setDoc(doc(Bo, 'books', B, 'past', 'p1'), past(1, 'Mine', 'bob'))));
 await t('the past is signed by its writer', assertFails(setDoc(doc(Bo, 'books', B, 'past', 'p2'), past(1, 'Mine', 'alice'))));
 await t('the past is never rewritten', assertFails(setDoc(doc(Bo, 'books', B, 'past', 'p1'), past(1, 'Other', 'bob'))));
@@ -122,7 +159,7 @@ await t('k1 sees she only reads', assertSucceeds(getDoc(doc(K1, 'books', B, 'acc
 await t('k2 cannot see it', assertFails(getDoc(doc(K2, 'books', B, 'access', 'k1'))));
 await t('k1 still reads the book', assertSucceeds(getDocs(collection(K1, 'books', B, 'ink'))));
 await t('k1 cannot write', assertFails(setDoc(doc(K1, 'books', B, 'ink', '1_k1'), ink('k1', 1, 'x'))));
-await t('k1 cannot change alice ink', assertFails(setDoc(doc(K1, 'books', B, 'ink', '1_alice'), ink('alice', 1, '', { by: 'k1' }))));
+await t('k1 cannot change alice ink', assertFails(change(K1, '1_alice', ink('alice', 1, '', { by: 'k1', p: 'k1p0' }), { id: 'k1p0', d: past(1, 'x', 'k1') })));
 await t('k1 cannot keep a past', assertFails(setDoc(doc(K1, 'books', B, 'past', 'k1p'), past(1, 'x', 'k1'))));
 await t('k1 cannot let herself write', assertFails(deleteDoc(doc(K1, 'books', B, 'access', 'k1'))));
 await t('k1 cannot change it either', assertFails(setDoc(doc(K1, 'books', B, 'access', 'k1'), access('read', 'Other'))));
@@ -211,6 +248,34 @@ await t('alice deletes the book in one batch', assertSucceeds((async ()=>{
 await t('the count cannot go down twice for one book', assertFails(setDoc(doc(A, 'users', 'alice'), { made: 1, gone: A3 })));
 await t('the freed place makes a new book', assertSucceeds(make(A, 'alice', 'Alona', 'a5', 3)));
 await t('still no fourth book', assertFails(make(A, 'alice', 'Alona', 'a6', 4)));
+await t('one step down deletes one book', assertFails((async ()=>{
+  const b = writeBatch(A);
+  b.delete(doc(A, 'books', 'a2'));
+  b.delete(doc(A, 'books', 'a5'));
+  b.set(doc(A, 'users', 'alice'), { made: 2, gone: 'a2' });
+  await b.commit();
+})()));
+await t('a book is not deleted under a step down naming another', assertFails((async ()=>{
+  const b = writeBatch(A);
+  b.delete(doc(A, 'books', 'a2'));
+  b.delete(doc(A, 'books', 'a5'));
+  b.set(doc(A, 'users', 'alice'), { made: 2, gone: 'a5' });
+  await b.commit();
+})()));
+await env.withSecurityRulesDisabled(async c=>{
+  const db = c.firestore();
+  await setDoc(doc(db, 'users', 'dora'), { made: 0 });
+  for(const id of ['d1', 'd2']) await setDoc(doc(db, 'books', id), { name: 'Old', owner: 'dora', at: serverTimestamp() });
+});
+const D = google('dora', 'Dora');
+await t('the count cannot go below nought', assertFails((async ()=>{
+  const b = writeBatch(D);
+  b.delete(doc(D, 'books', 'd1'));
+  b.set(doc(D, 'users', 'dora'), { made: 0, gone: 'd1' });
+  await b.commit();
+})()));
+await t('at nought a book left over is still deleted', assertSucceeds(deleteDoc(doc(D, 'books', 'd1'))));
+await t('at nought nobody else deletes it', assertFails(deleteDoc(doc(A, 'books', 'd2'))));
 
 const part = (i, n, d = 'x') => ({ d, v: 'v1', i, n, p: 1, at: serverTimestamp() });
 await t('alice keeps a copy', assertSucceeds(setDoc(doc(A, 'users', 'alice', 'keep', '0'), part(0, 1))));

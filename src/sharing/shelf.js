@@ -13,6 +13,7 @@ const NUDGE_KEY = 'liber-arcanum.nudged';
 const bookKey = id => `liber-arcanum.book.${id}`;
 const inkKey = id => `liber-arcanum.ink.${id}`;
 const pageKey = (id, n) => `liber-arcanum.ink.${id}.${n}`;
+const heldKey = uid => `liber-arcanum.held.${uid}`;
 const WRITE_MS = 1500;
 const MAX_BOOKS = 3;            // firestore.rules allows the same number
 const KEEP_PART = 200000;       // firestore.rules allows 250000
@@ -71,7 +72,8 @@ export function createShelf(api){
   let base = new Map(), pastQ = [], pastAt = new Map(), forced = new Set(), flight = null;
   let upTm = 0, joinWant = null, dirtyInk = new Set(), link = null;
   let inflight = 0, waitTm = 0, slow = false;
-  let keepTm = 0, clash = null, checked = new Set(), making = false, draft = null, copiedAt = 0;
+  let keepTm = 0, clash = null, checked = new Set(), making = false, creating = false, draft = null, copiedAt = 0;
+  let deleting = null, keptFor = null, notHere = null;
   let guestName = typeof lsGet(GUEST_KEY) === 'string' ? lsGet(GUEST_KEY) : '';
 
   function firebase(){
@@ -80,7 +82,7 @@ export function createShelf(api){
     loading = (async ()=>{
       const [app, auth, fs] = await Promise.all(['app', 'auth', 'firestore'].map(m => import(`${SDK}firebase-${m}.js`)));
       const cfg = FIREBASE || { apiKey: 'demo-key', projectId: 'demo-liber', authDomain: 'localhost' };
-      const a = app.initializeApp(cfg);
+      const a = app.getApps().length ? app.getApp() : app.initializeApp(cfg);
       const au = auth.getAuth(a);
       let db;
       try{
@@ -96,6 +98,8 @@ export function createShelf(api){
       auth.onAuthStateChanged(au, u => onUser(u));
       return F;
     })();
+    /* a failed load is not kept, so the next call tries again */
+    loading.catch(()=>{ if(!F) loading = null; });
     return loading;
   }
   const ref = (...p) => F.doc(F.db, ...p);
@@ -106,7 +110,8 @@ export function createShelf(api){
 
   let booksFor = null;
   function onUser(u){
-    const was = booksFor, gone = books.map(b => b.id);
+    const was = booksFor, gone = new Map(books.map(b => [b.id, b.name]));
+    if(cur) gone.set(cur.id, cur.name);
     user = u;
     booksFor = u ? u.uid : null;
     if(u) lsSet(SIGNED_KEY, 1); else lsDel(SIGNED_KEY);
@@ -128,9 +133,15 @@ export function createShelf(api){
       api.usePersonal();
       api.toast(u ? 'YOUR PRIVATE BOOK' : 'SIGNED OUT · YOUR PRIVATE BOOK', 2200);
     }
-    if(was && !u) gone.forEach(forget);
+    if(was && was !== booksFor) gone.forEach((name, id)=> hold(id, was, name));
+    const back = u && was !== booksFor ? unhold(u.uid) : [];
     if(u && joinWant && joinWant.vowed) join();
-    if(u && !u.isAnonymous && was !== booksFor) setTimeout(keepNow, 1500);
+    else if(back.length && !cur){
+      openBook(back[0].id);
+      api.toast(`YOUR UNSENT INK GOES TO ${back[0].name.toUpperCase()}`, 2600);
+    }
+    if(!u || u.isAnonymous) keptFor = null;
+    else if(keptFor !== u.uid){ keptFor = u.uid; setTimeout(keepNow, 1500); }
     if(was !== booksFor && !view.hidden) render();
     api.refresh();
   }
@@ -140,25 +151,77 @@ export function createShelf(api){
     const p = new F.GoogleAuthProvider();
     p.setCustomParameters({ prompt: 'select_account' });
     const guest = F.au.currentUser && F.au.currentUser.isAnonymous ? F.au.currentUser : null;
+    let left = 0;
     try{
       if(guest){
         try{ await F.linkWithPopup(guest, p); await guest.getIdToken(true); }
         catch(e){
           if(!e || e.code !== 'auth/credential-already-in-use') throw e;
           const cred = F.GoogleAuthProvider.credentialFromError(e);
-          if(cred) await F.signInWithCredential(F.au, cred);
+          if(!cred) throw e;
+          left = books.length;
+          if(!await leaveGuest()) return;
+          await F.signInWithCredential(F.au, cred);
         }
       }else await F.signInWithPopup(F.au, p);
       onUser(F.au.currentUser);
-      if(guest && cur && user.uid === guest.uid) F.updateDoc(ref('books', cur.id, 'members', user.uid), { name: googleName(user), guest: false }).catch(()=>{});
+      if(guest && user.uid === guest.uid){
+        const mine = new Set(books.map(b => b.id));
+        if(cur) mine.add(cur.id);
+        mine.forEach(id => F.updateDoc(ref('books', id, 'members', user.uid), { name: googleName(user), guest: false }).catch(()=>{}));
+      }
+      if(left) api.toast('SIGNED IN. THE BOOKS YOU KEPT AS A GUEST STAYED WITH THE GUEST', 3600);
     }catch(e){
       if(e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment')) await (guest ? F.linkWithRedirect(guest, p) : F.signInWithRedirect(F.au, p));
       else if(!(e && /cancelled|closed/.test(e.code || ''))) api.toast('COULD NOT SIGN IN', 2200);
     }
   }
+  /* this Google account is someone already: the guest's ink goes first, as the guest, and her books stay with the guest */
+  async function leaveGuest(){
+    await Promise.race([flush(), wait(6000)]).catch(()=>{});
+    const left = !!cur && !reading && (pending.size > 0 || pastQ.length > 0 || inflight > 0);
+    if(left || books.some(b => (!cur || b.id !== cur.id) && unsentIn(b.id))){
+      api.toast('SOME OF YOUR INK HAS NOT GONE YET. SIGN IN WHEN YOU ARE BACK ONLINE', 3600);
+      return false;
+    }
+    const n = books.length;
+    if(!n || locked()) return true;
+    return ask({
+      title: 'SIGN IN WITH GOOGLE',
+      text: `This Google account already has its own books, so ${n === 1 ? 'the book' : `the ${n} books`} you keep as a guest will no longer open here. What you wrote stays in ${n === 1 ? 'it' : 'them'} for the others`,
+      yes: 'Sign in', no: 'Stay a guest',
+    });
+  }
   function forget(id){
     lsDel(bookKey(id)); lsDel(inkKey(id));
     for(let n=1;n<2*api.N;n++) lsDel(pageKey(id, n));
+  }
+  const unsentIn = id => { const ic = lsGet(inkKey(id)); return !!ic && ((Array.isArray(ic.pending) && ic.pending.length > 0) || (Array.isArray(ic.past) && ic.past.length > 0)); };
+  /* ink not yet sent waits in this browser, put aside for the same person, until they sign in here again */
+  function hold(id, uid, name){
+    if(!unsentIn(id)) return forget(id);
+    const held = lsGet(heldKey(uid)) || {}, pages = {};
+    for(let n=1;n<2*api.N;n++){ const p = lsGet(pageKey(id, n)); if(p) pages[n] = p; }
+    held[id] = { name: name || 'Our book', book: lsGet(bookKey(id)), ink: lsGet(inkKey(id)), pages };
+    try{ localStorage.setItem(heldKey(uid), JSON.stringify(held)); }catch(e){ return; }
+    forget(id);
+  }
+  function unhold(uid){
+    const held = lsGet(heldKey(uid)), back = [];
+    if(!held || typeof held !== 'object') return back;
+    Object.entries(held).forEach(([id, h])=>{
+      if(!h || !h.ink || unsentIn(id) || (cur && cur.id === id)) return;
+      forget(id);
+      try{
+        if(h.book) localStorage.setItem(bookKey(id), JSON.stringify(h.book));
+        localStorage.setItem(inkKey(id), JSON.stringify(h.ink));
+        Object.entries(h.pages || {}).forEach(([n, p])=> localStorage.setItem(pageKey(id, n), JSON.stringify(p)));
+      }catch(e){ forget(id); return; }
+      delete held[id];
+      back.push({ id, name: String(h.name || 'Our book') });
+    });
+    if(Object.keys(held).length) lsSet(heldKey(uid), held); else lsDel(heldKey(uid));
+    return back;
   }
 
   function leaveBook(){
@@ -184,7 +247,7 @@ export function createShelf(api){
       const E = e && { s: e.s, k: splitKeys(e.k), f: e.f || null, c: !!e.c };
       if(e === null) base.set(x, null); else if(goodEntry(E)) base.set(x, E);
     });
-    pastQ = ic && Array.isArray(ic.past) ? ic.past : [];
+    pastQ = (ic && Array.isArray(ic.past) ? ic.past : []).map(p => p && p.id ? p : { ...p, id: randomId(20) });
     const take = (n, hands, old)=>{
       const m = new Map();
       Object.entries(hands || {}).forEach(([h, e])=>{ const x = e && { ...e, k: splitKeys(e.k) }; if(goodEntry(x)) m.set(h, x); });
@@ -309,55 +372,73 @@ export function createShelf(api){
     api.toast(`YOU LEFT ${name.toUpperCase()}`, 2400);
   }
   async function deleteBook(){
-    if(!cur || !user || cur.owner !== user.uid) return;
+    if(!cur || !user || cur.owner !== user.uid || deleting) return;
     if(!navigator.onLine){ api.toast('DELETING A BOOK NEEDS A CONNECTION', 2400); return; }
-    const id = cur.id, me = user.uid, name = cur.name, server = F.getDocsFromServer || F.getDocs;
-    unlisten();
-    clearTimeout(upTm); pending.clear(); base.clear(); pastQ = [];
+    const id = cur.id, me = user.uid, name = cur.name, server = F.getDocsFromServer || F.getDocs, one = F.getDocFromServer || F.getDoc;
+    /* nothing more goes up while it is deleted; what waits here is dropped only once the book is gone */
+    deleting = id;
+    clearTimeout(upTm);
     try{
+      if(flight) await flight;
       const [inkS, memS, accS, pastS] = await Promise.all(['ink', 'members', 'access', 'past'].map(c => server(F.collection(F.db, 'books', id, c))));
       const refs = [...inkS.docs.map(d => ref('books', id, 'ink', d.id)), ...pastS.docs.map(d => ref('books', id, 'past', d.id)), ...memS.docs.filter(d => d.id !== me).map(d => ref('books', id, 'members', d.id)),
         ...accS.docs.map(d => ref('books', id, 'access', d.id))];
-      for(let i=0;i<refs.length;i+=450){
+      /* a batch takes 500 writes: a book that fits goes in one, a bigger one sheds ink and history first */
+      const early = Math.max(0, refs.length - 490);
+      for(let i=0;i<early;i+=450){
         const b = F.writeBatch(F.db);
-        refs.slice(i, i + 450).forEach(r => b.delete(r));
+        refs.slice(i, Math.min(i + 450, early)).forEach(r => b.delete(r));
         await b.commit();
       }
-      const count = await F.getDoc(ref('users', me));
+      const count = await one(ref('users', me));
       const n = count.exists() ? count.data().made|0 : 0;
       const b = F.writeBatch(F.db);
+      refs.slice(early).forEach(r => b.delete(r));
       b.delete(ref('books', id, 'invite', 'code'));
       b.delete(ref('books', id, 'members', me));
       b.delete(ref('books', id));
-      b.set(ref('users', me), { made: Math.max(0, n - 1), gone: id });
+      if(n > 0) b.set(ref('users', me), { made: n - 1, gone: id });
       b.delete(ref('users', me, 'books', id));
+      if(cur && cur.id === id) unlisten();
       await b.commit();
     }catch(e){
-      if(cur && cur.id === id) openLive();
+      console.warn('delete book', e);
+      deleting = null;
+      if(cur && cur.id === id){ openLive(); if(pending.size || pastQ.length) queueUp(); }
       api.toast('COULD NOT DELETE THE BOOK. TRY AGAIN LATER', 2600);
       return;
     }
-    leaveBook();
-    api.usePersonal();
+    if(cur && cur.id === id){
+      clearTimeout(upTm); pending.clear(); base.clear(); pastQ = [];
+      leaveBook();
+      api.usePersonal();
+      close();
+    }
+    deleting = null;
     forget(id);
     api.refresh();
-    close();
     api.toast(`${name.toUpperCase()} IS GONE`, 2400);
   }
   async function renameBook(name){
     name = name.trim().slice(0, 60);
     if(!name || !cur || !user || cur.owner !== user.uid || name === cur.name) return;
-    const id = cur.id;
+    const id = cur.id, old = cur.name;
     cur.name = name;
     lsSet(CUR_KEY, { id, uid: cur.uid, name, owner: cur.owner });
     api.refresh();
-    try{
-      const b = F.writeBatch(F.db);
-      b.update(ref('books', id), { name });
-      b.set(ref('users', user.uid, 'books', id), { name, at: F.serverTimestamp() });
-      await Promise.race([b.commit(), wait(4000)]);
-      api.toast(`THE BOOK IS NOW CALLED ${name.toUpperCase()}`, 2400);
-    }catch(e){ api.toast('COULD NOT RENAME THE BOOK', 2400); }
+    const b = F.writeBatch(F.db);
+    b.update(ref('books', id), { name });
+    b.set(ref('users', user.uid, 'books', id), { name, at: F.serverTimestamp() });
+    const saved = b.commit().then(()=> true, e=>{ console.warn('rename', e); return false; });
+    const failed = ()=>{
+      if(cur && cur.id === id && cur.name === name){ cur.name = old; lsSet(CUR_KEY, { id, uid: cur.uid, name: old, owner: cur.owner }); api.refresh(); }
+      api.toast('COULD NOT RENAME THE BOOK', 2400);
+    };
+    /* offline the new name waits and goes later; if it is refused then, she hears so then */
+    const now = await Promise.race([saved, wait(4000).then(()=> null)]);
+    if(now === false) return failed();
+    api.toast(`THE BOOK IS NOW CALLED ${name.toUpperCase()}`, 2400);
+    if(now === null) saved.then(ok=>{ if(!ok) failed(); });
   }
   async function renameGuest(name){
     name = name.trim().slice(0, 24);
@@ -382,13 +463,21 @@ export function createShelf(api){
   }
   async function keepNow(){
     clearTimeout(keepTm);
-    if(!real() || !F || clash || !navigator.onLine) return;
+    if(!real() || !F || clash || !navigator.onLine || notHere === user.uid) return;
     const uid = user.uid, d = api.personalData(), text = JSON.stringify(plain(d)), sum = hash(text);
-    const k = lsGet(KEEP_KEY), mine = k && k.uid === uid ? k : null;
+    const k = lsGet(KEEP_KEY), mine = k && k.uid === uid ? k : null, p = filled(d);
     if(mine && mine.sum === sum) return;
+    /* the private book here was last kept for another account (a shared computer): it goes to this one only when she says so */
+    if(k && typeof k.uid === 'string' && !mine) return meetOther(uid, d, p);
     const parts = [];
-    for(let i=0;i<text.length;i+=KEEP_PART) parts.push(text.slice(i, i + KEEP_PART));
-    const v = randomId(16), p = filled(d);
+    for(let i=0;i<text.length;){
+      let j = Math.min(i + KEEP_PART, text.length);
+      /* never between the two halves of a surrogate pair, which would spoil the letter in both parts */
+      if(j < text.length && /[\uD800-\uDBFF]/.test(text[j - 1])) j--;
+      parts.push(text.slice(i, j));
+      i = j;
+    }
+    const v = randomId(16);
     try{
       const res = await F.runTransaction(F.db, async tx=>{
         const head = await tx.get(ref('users', uid, 'keep', '0'));
@@ -411,12 +500,23 @@ export function createShelf(api){
     if(parts.length !== (head.n|0)) throw new Error('the copy is incomplete');
     return JSON.parse(parts.map(x => x.d).join(''));
   }
-  async function meetCopy(uid, head, local){
+  async function meetOther(uid, d, p){
+    let head;
+    try{ head = await (F.getDocFromServer || F.getDoc)(ref('users', uid, 'keep', '0')); }catch(e){ return; }
+    if(!user || user.uid !== uid || clash) return;
+    if(head.exists()) return meetCopy(uid, head.data(), d, true);
+    if(!p){ lsSet(KEEP_KEY, { uid, v: null, sum: '' }); return keepNow(); }
+    clash = { uid, v: null, copy: null, p: 0, at: null, other: true };
+    api.toast('THIS BROWSER’S PRIVATE BOOK WAS KEPT IN ANOTHER GOOGLE ACCOUNT. SEE SHARE', 3600);
+    api.refresh();
+    if(!view.hidden) render();
+  }
+  async function meetCopy(uid, head, local, other){
     let copy;
     try{ copy = await readCopy(uid, head); }catch(e){ return; }
     if(!user || user.uid !== uid) return;
     const at = head.at && head.at.toDate ? head.at.toDate() : null;
-    if(!filled(copy) || inkSum(copy) === inkSum(local)){
+    if((!filled(copy) && !other) || inkSum(copy) === inkSum(local)){
       lsSet(KEEP_KEY, { uid, v: head.v, sum: '' });
       return keepNow();
     }
@@ -425,8 +525,8 @@ export function createShelf(api){
       api.toast('YOUR PRIVATE BOOK CAME BACK FROM YOUR GOOGLE ACCOUNT', 3000);
       return;
     }
-    clash = { uid, v: head.v, copy, p: filled(copy), at };
-    api.toast('YOUR GOOGLE ACCOUNT KEEPS ANOTHER COPY OF YOUR PRIVATE BOOK. SEE SHARE', 3600);
+    clash = { uid, v: head.v, copy, p: filled(copy), at, other: !!other };
+    api.toast(other ? 'THIS BROWSER’S PRIVATE BOOK WAS KEPT IN ANOTHER GOOGLE ACCOUNT. SEE SHARE' : 'YOUR GOOGLE ACCOUNT KEEPS ANOTHER COPY OF YOUR PRIVATE BOOK. SEE SHARE', 3600);
     api.refresh();
     if(!view.hidden) render();
   }
@@ -445,30 +545,30 @@ export function createShelf(api){
   }
   function renderClash(){
     const c = clash, when = c.at ? ` from ${c.at.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}` : '';
-    const here = filled(api.personalData());
+    const here = filled(api.personalData()), pages = k => `${k} written ${k === 1 ? 'page' : 'pages'}`;
     body.appendChild(el('h3', null, 'Your private book'));
-    body.appendChild(el('p', 'sub', `Your account’s copy${when} has ${c.p} written ${c.p === 1 ? 'page' : 'pages'}, this browser’s has ${here}. Which one stays?`));
+    if(!c.copy) body.appendChild(el('p', 'sub', `This browser’s private book, ${pages(here)}, was last kept in another Google account. Keep a copy of it in yours too?`));
+    else body.appendChild(el('p', 'sub', `${c.other ? 'This browser’s private book was last kept in another Google account. ' : ''}Your account’s copy${when} has ${pages(c.p)}, this browser’s has ${here}. Which one stays?`));
     const acts = el('div', 'acts');
-    acts.appendChild(btn('The account’s copy', 'main', async ()=>{ takeCopy(c.uid, c.v, c.copy); api.toast('YOUR PRIVATE BOOK IS THE COPY FROM YOUR ACCOUNT', 2600); render(); }));
-    acts.appendChild(btn('This browser’s', '', async ()=>{ keepLocal(); api.toast('YOUR ACCOUNT NOW KEEPS THIS BROWSER’S BOOK', 2600); render(); }));
+    if(c.copy) acts.appendChild(btn('The account’s copy', 'main', async ()=>{ takeCopy(c.uid, c.v, c.copy); api.toast('YOUR PRIVATE BOOK IS THE COPY FROM YOUR ACCOUNT', 2600); render(); }));
+    acts.appendChild(btn(c.copy ? 'This browser’s' : 'Keep it in my account', c.copy ? '' : 'main', async ()=>{ keepLocal(); api.toast('YOUR ACCOUNT NOW KEEPS THIS BROWSER’S BOOK', 2600); render(); }));
+    if(c.other) acts.appendChild(btn('Not in my account', '', async ()=>{ notHere = c.uid; clash = null; api.refresh(); render(); }));
     acts.appendChild(btn('Back up this browser’s first', 'minor', async ()=> api.saveCopy(true)));
     body.appendChild(acts);
   }
 
   async function removeKeeper(uid){
     if(!cur || !user || cur.owner !== user.uid || uid === user.uid) return;
-    const id = cur.id, guest = guests.has(uid);
+    const id = cur.id, guest = guests.has(uid), code = randomId(32);
     const name = plainNames.get(uid) || 'Friend';
     const batch = F.writeBatch(F.db);
     batch.delete(ref('books', id, 'members', uid));
     batch.set(ref('books', id, 'access', uid), { can: 'none', name, guest, at: F.serverTimestamp() });
-    if(guest){
-      const code = randomId(32);
-      batch.set(ref('books', id, 'invite', 'code'), { code });
-      link = { id, url: joinUrl(id, code) };
-    }
-    batch.commit().then(()=> api.toast(`${name.toUpperCase()} CAN NO LONGER OPEN THE BOOK${guest ? '. YOUR LINK IS NEW' : ''}`, 2600))
-      .catch(e=>{ console.warn('remove keeper', e); if(guest) link = null; api.toast(`COULD NOT REMOVE. ${refused(e)}`, 3200); });
+    /* the old link would let them in again under another account, a guest one in a private window */
+    batch.set(ref('books', id, 'invite', 'code'), { code });
+    link = { id, url: joinUrl(id, code) };
+    batch.commit().then(()=> api.toast(`${name.toUpperCase()} CAN NO LONGER OPEN THE BOOK. YOUR LINK IS NEW`, 2600))
+      .catch(e=>{ console.warn('remove keeper', e); if(link && link.id === id) link = null; api.toast(`COULD NOT REMOVE. ${refused(e)}`, 3200); });
   }
   const refused = e => e && e.code === 'permission-denied' ? 'THE BOOK’S RULES DO NOT ALLOW IT' : 'TRY AGAIN LATER';
   async function forgetKeeper(uid){
@@ -503,8 +603,8 @@ export function createShelf(api){
   const goodEntry = e => e && typeof e.s === 'string' && Array.isArray(e.k) && e.k.length === e.s.length && e.k.every(x => typeof x === 'string');
   /* firestore.rules bounds the keys' size, so they travel as one comma-joined string */
   const splitKeys = k => typeof k === 'string' ? (k ? k.split(',') : []) : k;
-  function mergePage(n){
-    const m = ink.get(n), L = [];
+  function mergePage(n, m = ink.get(n)){
+    const L = [];
     let f = null, c = false, fAt = null;
     if(m) m.forEach((e, h)=>{
       for(let i=0;i<e.s.length;i++) L.push([e.k[i], h, e.s[i]]);
@@ -557,19 +657,35 @@ export function createShelf(api){
     return mp;
   }
   const PAST_MS = 600000;
-  function keepPast(n, M, force, gone){
-    if(!M.t || reading) return;
-    const now = Date.now(), last = pastAt.get(n);
-    if(!force && last && now - last.at < PAST_MS && gone.every(x => last.has.has(x))) return;
-    pastAt.set(n, { at: now, has: new Set(M.k.map((k, i)=> `${M.a[i]}|${k}`)) });
-    const h = [], runs = [];
+  /* firestore.rules lets another hand's ink change only with a page kept by this hand in the last ten minutes */
+  const PAST_USE = 480000, PAST_PAGES = 8;
+  function pastOf(n, M){
+    const now = Date.now(), h = [], runs = [], id = randomId(20);
     M.a.forEach(x=>{
       let i = h.indexOf(x);
       if(i < 0){ i = h.length; h.push(x); }
       const r = runs[runs.length - 1];
       if(r && r[0] === i) r[1]++; else runs.push([i, 1]);
     });
-    pastQ.push({ n, t: M.t, a: runs.map(r => r.join(':')).join(','), h, f: M.f || null, c: !!M.c, when: now });
+    pastAt.set(n, { at: now, has: new Set(M.k.map((k, i)=> `${M.a[i]}|${k}`)), id, sent: 0 });
+    return { id, n, t: M.t, a: runs.map(r => r.join(':')).join(','), h, f: M.f || null, c: !!M.c, when: now };
+  }
+  function keepPast(n, M, force, gone){
+    if(!M.t || reading) return;
+    const now = Date.now(), last = pastAt.get(n);
+    if(!force && last && now - last.at < PAST_MS && gone.every(x => last.has.has(x))) return;
+    pastQ.push(pastOf(n, M));
+  }
+  /* the page as the book last had it, before this browser's unsent changes */
+  function pageBefore(n){
+    const m = new Map(ink.get(n) || []);
+    pending.forEach(x=>{
+      const [pn, h] = splitId(x);
+      if(pn !== n || !base.has(x)) return;
+      const b = base.get(x);
+      if(b && b.s) m.set(h, b); else m.delete(h);
+    });
+    return mergePage(n, m);
   }
   function unpackPast(p){
     const a = [];
@@ -621,12 +737,18 @@ export function createShelf(api){
     const touched = new Set();
     snap.docChanges().forEach(ch=>{
       const d = ch.doc.data(), n = d.n|0;
-      if(!(n >= 1 && n < 2*api.N) || typeof d.uid !== 'string' || ch.type === 'removed') return;
-      const E = { s: d.s, k: splitKeys(d.k), f: d.f || null, c: !!d.c };
-      if(!goodEntry(E)) return;
+      if(!(n >= 1 && n < 2*api.N) || typeof d.uid !== 'string') return;
       const x = pid(n, d.uid);
       let m = ink.get(n);
       if(!m){ m = new Map(); ink.set(n, m); }
+      if(ch.type === 'removed'){
+        /* gone from the book (its owner deleting it): a change not sent yet is written whole again */
+        if(pending.has(x)) base.set(x, null); else m.delete(d.uid);
+        touched.add(n); dirtyInk.add(n);
+        return;
+      }
+      const E = { s: d.s, k: splitKeys(d.k), f: d.f || null, c: !!d.c };
+      if(!goodEntry(E)) return;
       let next = E;
       if(pending.has(x)){
         next = base.has(x) ? rebase(m.get(d.uid), base.get(x), E) : m.get(d.uid) || EMPTY;
@@ -671,8 +793,23 @@ export function createShelf(api){
   function upload(){
     clearTimeout(upTm);
     if(flight) return flight.then(()=> upload());
-    if(!cur || !user || !F || (!pending.size && !pastQ.length) || reading) return Promise.resolve();
-    const me = cur.uid, id = cur.id, list = [...pending].slice(0, 100), pasts = pastQ.slice(0, 20), sent = new Map();
+    if(!cur || !user || !F || user.uid !== cur.uid || (!pending.size && !pastQ.length) || reading || deleting === cur.id) return Promise.resolve();
+    const me = cur.uid, id = cur.id, start = Date.now(), first = pastQ.slice(0, 20), sent = new Map(), proof = new Map(), fresh = [];
+    /* another hand's ink goes with the page as it was: kept in this write, or sent by this hand a few minutes ago,
+       or taken now from what the book last had; one waiting further back in the queue goes first */
+    const list = [...pending].slice(0, 100).filter(x=>{
+      const [n, h] = splitId(x);
+      if(h === me || proof.has(n)) return true;
+      if(proof.size >= PAST_PAGES) return false;
+      const q = first.filter(p => p.n === n).pop(), last = pastAt.get(n);
+      if(q) proof.set(n, q.id);
+      else if(last && last.sent && start - last.sent < PAST_USE) proof.set(n, last.id);
+      else if(pastQ.some(p => p.n === n)) return false;
+      else{ const p = pastOf(n, pageBefore(n)); fresh.push(p); proof.set(n, p.id); }
+      return true;
+    });
+    pastQ.push(...fresh);
+    const pasts = [...first, ...fresh], proofs = new Set(proof.values());
     list.forEach(x=>{
       const [n, h] = splitId(x);
       let e = (ink.get(n) || new Map()).get(h);
@@ -681,28 +818,33 @@ export function createShelf(api){
     });
     sending(1);
     flight = F.runTransaction(F.db, async tx=>{
-      const docs = await Promise.all(list.map(x => tx.get(inkRef(id, x))));
-      const out = new Map();
+      const [docs, had] = await Promise.all([list.map(x => tx.get(inkRef(id, x))), pasts.map(p => tx.get(ref('books', id, 'past', p.id)))].map(g => Promise.all(g)));
+      const out = new Map(), key = new Map();
+      /* a page already sent once (its answer lost on the way) is not written twice; as proof it goes again under a new name */
+      pasts.forEach((p, i)=>{
+        if(had[i].exists() && !proofs.has(p.id)) return;
+        const { when, id: was, ...keep } = p, k = had[i].exists() ? randomId(20) : was;
+        key.set(was, k);
+        tx.set(ref('books', id, 'past', k), { ...keep, by: me, at: F.serverTimestamp() });
+      });
       list.forEach((x, i)=>{
         const [n, h] = splitId(x), { L, B, known } = sent.get(x), d = docs[i].exists() ? docs[i].data() : null;
         const S = d && { s: d.s, k: splitKeys(d.k), f: d.f || null, c: !!d.c };
         const R = known && goodEntry(S) ? rebase(L, B, S) : L;
         const w = { uid: h, dev: DEV, n, s: R.s, k: R.k.join(','), f: R.f || null, c: !!R.c, at: F.serverTimestamp() };
-        if(h !== me) w.by = me;
+        if(h !== me){ w.by = me; w.p = key.get(proof.get(n)) || proof.get(n); }
         tx.set(inkRef(id, x), w);
         out.set(x, R);
       });
-      pasts.forEach(p=>{
-        const { when, ...keep } = p;
-        tx.set(F.doc(F.collection(F.db, 'books', id, 'past')), { ...keep, by: me, at: F.serverTimestamp() });
-      });
-      return out;
-    }).then(out=>{
+      return { out, key };
+    }).then(({ out, key })=>{
       flight = null;
       sending(-1);
       if(!cur || cur.id !== id) return;
       sync();
-      pastQ.splice(0, pasts.length);
+      const went = new Set(pasts.map(p => p.id));
+      pastQ = pastQ.filter(p => !went.has(p.id));
+      pasts.forEach(p=>{ if(!key.has(p.id)) return; const a = pastAt.get(p.n); pastAt.set(p.n, { at: a ? a.at : p.when, has: a ? a.has : new Set(), id: key.get(p.id) || p.id, sent: start }); });
       const touched = new Set();
       out.forEach((R, x)=>{
         const [n, h] = splitId(x), { L } = sent.get(x);
@@ -755,23 +897,30 @@ export function createShelf(api){
   }
   function flush(){ if(!cur) return Promise.resolve(); sync(); return upload(); }
 
+  /* says how it went: 'made', 'full', 'failed', or 'busy' while another is being made */
   async function createBook(name, bring, want){
+    if(creating) return 'busy';
+    creating = true;
+    try{ return await makeNow(name, bring, want); }
+    catch(e){ console.warn('make book', e); return 'failed'; }
+    finally{ creating = false; }
+  }
+  async function makeNow(name, bring, want){
     await firebase();
-    if(!user) return;
+    if(!user) return 'failed';
     const me = user.uid, id = want ? want.id : F.doc(F.collection(F.db, 'books')).id, code = want ? want.code : randomId(32);
     const carry = bring ? api.personalPages() : [];
-    try{
-      const count = await F.getDoc(ref('users', me));
-      const n = count.exists() ? count.data().made|0 : 0;
-      if(n >= MAX_BOOKS){ made = n; render(); return; }
-      const batch = F.writeBatch(F.db);
-      batch.set(ref('books', id), { name, owner: me, at: F.serverTimestamp() });
-      batch.set(ref('users', me), { made: n + 1 });
-      batch.set(ref('books', id, 'members', me), { name: myName(), code: '', guest: user.isAnonymous, at: F.serverTimestamp() });
-      batch.set(ref('books', id, 'invite', 'code'), { code });
-      batch.set(ref('users', me, 'books', id), { name, at: F.serverTimestamp() });
-      await batch.commit();
-    }catch(e){ api.toast('COULD NOT MAKE THE BOOK', 2400); return; }
+    const count = await F.getDoc(ref('users', me));
+    const n = count.exists() ? count.data().made|0 : 0;
+    if(n >= MAX_BOOKS){ made = n; return 'full'; }
+    const batch = F.writeBatch(F.db);
+    batch.set(ref('books', id), { name, owner: me, at: F.serverTimestamp() });
+    /* firestore.rules: the count names the one book it went up for */
+    batch.set(ref('users', me), { made: n + 1, last: id });
+    batch.set(ref('books', id, 'members', me), { name: myName(), code: '', guest: user.isAnonymous, at: F.serverTimestamp() });
+    batch.set(ref('books', id, 'invite', 'code'), { code });
+    batch.set(ref('users', me, 'books', id), { name, at: F.serverTimestamp() });
+    await batch.commit();
     if(want === draft) draft = null;
     if(cur) leaveBook();
     lsSet(inkKey(id), { pending: [] });
@@ -790,16 +939,29 @@ export function createShelf(api){
     upload();
     link = { id, url: joinUrl(id, code) };
     show('share');
+    return 'made';
   }
+  async function newBook(){
+    const r = await createBook(`${myName()}’s book`, false);
+    if(r === 'full') api.toast(`${MAX_BOOKS} SHARED BOOKS IS THE MOST. DELETE ONE FIRST`, 2600);
+    else if(r === 'failed') api.toast('COULD NOT MAKE THE BOOK', 2400);
+  }
+  /* the link is copied before the book is made, so a book not made says the link does not work */
+  const notMade = r=>{
+    if(r === 'full') api.toast(`${MAX_BOOKS} SHARED BOOKS IS THE MOST, SO THE LINK YOU COPIED DOES NOT WORK`, 3200);
+    else if(r === 'failed') api.toast('THE BOOK WAS NOT MADE, SO THE LINK YOU COPIED DOES NOT WORK. TRY AGAIN', 3200);
+  };
   async function makeBook(guest, want){
     if(making) return;
     making = true;
     try{
       const job = (async ()=>{
-        if(guest !== undefined && !await beGuest(guest)) return;
-        await createBook(`${myName()}’s book`, true, want);
-      })();
-      if(await Promise.race([job.then(()=> 'done'), wait(MAKE_MS).then(()=> 'slow')]) === 'slow') api.toast('NO CONNECTION. TRY AGAIN LATER', 2400);
+        if(guest !== undefined && !await beGuest(guest)) return 'quiet';
+        return createBook(`${myName()}’s book`, true, want);
+      })().catch(()=> 'failed');
+      const r = await Promise.race([job, wait(MAKE_MS).then(()=> 'slow')]);
+      if(r === 'slow'){ api.toast('NO CONNECTION. TRY AGAIN LATER', 2400); job.then(notMade); }
+      else notMade(r);
     }finally{
       making = false;
       if(!view.hidden && mode === 'share') render();
@@ -847,7 +1009,8 @@ export function createShelf(api){
   async function joinNow(){
     const want = joinWant;
     if(!want || !user) return;
-    wantJoin(null);
+    /* the invitation is kept until she is in the book, so a lost connection only asks her to try again */
+    if(!navigator.onLine){ show('retry'); return; }
     const me = user.uid;
     try{
       const [mine, shut] = await Promise.all([
@@ -855,12 +1018,13 @@ export function createShelf(api){
         F.getDoc(ref('books', want.id, 'access', me)).catch(()=>null),
       ]);
       const back = !!(mine && mine.exists());
-      if(!back && shut && shut.exists() && shut.data().can === 'none'){ show('shut'); return; }
+      if(!back && shut && shut.exists() && shut.data().can === 'none'){ wantJoin(null); show('shut'); return; }
       if(!back) await F.setDoc(ref('books', want.id, 'members', me), { name: myName(), code: want.code, guest: user.isAnonymous, at: F.serverTimestamp() });
       else if(mine.data().guest !== user.isAnonymous || mine.data().name !== myName()) F.updateDoc(ref('books', want.id, 'members', me), { name: myName(), guest: user.isAnonymous }).catch(()=>{});
       const b = await F.getDoc(ref('books', want.id));
       const name = b.exists() ? b.data().name : 'Our book';
       await F.setDoc(ref('users', me, 'books', want.id), { name, at: F.serverTimestamp() });
+      if(joinWant === want) wantJoin(null);
       const bye = isStarted ? null : farewell();
       await startedP;
       if(cur) leaveBook();
@@ -869,7 +1033,9 @@ export function createShelf(api){
       await (bye || farewell());
       Promise.resolve(api.settled && api.settled()).then(()=> api.toast(back && !want.vowed ? `BACK IN ${name.toUpperCase()}` : 'AMEN. NO NOTES', 2600));
     }catch(e){
-      show('badInvite');
+      console.warn('join', e);
+      if(e && (e.code === 'permission-denied' || e.code === 'not-found')){ if(joinWant === want) wantJoin(null); show('badInvite'); }
+      else show('retry');
     }
   }
 
@@ -902,7 +1068,7 @@ export function createShelf(api){
     if(!n.length) return 'waiting for a friend';
     return n.length > 4 ? `with ${n.slice(0, 3).join(', ')} and ${n.length - 3} more` : `with ${n.join(', ')}`;
   }
-  const TITLES = { share: 'SHARE THE BOOK', join: '', vow: 'THE VOW', badInvite: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '', past: 'PAGE HISTORY' };
+  const TITLES = { share: 'SHARE THE BOOK', join: '', vow: 'THE VOW', badInvite: 'AN INVITATION', retry: 'AN INVITATION', shut: 'AN INVITATION', leave: 'LEAVE THE BOOK', del: 'DELETE THE BOOK', rename: 'NAME THE BOOK', name: 'YOUR NAME', out: 'SIGN OUT', ask: '', past: 'PAGE HISTORY' };
   let fresh = false;
   function render(){
     if(locked() && !fresh && body.classList.contains('ghost')) return;
@@ -919,7 +1085,7 @@ export function createShelf(api){
     body.appendChild(el('h2', null, TITLES[mode]));
     if(mode === 'ask'){ body.firstChild.textContent = asking.title; renderAsk(); return; }
     if(!F && mode !== 'join' && mode !== 'vow'){ body.appendChild(el('p', 'sub', 'Loading…')); firebase().then(()=>{ if(!view.hidden) render(); }).catch(()=>{ body.lastChild.textContent = 'No connection. Try again later'; }); return; }
-    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, shut: renderShut, leave: renderLeave, del: renderDelete, rename: renderRename, name: renderName, out: renderOut, past: renderPast })[mode]();
+    ({ share: renderShare, join: renderJoin, vow: renderVow, badInvite: renderBad, retry: renderRetry, shut: renderShut, leave: renderLeave, del: renderDelete, rename: renderRename, name: renderName, out: renderOut, past: renderPast })[mode]();
   }
   function bookRow(title, sub, on, fn, add){
     const b = el('button', 'book' + (on ? ' on' : '') + (add ? ' add' : ''));
@@ -927,7 +1093,12 @@ export function createShelf(api){
     if(add) t.firstChild.prepend(el('i', 'plus'));
     b.appendChild(t);
     if(on) b.appendChild(el('span', 'tick', '✓'));
-    b.addEventListener('click', async ()=>{ await fn(); render(); });
+    b.addEventListener('click', async ()=>{
+      if(b.disabled) return;
+      b.disabled = true;
+      try{ await fn(); }finally{ b.disabled = false; }
+      render();
+    });
     return b;
   }
   function chev(){
@@ -944,7 +1115,7 @@ export function createShelf(api){
     const list = el('div', 'list');
     list.appendChild(bookRow('Private book', copied() ? 'only you · a copy is in your Google account' : 'only you', !cur, async ()=> goPersonal()));
     books.forEach(b => list.appendChild(bookRow(b.name, cur && cur.id === b.id ? others() : 'shared', cur && cur.id === b.id, ()=> openBook(b.id))));
-    if(cur) list.appendChild(bookRow('New shared book', 'a fresh book and its own link', false, ()=> createBook(`${myName()}’s book`, false), true));
+    if(cur) list.appendChild(bookRow('New shared book', 'a fresh book and its own link', false, newBook, true));
     pick.appendChild(list);
     body.querySelector('h2').replaceWith(pick);
   }
@@ -1123,7 +1294,7 @@ export function createShelf(api){
     nameForm(guestName, 24, 'Your name', renameGuest);
   }
   function renderOut(){
-    body.appendChild(el('p', 'sub', 'Some writing has not synced yet. Signing out leaves it in this browser'));
+    body.appendChild(el('p', 'sub', 'Some writing has not synced yet. It waits in this browser and goes when you sign in here again'));
     const acts = el('div', 'acts');
     acts.appendChild(btn('Stay signed in', 'main', async ()=> show('share')));
     acts.appendChild(btn('Sign out anyway', 'minor', signOut));
@@ -1365,6 +1536,13 @@ export function createShelf(api){
     acts.appendChild(btn('Close', 'main', async ()=> close()));
     body.appendChild(acts);
   }
+  function renderRetry(){
+    body.appendChild(el('p', 'sub', 'The book could not be reached. Check the connection and try again'));
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Try again', 'main', async ()=>{ if(joinWant) await join(); else close(); }));
+    acts.appendChild(btn('Close', 'minor', async ()=> close()));
+    body.appendChild(acts);
+  }
   function renderBad(){
     body.appendChild(el('p', 'sub', 'This link no longer works. Ask for a new one'));
     const acts = el('div', 'acts');
@@ -1436,7 +1614,7 @@ export function createShelf(api){
       if(unsent() && slow) return 'Sending…';
       return '';
     }
-    return clash && real() ? 'Your Google account keeps another copy: see Share' : '';
+    return clash && real() ? (clash.other ? 'This browser’s private book was kept in another account: see Share' : 'Your Google account keeps another copy: see Share') : '';
   }
 
   return {
@@ -1450,7 +1628,7 @@ export function createShelf(api){
       if(attention()) return attention();
       if(cur) return user && user.isAnonymous ? 'Saves automatically, in this browser for you as a guest' : 'Saves automatically';
       if(copied()) return 'Saves automatically, with a copy in your Google account';
-      if(real()) return 'Saves automatically. A copy goes to your Google account as you write';
+      if(real() && notHere !== user.uid) return 'Saves automatically. A copy goes to your Google account as you write';
       return 'Saves in this browser only';
     },
     attention,

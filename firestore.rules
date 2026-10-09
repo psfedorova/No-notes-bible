@@ -3,11 +3,12 @@ rules_version = '2';
 // A book is read and written only by its members. One joins with the invite code the owner made,
 // signed in with Google or as a guest (an anonymous account kept by the browser).
 // Each hand's letters of a page are one ink doc named after that hand's uid. Any keeper who writes may
-// change any hand's doc, marking it with their own uid in 'by', and keeps the page as it was in 'past'
-// first, so whatever was erased or changed can be brought back.
+// change any hand's doc, marking it with their own uid in 'by', and only with the page as it was kept in
+// 'past' (named in 'p'), so whatever was erased or changed can be brought back.
 // Any number of people join with one link. The owner can let a keeper only read, or send them away
 // for good: books/{book}/access/{uid} says so, and only the owner writes it. She can let them back in.
 // Anyone signed in makes books, a guest too, at most three at a time; deleting one frees its place.
+// The count names the one book made with each step up in 'last', and the one deleted with each step down in 'gone'.
 // A Google account also keeps a copy of its private book, in parts, under users/{uid}/keep.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -32,11 +33,16 @@ service cloud.firestore {
       return d.guest is bool && goodName(d, 40)
         && (isGuest() ? d.guest == true : d.guest == false && d.name == accountName());
     }
-    // how many books a person has now: it counts up by one with each book made, to three,
+    // how many books a person has now: it counts up by one with each book made, named in 'last', to three,
     // and down by one only in the batch that deletes one of their books, named in 'gone'
     function userDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
     function madeBefore() { return exists(userDoc()) ? get(userDoc()).data.made : 0; }
     function madeNow() { return resource == null ? 0 : resource.data.made; }
+    function makesOwnBook(uid, d) {
+      return d.get('last', null) is string
+        && !exists(bookDoc(d.last)) && existsAfter(bookDoc(d.last))
+        && getAfter(bookDoc(d.last)).data.owner == uid;
+    }
     function deletesOwnBook(uid, d) {
       return d.gone is string
         && exists(bookDoc(d.gone)) && get(bookDoc(d.gone)).data.owner == uid
@@ -46,10 +52,11 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow create, update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['made', 'gone'])
+        && request.resource.data.keys().hasOnly(['made', 'gone', 'last'])
         && request.resource.data.made is int
         && (
-          (request.resource.data.made == madeNow() + 1 && request.resource.data.made <= 3)
+          (request.resource.data.made == madeNow() + 1 && request.resource.data.made <= 3
+              && makesOwnBook(uid, request.resource.data))
           || (request.resource.data.made == madeNow() - 1 && request.resource.data.made >= 0
               && deletesOwnBook(uid, request.resource.data))
         );
@@ -79,9 +86,11 @@ service cloud.firestore {
 
     match /books/{book} {
       allow read: if isMember(book);
-      // a book is made in one batch with the count going up by one, so nobody makes more than three
+      // a book is made in one batch with the count going up by one and naming it, so one batch makes one
+      // book and nobody makes more than three
       allow create: if signedIn()
         && getAfter(userDoc()).data.made == madeBefore() + 1
+        && getAfter(userDoc()).data.get('last', '') == book
         && request.resource.data.keys().hasOnly(['name', 'owner', 'at'])
         && request.resource.data.owner == request.auth.uid
         && goodName(request.resource.data, 60);
@@ -89,9 +98,11 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'owner', 'at'])
         && request.resource.data.owner == resource.data.owner
         && goodName(request.resource.data, 60);
-      // the owner deletes the book last, after its ink and keepers, with the count going down
+      // the owner deletes the book last, after its ink and keepers, with the count going down and naming
+      // it; at nought (books made before the count was kept right) there is nothing left to count down
       allow delete: if isOwner(book)
-        && getAfter(userDoc()).data.made == madeBefore() - 1;
+        && (madeBefore() == 0
+            || (getAfter(userDoc()).data.made == madeBefore() - 1 && getAfter(userDoc()).data.get('gone', '') == book));
 
       // getAfter: the owner writes the first code in the same batch that makes the book
       match /invite/{doc} {
@@ -141,14 +152,24 @@ service cloud.firestore {
         allow delete: if isOwner(book);
       }
 
+      // another hand's ink changes only with the page as it was, kept in 'past' by the same hand in the
+      // same write or in the last ten minutes, and named in 'p'
+      function keptPast(book, d) {
+        let p = /databases/$(database)/documents/books/$(book)/past/$(d.p);
+        return d.get('p', null) is string && d.p.size() >= 1 && d.p.size() <= 40
+          && existsAfter(p) && getAfter(p).data.by == request.auth.uid && getAfter(p).data.n == d.n
+          && getAfter(p).data.at > request.time - duration.value(10, 'm');
+      }
+
       // a book has 100 pages; the keys are one comma-joined string, bounded by the letters they order
       match /ink/{id} {
         allow read: if isMember(book);
         allow create, update: if canWrite(book)
-          && request.resource.data.keys().hasOnly(['uid', 'dev', 'n', 's', 'k', 'f', 'c', 'at', 'by'])
+          && request.resource.data.keys().hasOnly(['uid', 'dev', 'n', 's', 'k', 'f', 'c', 'at', 'by', 'p'])
           && request.resource.data.uid is string && request.resource.data.uid.size() >= 1 && request.resource.data.uid.size() <= 128
           && request.resource.data.get('by', request.auth.uid) == request.auth.uid
-          && (request.resource.data.uid == request.auth.uid || 'by' in request.resource.data)
+          && (request.resource.data.uid == request.auth.uid
+              || ('by' in request.resource.data && keptPast(book, request.resource.data)))
           && request.resource.data.n is int && request.resource.data.n >= 1 && request.resource.data.n < 100
           && id == string(request.resource.data.n) + '_' + request.resource.data.uid
           && request.resource.data.s is string && request.resource.data.s.size() <= 6000
